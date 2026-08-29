@@ -58,6 +58,12 @@ GO
 
 IF NOT EXISTS (SELECT 1 FROM dbo.Usuarios WHERE Usuario = N'admin')
 BEGIN
+    /*
+        Cuenta interna inicial de AgroDigital.
+        El usuario queda fijo para facilitar la puesta en marcha del sistema,
+        pero la contrasenia no se guarda ni documenta en texto plano: este valor
+        es un hash PBKDF2-SHA256 precalculado.
+    */
     INSERT INTO dbo.Usuarios (Usuario, PasswordHash, Rol, Nombre, Apellido, DebeCambiarPassword, Activo)
     VALUES
     (
