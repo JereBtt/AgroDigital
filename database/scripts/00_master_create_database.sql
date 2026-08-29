@@ -62,7 +62,7 @@ BEGIN
     VALUES
     (
         N'admin',
-        N'PBKDF2-SHA256$100000$dAfwsyMN9rNDJB2ah1mSTA==$EZVWmvPQc8VckpWJxUtyrcZp3GcNHonQnUpAsblUfo8=',
+        N'PBKDF2-SHA256$100000$3f2ebeovsgzzFdgqLJFd/A==$PtO2rKGT4epldxeA2sfXSzjALzcQ9Jm1oCOIeKCh2wE=',
         N'Admin',
         N'Admin',
         N'AgroDigital',

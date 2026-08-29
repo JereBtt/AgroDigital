@@ -259,6 +259,7 @@ function App() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profilePasswordSaving, setProfilePasswordSaving] = useState(false);
   const [profilePasswordError, setProfilePasswordError] = useState('');
+  const [showManagerWelcome, setShowManagerWelcome] = useState(true);
   const userMenuRef = useRef(null);
   const sidebarCollapseTimeoutRef = useRef(null);
   const sidebarTransitionTimeoutRef = useRef(null);
@@ -931,6 +932,7 @@ function App() {
       setActiveModule('lotes');
       setAuthView('login');
       setJoinRequestStatus('');
+      setShowManagerWelcome(sessionType === 'manager-onboarding');
       setSession({ type: sessionType, name: data.nombre, role: data.rol, token: data.token, usuario: data.usuario });
     } catch (error) {
       setLoginError(error.message.replace(/^"|"$/g, ''));
@@ -1114,6 +1116,7 @@ function App() {
     setProfileError('');
     setProfileStatus('');
     setProfileSaving(false);
+    setShowManagerWelcome(true);
     setView('list');
     setSelectedLote(null);
     setIsMapExpanded(false);
@@ -1168,12 +1171,20 @@ function App() {
   if (session.type === 'manager-onboarding') {
     return (
       <main className={`auth-shell text-size-${textSize}`}>
-        <ManagerRegistrationPage
-          initialName={session.name}
-          error={loginError}
-          onSubmit={handleCompleteManagerRegistration}
-          onLogout={handleLogout}
-        />
+        {showManagerWelcome ? (
+          <ManagerWelcomePage
+            managerName={session.name}
+            onContinue={() => setShowManagerWelcome(false)}
+            onLogout={handleLogout}
+          />
+        ) : (
+          <ManagerRegistrationPage
+            initialName={session.name}
+            error={loginError}
+            onSubmit={handleCompleteManagerRegistration}
+            onLogout={handleLogout}
+          />
+        )}
         {floatingWidgets}
       </main>
     );
@@ -1959,6 +1970,69 @@ function JoinTeamPage({ error, status, onSubmit, onBack }) {
     </section>
   );
 }
+
+function ManagerWelcomePage({ managerName, onContinue, onLogout }) {
+  const displayName = managerName?.trim() || 'Gerente';
+
+  return (
+    <section className="manager-welcome-page">
+      <div className="manager-welcome-card">
+        <header className="manager-welcome-topbar">
+          <img src={agroDigitalLogo} alt="AgroDigital" />
+          <button className="admin-logout" type="button" onClick={onLogout}>
+            <LogOut size={19} />
+            Salir
+          </button>
+        </header>
+
+        <div className="manager-welcome-content">
+          <div className="manager-welcome-copy">
+            <span className="manager-welcome-kicker">Primer ingreso</span>
+            <span className="manager-welcome-name">Hola, {displayName}</span>
+            <h1>Bienvenido a AgroDigital</h1>
+            <p>
+              Estás a un paso de activar tu espacio de gestión. En el próximo paso vas a confirmar tus datos,
+              definir tu contraseña definitiva y cargar tus primeros equipos o empresas.
+            </p>
+
+            <div className="manager-welcome-actions">
+              <button className="primary-admin-button manager-welcome-cta" type="button" onClick={onContinue}>
+                <CheckCircle2 size={21} />
+                Continuar al registro
+              </button>
+            </div>
+          </div>
+
+          <aside className="manager-welcome-panel" aria-label="Resumen de activación">
+            <div className="manager-welcome-badge">
+              <ShieldCheck size={34} />
+              <span>Acceso seguro</span>
+            </div>
+            <div className="manager-welcome-steps">
+              <span>
+                <KeyRound size={20} />
+                Contraseña definitiva
+              </span>
+              <span>
+                <Building2 size={20} />
+                Grupo de gestión
+              </span>
+              <span>
+                <Warehouse size={20} />
+                Empresas iniciales
+              </span>
+            </div>
+          </aside>
+        </div>
+
+        <div className="manager-welcome-visual" aria-hidden="true">
+          <img src={sidebarLandscapeExpanded} alt="" />
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ManagerRegistrationPage({ initialName, error, onSubmit, onLogout }) {
   const [form, setForm] = useState({
     nombre: initialName?.split(' ')[0] ?? '',

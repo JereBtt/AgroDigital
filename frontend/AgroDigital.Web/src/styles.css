@@ -313,6 +313,208 @@ button {
   padding: 22px;
 }
 
+.manager-welcome-page {
+  min-height: 100vh;
+  padding: 18px;
+}
+
+.manager-welcome-card {
+  min-height: calc(100vh - 36px);
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  border: 1px solid rgba(214, 229, 216, 0.95);
+  border-radius: 30px;
+  background: #eff8ef;
+  box-shadow: 0 24px 56px rgba(16, 49, 29, 0.12);
+  backdrop-filter: blur(14px);
+}
+
+.manager-welcome-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background:
+    linear-gradient(90deg, rgba(247, 251, 247, 0.94) 0%, rgba(247, 251, 247, 0.82) 38%, rgba(247, 251, 247, 0.32) 68%, rgba(247, 251, 247, 0.1) 100%),
+    linear-gradient(180deg, rgba(247, 251, 247, 0.86) 0%, rgba(247, 251, 247, 0.42) 40%, rgba(224, 244, 226, 0.16) 70%, rgba(17, 92, 45, 0.12) 100%);
+  pointer-events: none;
+}
+
+.manager-welcome-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 36%, rgba(8, 77, 39, 0.12));
+  pointer-events: none;
+}
+
+.manager-welcome-topbar {
+  position: relative;
+  z-index: 3;
+  min-height: 82px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px clamp(20px, 4vw, 44px);
+}
+
+.manager-welcome-topbar img {
+  width: min(170px, 48vw);
+  height: auto;
+}
+
+.manager-welcome-content {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.4fr);
+  gap: clamp(22px, 4vw, 48px);
+  align-items: center;
+  padding: clamp(22px, 5vw, 64px);
+  padding-top: clamp(12px, 2vw, 24px);
+}
+
+.manager-welcome-copy {
+  max-width: 860px;
+}
+
+.manager-welcome-kicker {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  border: 1px solid #bee4c4;
+  border-radius: 999px;
+  padding: 0 15px;
+  background: rgba(232, 246, 235, 0.88);
+  color: #18883b;
+  font-size: calc(13px * var(--text-scale));
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.manager-welcome-name {
+  display: block;
+  max-width: 760px;
+  margin-top: 18px;
+  color: #18883b;
+  font-size: calc(clamp(20px, 2.4vw, 30px) * var(--text-scale));
+  font-weight: 950;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.manager-welcome-copy h1 {
+  max-width: 780px;
+  margin: 12px 0 16px;
+  color: #07361e;
+  font-size: calc(clamp(42px, 5vw, 66px) * var(--text-scale));
+  line-height: 1;
+}
+
+.manager-welcome-copy p {
+  max-width: 700px;
+  margin: 0;
+  color: #53655a;
+  font-size: calc(19px * var(--text-scale));
+  font-weight: 850;
+  line-height: 1.48;
+}
+
+.manager-welcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.manager-welcome-cta {
+  min-width: min(300px, 100%);
+}
+
+.manager-welcome-panel {
+  position: relative;
+  z-index: 4;
+  display: grid;
+  gap: 18px;
+  border: 1px solid rgba(201, 226, 207, 0.92);
+  border-radius: 28px;
+  padding: clamp(20px, 3vw, 28px);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 22px 48px rgba(16, 49, 29, 0.12);
+  backdrop-filter: blur(12px);
+}
+
+.manager-welcome-badge {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  color: #07361e;
+  font-size: calc(24px * var(--text-scale));
+  font-weight: 950;
+}
+
+.manager-welcome-badge svg {
+  width: 68px;
+  height: 68px;
+  padding: 15px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #18883b, #56bd62);
+  color: #ffffff;
+  box-shadow: 0 18px 38px rgba(24, 136, 59, 0.28);
+}
+
+.manager-welcome-steps {
+  display: grid;
+  gap: 10px;
+}
+
+.manager-welcome-steps span {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #d8eadb;
+  border-radius: 16px;
+  padding: 0 14px;
+  background: #f7fbf8;
+  color: #12351f;
+  font-size: calc(14px * var(--text-scale));
+  font-weight: 900;
+}
+
+.manager-welcome-steps svg {
+  color: #18883b;
+  flex: 0 0 auto;
+}
+
+.manager-welcome-visual {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  z-index: 1;
+  opacity: 1;
+  pointer-events: none;
+}
+
+.manager-welcome-visual::before {
+  display: none;
+}
+
+.manager-welcome-visual img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center center;
+  filter: saturate(1.12) contrast(1.05);
+  transform: scale(1.02);
+}
+
 .manager-registration-page {
   min-height: 100vh;
   display: grid;
@@ -986,7 +1188,7 @@ button {
 
 .sidebar {
   height: calc(100vh - 36px);
-  min-height: 680px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -1048,7 +1250,8 @@ button {
 }
 
 .sidebar-header {
-  min-height: 126px;
+  flex: 0 0 auto;
+  min-height: 118px;
   display: grid;
   grid-template-columns: 1fr 44px;
   align-items: center;
@@ -1092,9 +1295,30 @@ button {
 .nav-icons {
   position: relative;
   z-index: 2;
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
   gap: 0;
   padding: 16px 22px 8px;
+  align-content: start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(24, 136, 59, 0.38) transparent;
+}
+
+.nav-icons::-webkit-scrollbar {
+  width: 8px;
+}
+
+.nav-icons::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nav-icons::-webkit-scrollbar-thumb {
+  background: rgba(24, 136, 59, 0.34);
+  border-radius: 999px;
+  border: 2px solid rgba(245, 251, 244, 0.86);
 }
 
 .nav-item {
@@ -1124,8 +1348,9 @@ button {
 }
 
 .sidebar-landscape {
-  height: clamp(260px, 34vh, 360px);
-  margin: auto 0 0;
+  flex: 0 0 auto;
+  height: clamp(116px, 18vh, 230px);
+  margin: 0;
   position: relative;
   overflow: hidden;
   border-radius: 0 0 26px 26px;
@@ -1157,22 +1382,33 @@ button {
 .logout-button {
   position: relative;
   z-index: 2;
-  height: 44px;
+  flex: 0 0 auto;
+  min-height: 54px;
   display: flex;
   align-items: center;
   gap: 12px;
-  border: 0;
-  background: transparent;
+  border: 1px solid rgba(207, 226, 211, 0.96);
+  background: rgba(255, 255, 255, 0.82);
   color: #0a4327;
   font-weight: 800;
-  margin: 0 22px 24px;
+  margin: 12px 22px 22px;
   padding: 0 22px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.62);
+  box-shadow: 0 -1px 0 rgba(206, 225, 210, 0.86), 0 12px 26px rgba(16, 49, 29, 0.08);
+}
+
+.logout-button::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -13px;
+  height: 1px;
+  background: rgba(197, 219, 202, 0.9);
 }
 
 .sidebar-collapsed .sidebar-header {
-  min-height: 104px;
+  min-height: 100px;
   grid-template-columns: 1fr;
   justify-items: center;
   gap: 6px;
@@ -1221,7 +1457,7 @@ button {
 }
 
 .sidebar-collapsed .nav-icons {
-  padding: 14px 0 8px;
+  padding: 12px 0 8px;
   justify-items: center;
 }
 
@@ -1244,10 +1480,12 @@ button {
   justify-content: center;
   width: 62px;
   height: 62px;
-  margin: auto auto 18px;
+  min-height: 62px;
+  margin: 10px auto 18px;
   padding: 0;
   color: #ffffff;
-  background: transparent;
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(7, 73, 41, 0.28);
 }
 
 .sidebar-collapsed .sidebar-landscape {
@@ -2816,6 +3054,15 @@ button {
     align-self: stretch;
   }
 
+  .manager-welcome-content {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .manager-welcome-panel {
+    max-width: 620px;
+  }
+
   .admin-page {
     margin: 12px;
     border-radius: 24px;
@@ -2937,6 +3184,43 @@ button {
   .manager-registration-page {
     gap: 12px;
     padding: 8px;
+  }
+
+  .manager-welcome-page {
+    padding: 8px;
+  }
+
+  .manager-welcome-card {
+    min-height: calc(100vh - 16px);
+    border-radius: 22px;
+  }
+
+  .manager-welcome-topbar {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 16px;
+  }
+
+  .manager-welcome-content {
+    gap: 18px;
+    padding: 18px 16px 28px;
+  }
+
+  .manager-welcome-copy h1 {
+    font-size: calc(38px * var(--text-scale));
+  }
+
+  .manager-welcome-copy p {
+    font-size: calc(16px * var(--text-scale));
+  }
+
+  .manager-welcome-panel {
+    border-radius: 22px;
+    padding: 16px;
+  }
+
+  .manager-welcome-visual {
+    height: 28%;
   }
 
   .manager-registration-header,
