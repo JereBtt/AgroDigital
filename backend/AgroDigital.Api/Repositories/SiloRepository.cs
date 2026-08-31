@@ -380,10 +380,10 @@ public class SiloRepository(IConfiguration configuration) : ISiloRepository
         await connection.OpenAsync();
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.AddWithValue("@ControlId", controlId);
-        command.Parameters.AddWithValue("@FechaAplicacion", request.FechaAplicacion.ToDateTime(TimeOnly.MinValue));
-        command.Parameters.AddWithValue("@Marca", request.Marca.Trim());
-        command.Parameters.AddWithValue("@Tipo", request.Tipo.Trim());
-        command.Parameters.AddWithValue("@CantidadAplicada", request.CantidadAplicada);
+        command.Parameters.AddWithValue("@FechaAplicacion", request.FechaAplicacion is null ? DBNull.Value : request.FechaAplicacion.Value.ToDateTime(TimeOnly.MinValue));
+        command.Parameters.AddWithValue("@Marca", string.IsNullOrWhiteSpace(request.Marca) ? DBNull.Value : request.Marca.Trim());
+        command.Parameters.AddWithValue("@Tipo", string.IsNullOrWhiteSpace(request.Tipo) ? DBNull.Value : request.Tipo.Trim());
+        command.Parameters.AddWithValue("@CantidadAplicada", (object?)request.CantidadAplicada ?? DBNull.Value);
 
         var insumoId = (int)(await command.ExecuteScalarAsync()
             ?? throw new InvalidOperationException("No se pudo agregar el insumo."));
@@ -393,8 +393,8 @@ public class SiloRepository(IConfiguration configuration) : ISiloRepository
             SiloControlInsumoId = insumoId,
             SiloControlId = controlId,
             FechaAplicacion = request.FechaAplicacion,
-            Marca = request.Marca.Trim(),
-            Tipo = request.Tipo.Trim(),
+            Marca = request.Marca?.Trim(),
+            Tipo = request.Tipo?.Trim(),
             CantidadAplicada = request.CantidadAplicada
         };
     }
@@ -570,10 +570,10 @@ public class SiloRepository(IConfiguration configuration) : ISiloRepository
         {
             SiloControlInsumoId = reader.GetInt32(0),
             SiloControlId = reader.GetInt32(1),
-            FechaAplicacion = DateOnly.FromDateTime(reader.GetDateTime(2)),
-            Marca = reader.GetString(3),
-            Tipo = reader.GetString(4),
-            CantidadAplicada = reader.GetDecimal(5)
+            FechaAplicacion = reader.IsDBNull(2) ? null : DateOnly.FromDateTime(reader.GetDateTime(2)),
+            Marca = reader.IsDBNull(3) ? null : reader.GetString(3),
+            Tipo = reader.IsDBNull(4) ? null : reader.GetString(4),
+            CantidadAplicada = reader.IsDBNull(5) ? null : reader.GetDecimal(5)
         };
     }
 }

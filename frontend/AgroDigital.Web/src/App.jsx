@@ -6,6 +6,7 @@ import profileCardLandscape from './assets/profile-card-landscape.png';
 import sidebarLandscapeCollapsed from './assets/sidebar-landscape-collapsed.png';
 import sidebarLandscapeExpanded from './assets/sidebar-landscape-expanded.png';
 import Silos from './Silos';
+import Siembras from './Siembras';
 import {
   BarChart3,
   Bell,
@@ -1247,7 +1248,7 @@ function App() {
             <CalendarDays size={23} />
             <span>Campañas</span>
           </button>
-          <button className="nav-item" type="button">
+          <button className={`nav-item ${activeModule === 'siembras' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('siembras'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
             <Sprout size={23} />
             <span>Siembras</span>
           </button>
@@ -1294,7 +1295,7 @@ function App() {
               <Home size={17} />
             </button>
             <button className="breadcrumb-link" type="button" onClick={activeModule === 'lotes' ? goToList : undefined}>
-                          {activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Equipos' : activeModule === 'silos' ? 'Silos' : 'Lotes'}
+                          {activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Equipos' : activeModule === 'silos' ? 'Silos' : activeModule === 'siembras' ? 'Siembras' : 'Lotes'}
             </button>
             {false && activeModule === 'users' && (
               <>
@@ -1379,6 +1380,8 @@ function App() {
           />
         ) : activeModule === 'silos' ? (
           <Silos session={session} lotes={lotes} />
+        ) : activeModule === 'siembras' ? (
+          <Siembras session={session} lotes={lotes} />
         ) : view === 'list' ? (
           <LotesList
             lotes={lotes}

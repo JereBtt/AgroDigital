@@ -361,10 +361,10 @@ export default function Silos({ session, lotes }) {
           method: 'POST',
           headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
-            fechaAplicacion: insumo.fechaAplicacion,
-            marca: insumo.marca,
-            tipo: insumo.tipo,
-            cantidadAplicada: Number(insumo.cantidadAplicada)
+            fechaAplicacion: insumo.fechaAplicacion || null,
+            marca: insumo.marca || null,
+            tipo: insumo.tipo || null,
+            cantidadAplicada: insumo.cantidadAplicada === '' ? null : Number(insumo.cantidadAplicada)
           })
         });
         if (!res.ok) throw new Error(`al agregar el insumo "${insumo.marca}" (status ${res.status}): ${await res.text()}`);
@@ -453,10 +453,10 @@ export default function Silos({ session, lotes }) {
           method: 'POST',
           headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
-            fechaAplicacion: insumoForm.fechaAplicacion,
-            marca: insumoForm.marca,
-            tipo: insumoForm.tipo,
-            cantidadAplicada: Number(insumoForm.cantidadAplicada)
+            fechaAplicacion: insumoForm.fechaAplicacion || null,
+            marca: insumoForm.marca || null,
+            tipo: insumoForm.tipo || null,
+            cantidadAplicada: insumoForm.cantidadAplicada === '' ? null : Number(insumoForm.cantidadAplicada)
           })
         });
         if (!response.ok) throw new Error(await response.text());
@@ -1270,15 +1270,15 @@ function SiloControlForm({
             <div className="create-grid">
               <label className="field">
                 Fecha de aplicacion <b>*</b>
-                <input type="date" required value={insumoForm.fechaAplicacion} onChange={(e) => onInsumoFieldChange('fechaAplicacion', e.target.value)} />
+                <input type="date" value={insumoForm.fechaAplicacion} onChange={(e) => onInsumoFieldChange('fechaAplicacion', e.target.value)} />
               </label>
               <label className="field">
                 Marca <b>*</b>
-                <input required value={insumoForm.marca} onChange={(e) => onInsumoFieldChange('marca', e.target.value)} />
+                <input value={insumoForm.marca} onChange={(e) => onInsumoFieldChange('marca', e.target.value)} />
               </label>
               <label className="field">
                 Tipo <b>*</b>
-                <select required value={insumoForm.tipo} onChange={(e) => onInsumoFieldChange('tipo', e.target.value)}>
+                <select value={insumoForm.tipo} onChange={(e) => onInsumoFieldChange('tipo', e.target.value)}>
                   <option value="">Seleccionar</option>
                   {TIPOS_INSUMO.map((tipo) => (
                     <option key={tipo} value={tipo}>{tipo}</option>
@@ -1287,7 +1287,7 @@ function SiloControlForm({
               </label>
               <label className="field">
                 Cantidad Aplicada <b>*</b>
-                <input type="number" step="0.01" required value={insumoForm.cantidadAplicada} onChange={(e) => onInsumoFieldChange('cantidadAplicada', e.target.value)} />
+                <input type="number" step="0.01" value={insumoForm.cantidadAplicada} onChange={(e) => onInsumoFieldChange('cantidadAplicada', e.target.value)} />
               </label>
             </div>
             <div className="form-actions">
@@ -1311,10 +1311,10 @@ function SiloControlForm({
           <tbody>
             {insumos.map((insumo) => (
               <tr key={insumo.siloControlInsumoId ?? insumo.tempId}>
-                <td>{insumo.fechaAplicacion}</td>
-                <td>{insumo.marca}</td>
-                <td>{insumo.tipo}</td>
-                <td>{insumo.cantidadAplicada}</td>
+                <td>{insumo.fechaAplicacion || '-'}</td>
+                <td>{insumo.marca || '-'}</td>
+                <td>{insumo.tipo || '-'}</td>
+                <td>{insumo.cantidadAplicada ?? '-'}</td>
                 <td className="actions-cell">
                   <button type="button" aria-label="Eliminar insumo" onClick={() => onEliminarInsumo(insumo)}>
                     <Trash2 size={18} />
@@ -1454,10 +1454,10 @@ function SiloControlDetalle({ silo, control, incidencias, insumos, documentos, o
           <tbody>
             {insumos.map((insumo) => (
               <tr key={insumo.siloControlInsumoId}>
-                <td>{insumo.fechaAplicacion}</td>
-                <td>{insumo.marca}</td>
-                <td>{insumo.tipo}</td>
-                <td>{insumo.cantidadAplicada}</td>
+                <td>{insumo.fechaAplicacion || '-'}</td>
+                <td>{insumo.marca || '-'}</td>
+                <td>{insumo.tipo || '-'}</td>
+                <td>{insumo.cantidadAplicada ?? '-'}</td>
               </tr>
             ))}
             {insumos.length === 0 && (

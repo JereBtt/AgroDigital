@@ -197,7 +197,7 @@ public class SilosController(ISiloRepository siloRepository, IAuthTokenService a
     {
         if (!TryGetAuthenticatedUser(out _, out var error)) return error;
 
-        if (string.IsNullOrWhiteSpace(request.Tipo) || !TiposInsumoValidos.Contains(request.Tipo))
+        if (!string.IsNullOrWhiteSpace(request.Tipo) && !TiposInsumoValidos.Contains(request.Tipo))
         {
             return BadRequest("Tipo de insumo invalido.");
         }
