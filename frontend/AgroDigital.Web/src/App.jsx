@@ -204,6 +204,17 @@ function formatDate(value) {
   return date.toLocaleDateString('es-AR');
 }
 
+const ROLE_LABELS = {
+  Gerente: 'Gerente',
+  Encargado: 'Encargado',
+  EmpleadoCampo: 'Empleado de campo',
+  EmpleadoAdministrativo: 'Empleado administrativo'
+};
+
+function formatRole(value) {
+  return ROLE_LABELS[value] ?? value ?? '-';
+}
+
 function adminAccountFromApi(account, passwordTemporal = null) {
   return {
     id: account.id,
@@ -231,6 +242,11 @@ function App() {
   const [managerContextError, setManagerContextError] = useState('');
   const [managerRequests, setManagerRequests] = useState([]);
   const [managerRequestsError, setManagerRequestsError] = useState('');
+  const [managerUsers, setManagerUsers] = useState([]);
+  const [managerUsersError, setManagerUsersError] = useState('');
+  const [managerUserSaving, setManagerUserSaving] = useState('');
+  const [managerTeamUsers, setManagerTeamUsers] = useState({});
+  const [managerTeamUsersLoading, setManagerTeamUsersLoading] = useState('');
   const [managerActionStatus, setManagerActionStatus] = useState('');
   const [managerTeamStatus, setManagerTeamStatus] = useState('');
   const [managerTeamError, setManagerTeamError] = useState('');
@@ -247,8 +263,6 @@ function App() {
   const [form, setForm] = useState(emptyForm);
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
-  const [sidebarClosing, setSidebarClosing] = useState(false);
-  const [sidebarTransitionMode, setSidebarTransitionMode] = useState('hover');
   const [accessibilityOpen, setAccessibilityOpen] = useState(false);
   const [textSize, setTextSize] = useState('small');
   const [availableZones, setAvailableZones] = useState(ARGENTINA_ZONES[emptyForm.provincia] ?? []);
@@ -262,8 +276,6 @@ function App() {
   const [profilePasswordError, setProfilePasswordError] = useState('');
   const [showManagerWelcome, setShowManagerWelcome] = useState(true);
   const userMenuRef = useRef(null);
-  const sidebarCollapseTimeoutRef = useRef(null);
-  const sidebarTransitionTimeoutRef = useRef(null);
 
   const areaM2 = useMemo(() => polygonAreaSquareMeters(form.coordenadas), [form.coordenadas]);
   const areaHa = areaM2 / 10000;
@@ -274,48 +286,8 @@ function App() {
       : extraHeaders;
   }
 
-  function handleSidebarEnter() {
-    if (sidebarCollapseTimeoutRef.current) {
-      window.clearTimeout(sidebarCollapseTimeoutRef.current);
-      sidebarCollapseTimeoutRef.current = null;
-    }
-
-    setSidebarTransitionMode('hover');
-    setSidebarClosing(false);
-    setSidebarCollapsed(false);
-  }
-
-  function handleSidebarLeave() {
-    if (sidebarCollapseTimeoutRef.current) {
-      window.clearTimeout(sidebarCollapseTimeoutRef.current);
-    }
-
-    setSidebarTransitionMode('hover');
-    setSidebarClosing(true);
-    sidebarCollapseTimeoutRef.current = window.setTimeout(() => {
-      setSidebarCollapsed(true);
-      sidebarCollapseTimeoutRef.current = null;
-      window.setTimeout(() => setSidebarClosing(false), 950);
-    }, 2000);
-  }
-
   function handleSidebarToggle() {
-    if (sidebarCollapseTimeoutRef.current) {
-      window.clearTimeout(sidebarCollapseTimeoutRef.current);
-      sidebarCollapseTimeoutRef.current = null;
-    }
-
-    if (sidebarTransitionTimeoutRef.current) {
-      window.clearTimeout(sidebarTransitionTimeoutRef.current);
-    }
-
-    setSidebarTransitionMode('fast');
-    setSidebarClosing(false);
     setSidebarCollapsed((current) => !current);
-    sidebarTransitionTimeoutRef.current = window.setTimeout(() => {
-      setSidebarTransitionMode('hover');
-      sidebarTransitionTimeoutRef.current = null;
-    }, 420);
   }
 
 
@@ -444,6 +416,50 @@ function App() {
     }
   }
 
+  async function loadManagerUsers() {
+    if (!session?.token || session.role !== 'Gerente') {
+      setManagerUsers([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/manager/usuarios`, {
+        headers: authHeaders()
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      const data = await response.json();
+      setManagerUsers(data);
+      setManagerUsersError('');
+    } catch (error) {
+      setManagerUsers([]);
+      setManagerUsersError(error.message.replace(/^"|"$/g, '') || 'No se pudieron cargar los usuarios del grupo.');
+    }
+  }
+
+  async function loadManagerTeamUsers(empresaId) {
+    if (!session?.token || !empresaId) return;
+
+    setManagerTeamUsersLoading(String(empresaId));
+    setManagerTeamError('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/manager/equipos/${empresaId}/usuarios`, {
+        headers: authHeaders()
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      const data = await response.json();
+      setManagerTeamUsers((current) => ({ ...current, [empresaId]: data }));
+    } catch (error) {
+      setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudieron cargar los usuarios del equipo.');
+    } finally {
+      setManagerTeamUsersLoading('');
+    }
+  }
+
   async function loadManagerContext() {
     if (!session?.token || session.role !== 'Gerente') {
       setManagerContext(null);
@@ -462,6 +478,7 @@ function App() {
       setManagerContextError('');
     } catch (error) {
       setManagerContext(null);
+      setManagerUsers([]);
       setManagerContextError(error.message.replace(/^"|"$/g, '') || 'No se pudo cargar el contexto del gerente.');
     }
   }
@@ -541,17 +558,6 @@ function App() {
   }, []);
 
   useEffect(() => {
-    return () => {
-      if (sidebarCollapseTimeoutRef.current) {
-        window.clearTimeout(sidebarCollapseTimeoutRef.current);
-      }
-      if (sidebarTransitionTimeoutRef.current) {
-        window.clearTimeout(sidebarTransitionTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
     if (session?.type !== 'manager-demo') {
       setLoading(false);
       return;
@@ -565,6 +571,7 @@ function App() {
     if (session?.type === 'manager-demo') {
       loadManagerContext();
       loadManagerRequests();
+      loadManagerUsers();
     }
   }, [session?.type, session?.token, session?.role]);
   useEffect(() => {
@@ -759,8 +766,10 @@ function App() {
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
       setManagerTeamStatus(data.mensaje ?? 'Equipo creado correctamente.');
+      setManagerTeamUsers({});
       await loadManagerContext();
       await loadManagerRequests();
+      await loadManagerUsers();
     } catch (error) {
       setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudo crear el equipo.');
     } finally {
@@ -784,8 +793,10 @@ function App() {
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
       setManagerTeamStatus(data.mensaje ?? 'Equipo actualizado correctamente.');
+      setManagerTeamUsers({});
       await loadManagerContext();
       await loadManagerRequests();
+      await loadManagerUsers();
     } catch (error) {
       setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudo actualizar el equipo.');
     } finally {
@@ -809,8 +820,10 @@ function App() {
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
       setManagerTeamStatus(data.mensaje ?? 'Equipo actualizado correctamente.');
+      setManagerTeamUsers({});
       await loadManagerContext();
       await loadManagerRequests();
+      await loadManagerUsers();
       await loadLotes();
     } catch (error) {
       setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudo actualizar el equipo.');
@@ -835,6 +848,7 @@ function App() {
       const data = await response.json();
       setManagerTeamStatus(data.mensaje ?? 'Equipo principal actualizado.');
       await loadManagerContext();
+      await loadManagerUsers();
       await loadLotes();
     } catch (error) {
       setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudo marcar el equipo como principal.');
@@ -881,8 +895,10 @@ function App() {
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
       setManagerActionStatus(data.mensaje ?? 'Solicitud aprobada correctamente.');
+      setManagerTeamUsers({});
       await loadManagerContext();
       await loadManagerRequests();
+      await loadManagerUsers();
     } catch (error) {
       setManagerRequestsError(error.message.replace(/^"|"$/g, '') || 'No se pudo aprobar la solicitud.');
     }
@@ -906,6 +922,33 @@ function App() {
       await loadManagerRequests();
     } catch (error) {
       setManagerRequestsError(error.message.replace(/^"|"$/g, '') || 'No se pudo resolver la solicitud.');
+    }
+  }
+
+  async function handleToggleManagerUserStatus(user) {
+    if (!session?.token || !user) return;
+    const action = user.activo ? 'deshabilitar' : 'habilitar';
+    setManagerActionStatus('');
+    setManagerUsersError('');
+    setManagerUserSaving(`${action}-${user.usuarioId}`);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/manager/usuarios/${user.usuarioId}/${action}`, {
+        method: 'POST',
+        headers: authHeaders()
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      const data = await response.json();
+      setManagerActionStatus(data.mensaje ?? 'Usuario actualizado correctamente.');
+      setManagerTeamUsers({});
+      await loadManagerUsers();
+      await loadManagerContext();
+    } catch (error) {
+      setManagerUsersError(error.message.replace(/^"|"$/g, '') || 'No se pudo actualizar el usuario.');
+    } finally {
+      setManagerUserSaving('');
     }
   }
 
@@ -1105,6 +1148,11 @@ function App() {
     setManagerContextError('');
     setManagerRequests([]);
     setManagerRequestsError('');
+    setManagerUsers([]);
+    setManagerUsersError('');
+    setManagerUserSaving('');
+    setManagerTeamUsers({});
+    setManagerTeamUsersLoading('');
     setManagerActionStatus('');
     setManagerTeamStatus('');
     setManagerTeamError('');
@@ -1216,8 +1264,8 @@ function App() {
   }
 
   return (
-    <main className={`app-frame ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${sidebarClosing ? 'sidebar-closing' : ''} sidebar-transition-${sidebarTransitionMode} text-size-${textSize}`}>
-      <aside className="sidebar" onMouseEnter={handleSidebarEnter} onMouseLeave={handleSidebarLeave}>
+    <main className={`app-frame ${sidebarCollapsed ? 'sidebar-collapsed' : ''} text-size-${textSize}`}>
+      <aside className="sidebar">
         <div className="sidebar-header">
           <div className="sidebar-brand">
             <img src={agroDigitalLogo} alt="AgroDigital" />
@@ -1355,16 +1403,19 @@ function App() {
         ) : activeModule === 'users' ? (
           <ManagerUsersPage
             context={managerContext}
-            error={managerContextError || managerRequestsError || otpError}
+            error={managerContextError || managerRequestsError || managerUsersError || otpError}
             generatedOtp={generatedOtp}
             copiedKey={copiedKey}
             loadingOtp={otpLoading}
             onGenerateOtp={handleGenerateOtp}
             onCopy={handleCopy}
             requests={managerRequests}
+            users={managerUsers}
+            userSaving={managerUserSaving}
             actionStatus={managerActionStatus}
             onApproveRequest={handleApproveUserRequest}
             onResolveRequest={handleResolveUserRequest}
+            onToggleUserStatus={handleToggleManagerUserStatus}
           />
         ) : activeModule === 'teams' ? (
           <ManagerTeamsPage
@@ -1372,10 +1423,13 @@ function App() {
             error={managerContextError || managerTeamError}
             status={managerTeamStatus}
             savingAction={managerTeamSaving}
+            teamUsers={managerTeamUsers}
+            loadingTeamUsers={managerTeamUsersLoading}
             onCreateTeam={handleCreateTeam}
             onUpdateTeam={handleUpdateTeam}
             onToggleTeamStatus={handleToggleTeamStatus}
             onSetPrincipalTeam={handleSetPrincipalTeam}
+            onLoadTeamUsers={loadManagerTeamUsers}
           />
         ) : activeModule === 'silos' ? (
           <Silos session={session} lotes={lotes} />
@@ -1862,11 +1916,11 @@ function JoinTeamPage({ error, status, onSubmit, onBack }) {
         <div>
           <span className="auth-kicker">Alta segura al grupo de gestión</span>
           <h1>Unite a un grupo de gestión</h1>
-          <p>Ingresá tus datos, el ID del grupo y la OTP que te compartió el gerente. Si todo coincide, se genera una solicitud pendiente de aprobación.</p>
+          <p>Ingresá tus datos, el código del grupo y la OTP que te compartió el gerente. Si todo coincide, se genera una solicitud pendiente de aprobación.</p>
         </div>
         <div className="join-flow-card">
           <span><KeyRound size={22} /></span>
-          <strong>ID + OTP de un solo uso</strong>
+          <strong>Código + OTP de un solo uso</strong>
           <p>La OTP vence a los 7 días y queda consumida al enviar la solicitud.</p>
         </div>
         <div className="auth-hero-visual" aria-hidden="true">
@@ -1874,6 +1928,25 @@ function JoinTeamPage({ error, status, onSubmit, onBack }) {
         </div>
       </div>
 
+      {status ? (
+        <section className="login-card join-card join-success-card">
+          <span className="join-success-icon">
+            <CheckCircle2 size={44} />
+          </span>
+          <div>
+            <strong>Solicitud enviada correctamente</strong>
+            <p>{status}</p>
+          </div>
+          <div className="join-success-detail">
+            <Users size={20} />
+            <span>El gerente va a revisar tus datos y definir tus permisos por equipo.</span>
+          </div>
+          <button className="primary-auth-button" type="button" onClick={onBack}>
+            <LogIn size={21} />
+            Volver al login
+          </button>
+        </section>
+      ) : (
       <form className="login-card join-card" onSubmit={submitJoinRequest}>
         <div className="login-card-header">
           <span className="login-icon">
@@ -1918,7 +1991,7 @@ function JoinTeamPage({ error, status, onSubmit, onBack }) {
 
         <div className="join-form-grid">
           <label className="auth-field">
-            <span>ID del grupo *</span>
+            <span>Código del grupo *</span>
             <div>
               <Users size={20} />
               <input value={form.grupoGestionCodigo} onChange={(event) => updateField('grupoGestionCodigo', event.target.value.toUpperCase())} placeholder="GG-WDUAWXZA" required />
@@ -1970,6 +2043,7 @@ function JoinTeamPage({ error, status, onSubmit, onBack }) {
           Volver al login
         </button>
       </form>
+      )}
     </section>
   );
 }
@@ -2227,7 +2301,7 @@ function ManagerRegistrationPage({ initialName, error, onSubmit, onLogout }) {
           <div className="registration-step-card">
             <Users size={29} />
             <strong>Se crea tu grupo de gestión</strong>
-            <span>Ese grupo tendrá un ID propio para invitar empleados con OTP en la próxima etapa.</span>
+            <span>Ese grupo tendrá un código propio para invitar empleados con OTP en la próxima etapa.</span>
           </div>
           <div className="registration-step-card">
             <Warehouse size={29} />
@@ -2343,7 +2417,7 @@ function AdminPanel({
       <div className="admin-summary-grid">
         <AdminSummaryCard icon={<UserPlus size={31} />} label="Accesos creados" value={accounts.length} helper="Credenciales gerente generadas" />
         <AdminSummaryCard icon={<KeyRound size={31} />} label="Primer ingreso pendiente" value={pendingAccounts} helper="Credenciales de un solo inicio" />
-        <AdminSummaryCard icon={<Users size={31} />} label="Registro gerente" value="ID" helper="El grupo se genera al completar datos" />
+        <AdminSummaryCard icon={<Users size={31} />} label="Registro gerente" value="Código" helper="El grupo se genera al completar datos" />
       </div>
 
       <div className="admin-workspace">
@@ -2394,7 +2468,7 @@ function AdminPanel({
                 Copiá la contraseña ahora: por seguridad se guarda solo su hash y no se puede recuperar al recargar.
               </p>
               <p className="credential-warning">
-                El ID de grupo de gestion se generara cuando el gerente complete su registro y cargue sus equipos/empresas.
+                El código de grupo de gestion se generara cuando el gerente complete su registro y cargue sus equipos/empresas.
               </p>
             </div>
           ) : (
@@ -2709,10 +2783,39 @@ function AccessibilityControl({ open, textSize, onToggle, onClose, onSelectSize 
 }
 
 
-function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp, onGenerateOtp, onCopy, requests = [], actionStatus, onApproveRequest, onResolveRequest }) {
+function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp, onGenerateOtp, onCopy, requests = [], users = [], userSaving, actionStatus, onApproveRequest, onResolveRequest, onToggleUserStatus }) {
   const empresas = context?.empresas ?? [];
+  const [userFilters, setUserFilters] = useState({
+    search: '',
+    estado: 'todos',
+    desde: '',
+    hasta: ''
+  });
   const principal = empresas.find((empresa) => empresa.esPrincipal);
   const solicitudesPendientes = requests.length;
+  const usuariosHabilitados = users.filter((user) => user.activo).length;
+  const usuariosDeshabilitados = users.filter((user) => !user.activo).length;
+  const filteredUsers = users.filter((user) => {
+    const search = normalizeSearchText(userFilters.search.trim());
+    const userDate = user.fechaAlta ? new Date(user.fechaAlta) : null;
+    const fromDate = userFilters.desde ? new Date(`${userFilters.desde}T00:00:00`) : null;
+    const toDate = userFilters.hasta ? new Date(`${userFilters.hasta}T23:59:59`) : null;
+    const matchesSearch = !search || normalizeSearchText([
+      user.nombre,
+      user.apellido,
+      user.correoElectronico,
+      user.telefono,
+      formatRole(user.rolGeneral),
+      ...(user.equipos ?? []).flatMap((team) => [team.empresaNombre, formatRole(team.rol)])
+    ].filter(Boolean).join(' ')).includes(search);
+    const matchesState = userFilters.estado === 'todos'
+      || (userFilters.estado === 'habilitados' && user.activo)
+      || (userFilters.estado === 'deshabilitados' && !user.activo);
+    const matchesFrom = !fromDate || (userDate && userDate >= fromDate);
+    const matchesTo = !toDate || (userDate && userDate <= toDate);
+
+    return matchesSearch && matchesState && matchesFrom && matchesTo;
+  });
   const otpExpiration = generatedOtp?.fechaVencimiento
     ? new Date(generatedOtp.fechaVencimiento).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
     : null;
@@ -2734,7 +2837,7 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
       {actionStatus && <p className="auth-success">{actionStatus}</p>}
 
       <div className="summary-grid users-summary-grid">
-        <SummaryCard icon={<Users size={30} />} label="Grupo de gestión" value={context?.grupoGestionCodigo ?? 'Sin ID'} helper="ID que se comparte junto a una OTP" />
+        <SummaryCard icon={<Users size={30} />} label="Grupo de gestión" value={context?.grupoGestionCodigo ?? 'Sin código'} helper="Código que se comparte junto a una OTP" />
         <SummaryCard icon={<Warehouse size={30} />} label="Empresa principal" value={principal?.nombre ?? 'Sin empresa'} helper="Contexto operativo seleccionado" />
         <SummaryCard icon={<ClipboardList size={30} />} label="Solicitudes pendientes" value={solicitudesPendientes} helper="Altas esperando aprobación" />
       </div>
@@ -2745,16 +2848,16 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
             <div className="card-heading-icon"><KeyRound size={18} /></div>
             <div>
               <h2>Invitación segura</h2>
-              <p>El empleado se une con el ID del grupo y una OTP de un solo uso.</p>
+              <p>El empleado se une con el código del grupo y una OTP de un solo uso.</p>
             </div>
           </div>
           <div className="otp-preview-card">
             <div className="otp-value-row">
               <div>
-                <span>ID de grupo</span>
+                <span>Código de grupo</span>
                 <strong>{context?.grupoGestionCodigo ?? 'Se carga al completar registro'}</strong>
               </div>
-              <button className={`otp-copy-button ${copiedKey === context?.grupoGestionCodigo ? 'copy-button-copied' : ''}`} type="button" onClick={() => onCopy(context?.grupoGestionCodigo)} disabled={!context?.grupoGestionCodigo} aria-label="Copiar ID de grupo">
+              <button className={`otp-copy-button ${copiedKey === context?.grupoGestionCodigo ? 'copy-button-copied' : ''}`} type="button" onClick={() => onCopy(context?.grupoGestionCodigo)} disabled={!context?.grupoGestionCodigo} aria-label="Copiar código de grupo">
                 {copiedKey === context?.grupoGestionCodigo ? <CheckCircle2 size={18} /> : <Copy size={18} />}
               </button>
             </div>
@@ -2806,7 +2909,7 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
           <div className="card-heading-icon"><UserPlus size={18} /></div>
           <div>
             <h2>Usuarios pendientes de aprobación</h2>
-            <p>Cuando un empleado use el ID y la OTP, su solicitud aparecerá acá para asignar rol por equipo.</p>
+            <p>Cuando un empleado use el código y la OTP, su solicitud aparecerá acá para asignar rol por equipo.</p>
           </div>
           <span className="points-count">{solicitudesPendientes} pendientes</span>
         </div>
@@ -2815,7 +2918,7 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
             <div className="pending-users-empty-row">
               <Users size={52} strokeWidth={1.8} />
               <strong>Aún no hay solicitudes pendientes</strong>
-              <span>Las nuevas solicitudes aparecerán en esta tabla para aprobar, rechazar o descartar.</span>
+              <span>Las nuevas solicitudes aparecerán en esta tabla para aprobar o rechazar.</span>
             </div>
           ) : (
             <div className="pending-request-list">
@@ -2826,16 +2929,127 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
           )}
         </div>
       </section>
+
+      <section className="dashboard-card users-card approved-users-card">
+        <div className="card-heading">
+          <div className="card-heading-icon"><Users size={18} /></div>
+          <div>
+            <h2>Usuarios del grupo</h2>
+            <p>Usuarios aprobados o deshabilitados, con sus accesos por equipo y rol.</p>
+          </div>
+          <span className="points-count">{usuariosHabilitados} habilitados · {usuariosDeshabilitados} deshabilitados</span>
+        </div>
+
+        <div className="approved-users-filters">
+          <label className="filter-search-field">
+            <Search size={18} />
+            <input
+              value={userFilters.search}
+              onChange={(event) => setUserFilters((current) => ({ ...current, search: event.target.value }))}
+              placeholder="Buscar por nombre, correo, equipo o rol..."
+            />
+          </label>
+          <label className="approved-filter-field">
+            <span>Estado</span>
+            <select value={userFilters.estado} onChange={(event) => setUserFilters((current) => ({ ...current, estado: event.target.value }))}>
+              <option value="todos">Todos</option>
+              <option value="habilitados">Habilitados</option>
+              <option value="deshabilitados">Deshabilitados</option>
+            </select>
+          </label>
+          <label className="approved-filter-field">
+            <span>Desde</span>
+            <input type="date" value={userFilters.desde} onChange={(event) => setUserFilters((current) => ({ ...current, desde: event.target.value }))} />
+          </label>
+          <label className="approved-filter-field">
+            <span>Hasta</span>
+            <input type="date" value={userFilters.hasta} onChange={(event) => setUserFilters((current) => ({ ...current, hasta: event.target.value }))} />
+          </label>
+          <button className="clear-users-filters-button" type="button" onClick={() => setUserFilters({ search: '', estado: 'todos', desde: '', hasta: '' })}>
+            <RotateCcw size={17} />
+            Limpiar
+          </button>
+        </div>
+
+        {users.length === 0 ? (
+          <div className="pending-users-empty-row approved-users-empty-row">
+            <Users size={52} strokeWidth={1.8} />
+            <strong>Aún no hay usuarios aprobados</strong>
+            <span>Cuando apruebes una solicitud, el usuario aparecerá en esta tabla.</span>
+          </div>
+        ) : filteredUsers.length === 0 ? (
+          <div className="pending-users-empty-row approved-users-empty-row">
+            <Search size={52} strokeWidth={1.8} />
+            <strong>No hay usuarios para esos filtros</strong>
+            <span>Ajustá la búsqueda, el estado o el rango de fechas para ver más resultados.</span>
+          </div>
+        ) : (
+          <div className="approved-users-table">
+            {filteredUsers.map((user) => (
+              <ApprovedUserRow key={user.usuarioId} user={user} saving={userSaving} onToggleStatus={onToggleUserStatus} />
+            ))}
+          </div>
+        )}
+      </section>
     </section>
   );
 }
 
+function ApprovedUserRow({ user, saving, onToggleStatus }) {
+  const fullName = `${user.nombre ?? ''} ${user.apellido ?? ''}`.trim() || user.correoElectronico;
+  const action = user.activo ? 'deshabilitar' : 'habilitar';
+  const isSaving = saving === `${action}-${user.usuarioId}`;
 
-function ManagerTeamsPage({ context, error, status, savingAction, onCreateTeam, onUpdateTeam, onToggleTeamStatus, onSetPrincipalTeam }) {
+  return (
+    <article className={`approved-user-row ${!user.activo ? 'approved-user-row-disabled' : ''}`}>
+      <span className="approved-user-avatar"><User size={23} /></span>
+      <div className="approved-user-main">
+        <strong>{fullName}</strong>
+        <small><Mail size={14} /> {user.correoElectronico}</small>
+        <small><Phone size={14} /> {user.telefono || 'Sin teléfono'}</small>
+      </div>
+      {user.tieneRolGeneral ? (
+        <div className="approved-user-meta">
+          <span className="approved-user-label">Rol general</span>
+          <em className="role-chip">{formatRole(user.rolGeneral)}</em>
+        </div>
+      ) : (
+        <div className="approved-user-meta approved-user-meta-empty">
+          <span className="approved-user-label">Rol por equipo</span>
+        </div>
+      )}
+      <div className="approved-user-teams">
+        {(user.equipos ?? []).map((team) => (
+          <span className={`team-role-pill ${team.activo ? '' : 'team-role-pill-disabled'}`} key={team.empresaId}>
+            <Building2 size={14} />
+            <strong>{team.empresaNombre}</strong>
+            <em>{formatRole(team.rol)}</em>
+          </span>
+        ))}
+      </div>
+      <div className="approved-user-status-actions">
+        <em className={user.activo ? 'company-active' : 'company-disabled'}>{user.activo ? 'Habilitado' : 'Deshabilitado'}</em>
+        <button
+          className={'team-action-button ' + (user.activo ? 'team-danger-action' : 'team-enable-action')}
+          type="button"
+          onClick={() => onToggleStatus(user)}
+          disabled={isSaving}
+        >
+          {isSaving ? <LoaderCircle className="spin-icon" size={16} /> : user.activo ? <Trash2 size={16} /> : <CheckCircle2 size={16} />}
+          {user.activo ? 'Deshabilitar' : 'Habilitar'}
+        </button>
+      </div>
+    </article>
+  );
+}
+
+
+function ManagerTeamsPage({ context, error, status, savingAction, teamUsers = {}, loadingTeamUsers, onCreateTeam, onUpdateTeam, onToggleTeamStatus, onSetPrincipalTeam, onLoadTeamUsers }) {
   const empresas = context?.empresas ?? [];
   const [teamName, setTeamName] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState('');
+  const [expandedTeamId, setExpandedTeamId] = useState(null);
   const activeTeams = empresas.filter((empresa) => empresa.activo);
   const disabledTeams = empresas.filter((empresa) => !empresa.activo);
   const principal = empresas.find((empresa) => empresa.esPrincipal);
@@ -2864,6 +3078,14 @@ function ManagerTeamsPage({ context, error, status, savingAction, onCreateTeam, 
     if (!editingId || !nombre) return;
     onUpdateTeam(editingId, nombre);
     cancelEdit();
+  }
+
+  function toggleTeamUsers(empresaId) {
+    setExpandedTeamId((current) => {
+      const next = current === empresaId ? null : empresaId;
+      if (next && !teamUsers[next]) onLoadTeamUsers(next);
+      return next;
+    });
   }
 
   return (
@@ -2973,6 +3195,10 @@ function ManagerTeamsPage({ context, error, status, savingAction, onCreateTeam, 
                         Editar
                       </button>
                     )}
+                    <button className="team-action-button" type="button" onClick={() => toggleTeamUsers(empresa.empresaId)}>
+                      {loadingTeamUsers === String(empresa.empresaId) ? <LoaderCircle className="spin-icon" size={16} /> : <Users size={16} />}
+                      {expandedTeamId === empresa.empresaId ? 'Ocultar usuarios' : 'Ver usuarios'}
+                    </button>
                     {!empresa.esPrincipal && empresa.activo && (
                       <button className="team-action-button" type="button" onClick={() => onSetPrincipalTeam(empresa.empresaId)} disabled={savingAction === 'principal-' + empresa.empresaId}>
                         {savingAction === 'principal-' + empresa.empresaId ? <LoaderCircle className="spin-icon" size={16} /> : <Home size={16} />}
@@ -2984,6 +3210,9 @@ function ManagerTeamsPage({ context, error, status, savingAction, onCreateTeam, 
                       {empresa.activo ? 'Deshabilitar' : 'Habilitar'}
                     </button>
                   </div>
+                  {expandedTeamId === empresa.empresaId && (
+                    <TeamUsersPanel users={teamUsers[empresa.empresaId] ?? []} loading={loadingTeamUsers === String(empresa.empresaId)} />
+                  )}
                 </article>
               );
             })}
@@ -2991,6 +3220,47 @@ function ManagerTeamsPage({ context, error, status, savingAction, onCreateTeam, 
         )}
       </section>
     </section>
+  );
+}
+
+function TeamUsersPanel({ users, loading }) {
+  if (loading) {
+    return (
+      <div className="team-users-panel">
+        <span className="team-users-loading"><LoaderCircle className="spin-icon" size={18} /> Cargando usuarios del equipo...</span>
+      </div>
+    );
+  }
+
+  if (users.length === 0) {
+    return (
+      <div className="team-users-panel team-users-panel-empty">
+        <Users size={34} />
+        <strong>Este equipo todavía no tiene usuarios vinculados</strong>
+      </div>
+    );
+  }
+
+  return (
+    <div className="team-users-panel">
+      {users.map((user) => {
+        const teamRole = user.equipos?.[0]?.rol ?? user.rolGeneral;
+        const accessActive = user.activo && (user.equipos?.[0]?.activo ?? true);
+        const fullName = `${user.nombre ?? ''} ${user.apellido ?? ''}`.trim() || user.correoElectronico;
+
+        return (
+          <article className="team-user-item" key={user.usuarioId}>
+            <span className="team-user-avatar"><User size={19} /></span>
+            <div>
+              <strong>{fullName}</strong>
+              <small>{user.correoElectronico}</small>
+            </div>
+            <em className="role-chip">{formatRole(teamRole)}</em>
+            <span className={accessActive ? 'company-active' : 'company-disabled'}>{accessActive ? 'Habilitado' : 'Deshabilitado'}</span>
+          </article>
+        );
+      })}
+    </div>
   );
 }
 
@@ -3149,9 +3419,6 @@ function PendingUserRequestCard({ request, empresas, onApprove, onResolve }) {
         <button className="reject-request-button" type="button" onClick={() => onResolve(request.solicitudUsuarioId, 'rechazar')}>
           <Trash2 size={18} />
           Rechazar
-        </button>
-        <button className="discard-request-button" type="button" onClick={() => onResolve(request.solicitudUsuarioId, 'descartar')}>
-          Descartar
         </button>
       </div>
     </article>

@@ -239,7 +239,7 @@ public sealed class AuthController : ControllerBase
             || string.IsNullOrWhiteSpace(grupoCodigo)
             || string.IsNullOrWhiteSpace(otpIngresada))
         {
-            return BadRequest("Completa tus datos personales, ID de grupo y OTP.");
+            return BadRequest("Completa tus datos personales, codigo de grupo y OTP.");
         }
 
         if (!EsCorreoValido(correo))
@@ -263,13 +263,13 @@ public sealed class AuthController : ControllerBase
         var grupo = await ObtenerGrupoGestionAsync(connection, grupoCodigo);
         if (grupo is null)
         {
-            return BadRequest("El ID de grupo o la OTP no son validos.");
+            return BadRequest("El codigo de grupo o la OTP no son validos.");
         }
 
         var otp = await ObtenerOtpValidaAsync(connection, grupo.Value.GrupoGestionId, otpIngresada);
         if (otp is null)
         {
-            return BadRequest("El ID de grupo o la OTP no son validos.");
+            return BadRequest("El codigo de grupo o la OTP no son validos.");
         }
 
         var usuarioExistente = await ObtenerUsuarioPorCorreoAsync(connection, correo);
