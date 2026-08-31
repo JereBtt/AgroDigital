@@ -5019,3 +5019,43 @@ button {
     padding: 18px;
   }
 }
+
+.ocupacion-chip {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: 13px;
+}
+.ocupacion-baja { background: #e5f6e9; color: #18883b; }
+.ocupacion-media { background: #fff3d6; color: #b8860b; }
+.ocupacion-alta { background: #fde3e1; color: #c0392b; }
+
+.ocupacion-bar-track {
+  width: 90px;
+  height: 160px;
+  border: 1px solid #e3ebe4;
+  border-radius: 12px;
+  background: #f4f8f4;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+.ocupacion-bar-fill {
+  width: 100%;
+  transition: height 0.3s ease;
+}
+.ocupacion-baja .ocupacion-bar-fill { background: #35a342; }
+.ocupacion-media .ocupacion-bar-fill { background: #f1b90c; }
+.ocupacion-alta .ocupacion-bar-fill { background: #d64545; }
+.ocupacion-bar-track span {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  text-align: center;
+  font-weight: 900;
+  color: #12351f;
+}

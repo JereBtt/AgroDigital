@@ -5,6 +5,7 @@ import agroDigitalLogo from './assets/agrodigital-logo.png';
 import profileCardLandscape from './assets/profile-card-landscape.png';
 import sidebarLandscapeCollapsed from './assets/sidebar-landscape-collapsed.png';
 import sidebarLandscapeExpanded from './assets/sidebar-landscape-expanded.png';
+import Silos from './Silos';
 import {
   BarChart3,
   Bell,
@@ -1254,7 +1255,7 @@ function App() {
             <MapIcon size={23} />
             <span>Cosechas</span>
           </button>
-          <button className="nav-item" type="button">
+                    <button className={`nav-item ${activeModule === 'silos' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('silos'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
             <Warehouse size={23} />
             <span>Silos</span>
           </button>
@@ -1293,7 +1294,7 @@ function App() {
               <Home size={17} />
             </button>
             <button className="breadcrumb-link" type="button" onClick={activeModule === 'lotes' ? goToList : undefined}>
-              {activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Equipos' : 'Lotes'}
+                          {activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Equipos' : activeModule === 'silos' ? 'Silos' : 'Lotes'}
             </button>
             {false && activeModule === 'users' && (
               <>
@@ -1376,6 +1377,8 @@ function App() {
             onToggleTeamStatus={handleToggleTeamStatus}
             onSetPrincipalTeam={handleSetPrincipalTeam}
           />
+        ) : activeModule === 'silos' ? (
+          <Silos session={session} lotes={lotes} />
         ) : view === 'list' ? (
           <LotesList
             lotes={lotes}
