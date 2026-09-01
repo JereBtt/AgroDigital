@@ -112,7 +112,6 @@ export default function Siembras({ session, lotes }) {
 
   const [seguimientos, setSeguimientos] = useState([]);
   const [seguimientoForm, setSeguimientoForm] = useState(getEmptySeguimientoForm);
-  const [editingSeguimientoId, setEditingSeguimientoId] = useState(null);
   const [activeSeguimientoId, setActiveSeguimientoId] = useState(null);
   const [seguimientoInsumoForm, setSeguimientoInsumoForm] = useState(emptyInsumoForm);
   const [seguimientoInsumos, setSeguimientoInsumos] = useState([]);
@@ -460,32 +459,33 @@ export default function Siembras({ session, lotes }) {
     }
   }
 
-  async function openSeguimiento(siembra) {
+  async function openHistorialSeguimiento(siembra) {
     setSelectedSiembra(siembra);
     setError('');
-    setSeguimientoForm(getEmptySeguimientoForm());
-    setEditingSeguimientoId(null);
-    setActiveSeguimientoId(null);
-    setSeguimientoInsumoForm(emptyInsumoForm);
-    setSeguimientoInsumos([]);
-    setSeguimientoDocumentos([]);
     await loadSeguimientos(siembra.siembraId);
-    setView('seguimiento');
+    setView('seguimientoHistorial');
   }
 
-  function backFromSeguimiento() {
+  function backFromHistorialSeguimiento() {
     setView('list');
     setSelectedSiembra(null);
     setError('');
     loadSiembras();
   }
 
-  function updateSeguimientoField(field, value) {
-    setSeguimientoForm((current) => ({ ...current, [field]: value }));
+  function openNuevoSeguimiento(siembra) {
+    setSelectedSiembra(siembra);
+    setActiveSeguimientoId(null);
+    setSeguimientoForm(getEmptySeguimientoForm());
+    setSeguimientoInsumoForm(emptyInsumoForm);
+    setSeguimientoInsumos([]);
+    setSeguimientoDocumentos([]);
+    setError('');
+    setView('seguimientoForm');
   }
 
-  function iniciarEdicionSeguimiento(seguimiento) {
-    setEditingSeguimientoId(seguimiento.siembraSeguimientoId);
+  async function openEditarSeguimiento(siembra, seguimiento) {
+    setSelectedSiembra(siembra);
     setActiveSeguimientoId(seguimiento.siembraSeguimientoId);
     setSeguimientoForm({
       fecha: toDateInput(seguimiento.fecha),
@@ -496,12 +496,20 @@ export default function Siembras({ session, lotes }) {
       aplicacionAgroquimicos: seguimiento.aplicacionAgroquimicos === null || seguimiento.aplicacionAgroquimicos === undefined ? '' : (seguimiento.aplicacionAgroquimicos ? 'Si' : 'No'),
       observaciones: seguimiento.observaciones || ''
     });
-    loadSeguimientoSubItems(selectedSiembra.siembraId, seguimiento.siembraSeguimientoId);
+    setSeguimientoInsumoForm(emptyInsumoForm);
+    setError('');
+    await loadSeguimientoSubItems(siembra.siembraId, seguimiento.siembraSeguimientoId);
+    setView('seguimientoForm');
   }
 
-  function cancelarEdicionSeguimiento() {
-    setEditingSeguimientoId(null);
-    setSeguimientoForm(getEmptySeguimientoForm());
+  function backFromSeguimientoForm() {
+    setView('seguimientoHistorial');
+    setError('');
+    if (selectedSiembra) loadSeguimientos(selectedSiembra.siembraId);
+  }
+
+  function updateSeguimientoField(field, value) {
+    setSeguimientoForm((current) => ({ ...current, [field]: value }));
   }
 
   function handlePickPuntoMapa(latlng) {
@@ -527,29 +535,53 @@ export default function Siembras({ session, lotes }) {
         observaciones: seguimientoForm.observaciones
       };
 
-      if (editingSeguimientoId) {
-        const response = await fetch(`${API_BASE_URL}/api/siembras/${selectedSiembra.siembraId}/seguimientos/${editingSeguimientoId}`, {
+      if (activeSeguimientoId) {
+        const response = await fetch(`${API_BASE_URL}/api/siembras/${selectedSiembra.siembraId}/seguimientos/${activeSeguimientoId}`, {
           method: 'PUT',
           headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(body)
         });
         if (!response.ok) throw new Error(`al guardar la recorrida (status ${response.status}): ${await response.text()}`);
-      } else {
-        const response = await fetch(`${API_BASE_URL}/api/siembras/${selectedSiembra.siembraId}/seguimientos`, {
-          method: 'POST',
-          headers: authHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify(body)
-        });
-        if (!response.ok) throw new Error(`al crear la recorrida (status ${response.status}): ${await response.text()}`);
-        const nueva = await response.json();
-        setActiveSeguimientoId(nueva.siembraSeguimientoId);
-        setSeguimientoInsumos([]);
-        setSeguimientoDocumentos([]);
+        backFromSeguimientoForm();
+        return;
       }
 
-      setSeguimientoForm(getEmptySeguimientoForm());
-      setEditingSeguimientoId(null);
-      await loadSeguimientos(selectedSiembra.siembraId);
+      const response = await fetch(`${API_BASE_URL}/api/siembras/${selectedSiembra.siembraId}/seguimientos`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) throw new Error(`al crear la recorrida (status ${response.status}): ${await response.text()}`);
+      const nueva = await response.json();
+      const seguimientoId = nueva.siembraSeguimientoId;
+
+      for (const insumo of seguimientoInsumos) {
+        const res = await fetch(`${API_BASE_URL}/api/siembras/${selectedSiembra.siembraId}/seguimientos/${seguimientoId}/insumos`, {
+          method: 'POST',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            fechaAplicacion: insumo.fechaAplicacion || null,
+            marca: insumo.marca || null,
+            tipo: insumo.tipo || null,
+            variedad: insumo.variedad || null,
+            cantidadAplicada: insumo.cantidadAplicada === '' ? null : Number(insumo.cantidadAplicada)
+          })
+        });
+        if (!res.ok) throw new Error(`al agregar el insumo "${insumo.marca || ''}" (status ${res.status}): ${await res.text()}`);
+      }
+
+      for (const documento of seguimientoDocumentos) {
+        const formData = new FormData();
+        formData.append('archivo', documento.file);
+        const res = await fetch(`${API_BASE_URL}/api/siembras/${selectedSiembra.siembraId}/seguimientos/${seguimientoId}/documentos`, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: formData
+        });
+        if (!res.ok) throw new Error(`al subir el documento "${documento.nombreArchivo}" (status ${res.status}): ${await res.text()}`);
+      }
+
+      backFromSeguimientoForm();
     } catch (err) {
       setError(`No se pudo guardar la recorrida: ${err.message}`);
     } finally {
@@ -563,14 +595,6 @@ export default function Siembras({ session, lotes }) {
         method: 'DELETE',
         headers: authHeaders()
       });
-      if (activeSeguimientoId === seguimiento.siembraSeguimientoId) {
-        setActiveSeguimientoId(null);
-        setSeguimientoInsumos([]);
-        setSeguimientoDocumentos([]);
-      }
-      if (editingSeguimientoId === seguimiento.siembraSeguimientoId) {
-        cancelarEdicionSeguimiento();
-      }
       await loadSeguimientos(selectedSiembra.siembraId);
     } catch (err) {
       setError(`No se pudo eliminar la recorrida: ${err.message}`);
@@ -584,7 +608,8 @@ export default function Siembras({ session, lotes }) {
         headers: authHeaders()
       });
       if (!response.ok) throw new Error(await response.text());
-      backFromSeguimiento();
+      setSelectedSiembra((current) => (current ? { ...current, estado: 'Finalizado' } : current));
+      await loadSeguimientos(selectedSiembra.siembraId);
     } catch (err) {
       setError(`No se pudo finalizar el seguimiento: ${err.message}`);
     }
@@ -592,74 +617,89 @@ export default function Siembras({ session, lotes }) {
 
   async function handleAgregarSeguimientoInsumo(event) {
     event.preventDefault();
-    if (!activeSeguimientoId) {
-      setError('Agrega o edita una recorrida primero para poder cargarle insumos.');
+
+    if (activeSeguimientoId) {
+      setError('');
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/siembras/${selectedSiembra.siembraId}/seguimientos/${activeSeguimientoId}/insumos`, {
+          method: 'POST',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            fechaAplicacion: seguimientoInsumoForm.fechaAplicacion || null,
+            marca: seguimientoInsumoForm.marca || null,
+            tipo: seguimientoInsumoForm.tipo || null,
+            variedad: seguimientoInsumoForm.variedad || null,
+            cantidadAplicada: seguimientoInsumoForm.cantidadAplicada === '' ? null : Number(seguimientoInsumoForm.cantidadAplicada)
+          })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        setSeguimientoInsumoForm(emptyInsumoForm);
+        await loadSeguimientoSubItems(selectedSiembra.siembraId, activeSeguimientoId);
+      } catch (err) {
+        setError(`No se pudo agregar el insumo: ${err.message}`);
+      }
       return;
     }
-    setError('');
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/siembras/${selectedSiembra.siembraId}/seguimientos/${activeSeguimientoId}/insumos`, {
-        method: 'POST',
-        headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-          fechaAplicacion: seguimientoInsumoForm.fechaAplicacion || null,
-          marca: seguimientoInsumoForm.marca || null,
-          tipo: seguimientoInsumoForm.tipo || null,
-          variedad: seguimientoInsumoForm.variedad || null,
-          cantidadAplicada: seguimientoInsumoForm.cantidadAplicada === '' ? null : Number(seguimientoInsumoForm.cantidadAplicada)
-        })
-      });
-      if (!response.ok) throw new Error(await response.text());
-      setSeguimientoInsumoForm(emptyInsumoForm);
-      await loadSeguimientoSubItems(selectedSiembra.siembraId, activeSeguimientoId);
-    } catch (err) {
-      setError(`No se pudo agregar el insumo: ${err.message}`);
-    }
+
+    setSeguimientoInsumos((current) => [...current, { tempId: nextTempId(), ...seguimientoInsumoForm }]);
+    setSeguimientoInsumoForm(emptyInsumoForm);
   }
 
   async function handleEliminarSeguimientoInsumo(insumo) {
-    try {
-      await fetch(`${API_BASE_URL}/api/siembras/${selectedSiembra.siembraId}/seguimientos/${activeSeguimientoId}/insumos/${insumo.seguimientoInsumoId}`, {
-        method: 'DELETE',
-        headers: authHeaders()
-      });
-      await loadSeguimientoSubItems(selectedSiembra.siembraId, activeSeguimientoId);
-    } catch (err) {
-      setError(`No se pudo eliminar el insumo: ${err.message}`);
+    if (activeSeguimientoId) {
+      try {
+        await fetch(`${API_BASE_URL}/api/siembras/${selectedSiembra.siembraId}/seguimientos/${activeSeguimientoId}/insumos/${insumo.seguimientoInsumoId}`, {
+          method: 'DELETE',
+          headers: authHeaders()
+        });
+        await loadSeguimientoSubItems(selectedSiembra.siembraId, activeSeguimientoId);
+      } catch (err) {
+        setError(`No se pudo eliminar el insumo: ${err.message}`);
+      }
+      return;
     }
+
+    setSeguimientoInsumos((current) => current.filter((i) => i.tempId !== insumo.tempId));
   }
 
   async function handleSubirSeguimientoDocumento(file) {
     if (!file) return;
-    if (!activeSeguimientoId) {
-      setError('Agrega o edita una recorrida primero para poder adjuntarle archivos.');
+
+    if (activeSeguimientoId) {
+      try {
+        const formData = new FormData();
+        formData.append('archivo', file);
+        const response = await fetch(`${API_BASE_URL}/api/siembras/${selectedSiembra.siembraId}/seguimientos/${activeSeguimientoId}/documentos`, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: formData
+        });
+        if (!response.ok) throw new Error(await response.text());
+        await loadSeguimientoSubItems(selectedSiembra.siembraId, activeSeguimientoId);
+      } catch (err) {
+        setError(`No se pudo subir el archivo: ${err.message}`);
+      }
       return;
     }
-    try {
-      const formData = new FormData();
-      formData.append('archivo', file);
-      const response = await fetch(`${API_BASE_URL}/api/siembras/${selectedSiembra.siembraId}/seguimientos/${activeSeguimientoId}/documentos`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: formData
-      });
-      if (!response.ok) throw new Error(await response.text());
-      await loadSeguimientoSubItems(selectedSiembra.siembraId, activeSeguimientoId);
-    } catch (err) {
-      setError(`No se pudo subir el archivo: ${err.message}`);
-    }
+
+    setSeguimientoDocumentos((current) => [...current, { tempId: nextTempId(), file, nombreArchivo: file.name }]);
   }
 
   async function handleEliminarSeguimientoDocumento(documento) {
-    try {
-      await fetch(`${API_BASE_URL}/api/siembras/${selectedSiembra.siembraId}/seguimientos/${activeSeguimientoId}/documentos/${documento.seguimientoDocumentoId}`, {
-        method: 'DELETE',
-        headers: authHeaders()
-      });
-      await loadSeguimientoSubItems(selectedSiembra.siembraId, activeSeguimientoId);
-    } catch (err) {
-      setError(`No se pudo eliminar el archivo: ${err.message}`);
+    if (activeSeguimientoId) {
+      try {
+        await fetch(`${API_BASE_URL}/api/siembras/${selectedSiembra.siembraId}/seguimientos/${activeSeguimientoId}/documentos/${documento.seguimientoDocumentoId}`, {
+          method: 'DELETE',
+          headers: authHeaders()
+        });
+        await loadSeguimientoSubItems(selectedSiembra.siembraId, activeSeguimientoId);
+      } catch (err) {
+        setError(`No se pudo eliminar el archivo: ${err.message}`);
+      }
+      return;
     }
+
+    setSeguimientoDocumentos((current) => current.filter((d) => d.tempId !== documento.tempId));
   }
 
   async function handleDescargarSeguimientoDocumento(documento, seguimientoId) {
@@ -689,7 +729,7 @@ export default function Siembras({ session, lotes }) {
   }
 
   function backFromDetalleSeguimiento() {
-    setView('seguimiento');
+    setView('seguimientoHistorial');
     setSeguimientoDetalle(null);
     setError('');
     if (selectedSiembra) loadSeguimientos(selectedSiembra.siembraId);
@@ -734,25 +774,30 @@ export default function Siembras({ session, lotes }) {
     );
   }
 
-  if (view === 'seguimiento') {
-    if (selectedSiembra?.estado === 'Finalizado') {
-      return (
-        <SeguimientoHistorial
-          siembra={selectedSiembra}
-          seguimientos={seguimientos}
-          onVerDetalle={openDetalleSeguimiento}
-          onBack={backFromSeguimiento}
-        />
-      );
-    }
-
+  if (view === 'seguimientoHistorial') {
     return (
-      <SeguimientoLive
+      <SeguimientoHistorialList
         siembra={selectedSiembra}
         seguimientos={seguimientos}
+        error={error}
+        onNuevo={() => openNuevoSeguimiento(selectedSiembra)}
+        onVer={openDetalleSeguimiento}
+        onEditar={(seguimiento) => openEditarSeguimiento(selectedSiembra, seguimiento)}
+        onEliminar={handleEliminarSeguimiento}
+        onFinalizar={handleFinalizarSeguimiento}
+        onBack={backFromHistorialSeguimiento}
+      />
+    );
+  }
+
+  if (view === 'seguimientoForm') {
+    const loteDeSiembra = lotes?.find((l) => String(l.loteId) === String(selectedSiembra?.loteId));
+    return (
+      <SeguimientoForm
+        siembra={selectedSiembra}
+        lotePoligono={loteDeSiembra?.coordenadas ?? []}
+        modoEdicion={Boolean(activeSeguimientoId)}
         seguimientoForm={seguimientoForm}
-        editingSeguimientoId={editingSeguimientoId}
-        activeSeguimientoId={activeSeguimientoId}
         insumoForm={seguimientoInsumoForm}
         insumos={seguimientoInsumos}
         documentos={seguimientoDocumentos}
@@ -761,25 +806,23 @@ export default function Siembras({ session, lotes }) {
         onFieldChange={updateSeguimientoField}
         onPickPunto={handlePickPuntoMapa}
         onGuardar={handleGuardarSeguimiento}
-        onEditar={iniciarEdicionSeguimiento}
-        onCancelarEdicion={cancelarEdicionSeguimiento}
-        onEliminar={handleEliminarSeguimiento}
-        onFinalizar={handleFinalizarSeguimiento}
         onInsumoFieldChange={(field, value) => setSeguimientoInsumoForm((current) => ({ ...current, [field]: value }))}
         onAgregarInsumo={handleAgregarSeguimientoInsumo}
         onEliminarInsumo={handleEliminarSeguimientoInsumo}
         onSubirDocumento={handleSubirSeguimientoDocumento}
         onDescargarDocumento={(doc) => handleDescargarSeguimientoDocumento(doc, activeSeguimientoId)}
         onEliminarDocumento={handleEliminarSeguimientoDocumento}
-        onBack={backFromSeguimiento}
+        onBack={backFromSeguimientoForm}
       />
     );
   }
 
   if (view === 'seguimientoDetalle') {
+    const loteDeSiembra = lotes?.find((l) => String(l.loteId) === String(selectedSiembra?.loteId));
     return (
       <SeguimientoDetalle
         siembra={selectedSiembra}
+        lotePoligono={loteDeSiembra?.coordenadas ?? []}
         seguimiento={seguimientoDetalle}
         insumos={seguimientoInsumos}
         documentos={seguimientoDocumentos}
@@ -797,7 +840,7 @@ export default function Siembras({ session, lotes }) {
       onAdd={startCreate}
       onEdit={openEdit}
       onView={openDetail}
-      onSeguimiento={openSeguimiento}
+      onSeguimiento={openHistorialSeguimiento}
     />
   );
 }
@@ -1335,7 +1378,7 @@ function SiembraDetalle({ siembra, insumos, documentos, onDescargarDocumento, on
   );
 }
 
-function SeguimientoMapa({ puntos, pendiente, onPick, readOnly }) {
+function SeguimientoMapa({ puntos, pendiente, poligono, onPick, readOnly }) {
   const mapNodeRef = useRef(null);
   const mapRef = useRef(null);
   const layerRef = useRef(L.layerGroup());
@@ -1387,6 +1430,15 @@ function SeguimientoMapa({ puntos, pendiente, onPick, readOnly }) {
 
     layerRef.current.clearLayers();
 
+    const poligonoOrdenado = (poligono ?? [])
+      .slice()
+      .sort((a, b) => a.orden - b.orden)
+      .map((c) => ({ lat: Number(c.latitud), lng: Number(c.longitud) }));
+
+    if (poligonoOrdenado.length >= 3) {
+      L.polygon(poligonoOrdenado, { color: '#1c8c3a', weight: 2, opacity: 0.9, fillOpacity: 0.08 }).addTo(layerRef.current);
+    }
+
     const todosLosPuntos = pendiente ? [...puntos, pendiente] : puntos;
 
     if (todosLosPuntos.length >= 2) {
@@ -1415,22 +1467,24 @@ function SeguimientoMapa({ puntos, pendiente, onPick, readOnly }) {
       }).addTo(layerRef.current);
     }
 
-    if (!initialFitDoneRef.current && todosLosPuntos.length > 0) {
+    const puntosParaEncuadrar = poligonoOrdenado.length >= 3 ? poligonoOrdenado : todosLosPuntos;
+
+    if (!initialFitDoneRef.current && puntosParaEncuadrar.length > 0) {
       initialFitDoneRef.current = true;
       window.setTimeout(() => {
         if (!mapRef.current) return;
         mapRef.current.invalidateSize();
-        if (todosLosPuntos.length === 1) {
-          mapRef.current.setView(todosLosPuntos[0], 16, { animate: false });
+        if (puntosParaEncuadrar.length === 1) {
+          mapRef.current.setView(puntosParaEncuadrar[0], 16, { animate: false });
           return;
         }
-        const bounds = L.latLngBounds(todosLosPuntos);
+        const bounds = L.latLngBounds(puntosParaEncuadrar);
         if (bounds.isValid()) {
           mapRef.current.fitBounds(bounds.pad(0.25), { animate: false, maxZoom: 17 });
         }
       }, 120);
     }
-  }, [puntos, pendiente]);
+  }, [puntos, pendiente, poligono]);
 
   return (
     <div className="map-box" style={{ height: 320, position: 'relative', borderRadius: 12, overflow: 'hidden' }}>
@@ -1448,108 +1502,30 @@ function SeguimientoMapa({ puntos, pendiente, onPick, readOnly }) {
   );
 }
 
-function SeguimientoLive({
-  siembra,
-  seguimientos,
-  seguimientoForm,
-  editingSeguimientoId,
-  activeSeguimientoId,
-  insumoForm,
-  insumos,
-  documentos,
-  saving,
-  error,
-  onFieldChange,
-  onPickPunto,
-  onGuardar,
-  onEditar,
-  onCancelarEdicion,
-  onEliminar,
-  onFinalizar,
-  onInsumoFieldChange,
-  onAgregarInsumo,
-  onEliminarInsumo,
-  onSubirDocumento,
-  onDescargarDocumento,
-  onEliminarDocumento,
-  onBack
-}) {
+function SeguimientoHistorialList({ siembra, seguimientos, error, onNuevo, onVer, onEditar, onEliminar, onFinalizar, onBack }) {
   if (!siembra) return null;
 
-  const puntosExistentes = seguimientos
-    .filter((s) => s.latitud != null && s.longitud != null && s.siembraSeguimientoId !== editingSeguimientoId)
-    .slice()
-    .reverse()
-    .map((s) => ({ lat: Number(s.latitud), lng: Number(s.longitud) }));
-
-  const puntoPendiente = seguimientoForm.latitud !== '' && seguimientoForm.longitud !== ''
-    ? { lat: Number(seguimientoForm.latitud), lng: Number(seguimientoForm.longitud) }
-    : null;
+  const finalizado = siembra.estado === 'Finalizado';
 
   return (
     <section className="content-panel create-panel">
       <div className="page-heading create-heading">
         <div>
-          <h1>Seguimiento {siembra.nombre}</h1>
+          <h1>Historial {siembra.nombre}</h1>
           <p>{siembra.loteNombre} - {siembra.producto}</p>
         </div>
+        {!finalizado && (
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button className="green-button" type="button" onClick={onNuevo}>Nuevo Seguimiento</button>
+            <button className="green-button" type="button" onClick={onFinalizar}>Finalizar Seguimiento</button>
+          </div>
+        )}
       </div>
 
       {error && <p style={{ color: '#c0392b', fontWeight: 700 }}>{error}</p>}
-
-      <div className="create-form-card dashboard-card">
-        <SeguimientoMapa puntos={puntosExistentes} pendiente={puntoPendiente} onPick={onPickPunto} readOnly={false} />
-
-        <form onSubmit={onGuardar}>
-          <div className="create-grid" style={{ marginTop: 16 }}>
-            <label className="field">
-              Fecha
-              <input type="date" value={seguimientoForm.fecha} onChange={(e) => onFieldChange('fecha', e.target.value)} />
-            </label>
-            <label className="field">
-              Longitud
-              <input readOnly value={seguimientoForm.longitud} placeholder="Se completa al tocar el mapa" />
-            </label>
-            <label className="field">
-              Latitud
-              <input readOnly value={seguimientoForm.latitud} placeholder="Se completa al tocar el mapa" />
-            </label>
-            <label className="field">
-              Incidencia
-              <select value={seguimientoForm.incidencia} onChange={(e) => onFieldChange('incidencia', e.target.value)}>
-                <option value="">Seleccionar</option>
-                {INCIDENCIAS_SEGUIMIENTO.map((valor) => <option key={valor} value={valor}>{valor}</option>)}
-              </select>
-            </label>
-            <label className="field">
-              Perdida Economica
-              <select value={seguimientoForm.perdidaEconomica} onChange={(e) => onFieldChange('perdidaEconomica', e.target.value)}>
-                <option value="">Seleccionar</option>
-                <option value="Si">Si</option>
-                <option value="No">No</option>
-              </select>
-            </label>
-            <label className="field">
-              Aplicacion de Agroquimicos
-              <select value={seguimientoForm.aplicacionAgroquimicos} onChange={(e) => onFieldChange('aplicacionAgroquimicos', e.target.value)}>
-                <option value="">Seleccionar</option>
-                <option value="Si">Si</option>
-                <option value="No">No</option>
-              </select>
-            </label>
-          </div>
-          <label className="field" style={{ marginTop: 16 }}>
-            Observaciones <b>*</b>
-            <input required value={seguimientoForm.observaciones} onChange={(e) => onFieldChange('observaciones', e.target.value)} />
-          </label>
-          <div className="form-actions">
-            <button className="green-button" type="submit">{editingSeguimientoId ? 'Actualizar' : 'Agregar'}</button>
-            {editingSeguimientoId && (
-              <button className="back-button" type="button" onClick={onCancelarEdicion}>Cancelar edicion</button>
-            )}
-          </div>
-        </form>
-      </div>
+      {finalizado && (
+        <p style={{ color: '#6b7280' }}>Este seguimiento ya fue finalizado: queda disponible solo para consulta.</p>
+      )}
 
       <div className="table-shell dashboard-card">
         <table className="lotes-table">
@@ -1567,7 +1543,7 @@ function SeguimientoLive({
           </thead>
           <tbody>
             {seguimientos.map((s) => (
-              <tr key={s.siembraSeguimientoId} style={s.siembraSeguimientoId === activeSeguimientoId ? { background: '#eef7ee' } : undefined}>
+              <tr key={s.siembraSeguimientoId}>
                 <td>{formatFecha(s.fecha)}</td>
                 <td>{s.longitud ?? '-'}</td>
                 <td>{s.latitud ?? '-'}</td>
@@ -1576,8 +1552,13 @@ function SeguimientoLive({
                 <td>{s.aplicacionAgroquimicos === null || s.aplicacionAgroquimicos === undefined ? '-' : s.aplicacionAgroquimicos ? 'Si' : 'No'}</td>
                 <td>{s.observaciones}</td>
                 <td className="actions-cell">
-                  <button type="button" aria-label="Eliminar recorrida" onClick={() => onEliminar(s)}><Trash2 size={18} /></button>
-                  <button type="button" aria-label="Editar recorrida" onClick={() => onEditar(s)}><Edit size={18} /></button>
+                  <button type="button" aria-label="Ver detalle" onClick={() => onVer(s)}><Eye size={18} /></button>
+                  {!finalizado && (
+                    <>
+                      <button type="button" aria-label="Editar recorrida" onClick={() => onEditar(s)}><Edit size={18} /></button>
+                      <button type="button" aria-label="Eliminar recorrida" onClick={() => onEliminar(s)}><Trash2 size={18} /></button>
+                    </>
+                  )}
                 </td>
               </tr>
             ))}
@@ -1588,10 +1569,98 @@ function SeguimientoLive({
         </table>
       </div>
 
+      <div className="form-actions">
+        <button className="back-button" type="button" onClick={onBack}>Volver</button>
+      </div>
+    </section>
+  );
+}
+
+function SeguimientoForm({
+  siembra,
+  lotePoligono,
+  modoEdicion,
+  seguimientoForm,
+  insumoForm,
+  insumos,
+  documentos,
+  saving,
+  error,
+  onFieldChange,
+  onPickPunto,
+  onGuardar,
+  onInsumoFieldChange,
+  onAgregarInsumo,
+  onEliminarInsumo,
+  onSubirDocumento,
+  onDescargarDocumento,
+  onEliminarDocumento,
+  onBack
+}) {
+  if (!siembra) return null;
+
+  const puntoPendiente = seguimientoForm.latitud !== '' && seguimientoForm.longitud !== ''
+    ? { lat: Number(seguimientoForm.latitud), lng: Number(seguimientoForm.longitud) }
+    : null;
+
+  return (
+    <section className="content-panel create-panel">
+      <div className="page-heading create-heading">
+        <div>
+          <h1>{modoEdicion ? 'Editar' : 'Nuevo'} Seguimiento {siembra.nombre}</h1>
+          <p>{siembra.loteNombre} - {siembra.producto}</p>
+        </div>
+      </div>
+
+      {error && <p style={{ color: '#c0392b', fontWeight: 700 }}>{error}</p>}
+
+      <div className="create-form-card dashboard-card">
+        <SeguimientoMapa puntos={[]} pendiente={puntoPendiente} poligono={lotePoligono} onPick={onPickPunto} readOnly={false} />
+
+        <div className="create-grid" style={{ marginTop: 16 }}>
+          <label className="field">
+            Fecha
+            <input type="date" value={seguimientoForm.fecha} onChange={(e) => onFieldChange('fecha', e.target.value)} />
+          </label>
+          <label className="field">
+            Longitud
+            <input readOnly value={seguimientoForm.longitud} placeholder="Se completa al tocar el mapa" />
+          </label>
+          <label className="field">
+            Latitud
+            <input readOnly value={seguimientoForm.latitud} placeholder="Se completa al tocar el mapa" />
+          </label>
+          <label className="field">
+            Incidencia
+            <select value={seguimientoForm.incidencia} onChange={(e) => onFieldChange('incidencia', e.target.value)}>
+              <option value="">Seleccionar</option>
+              {INCIDENCIAS_SEGUIMIENTO.map((valor) => <option key={valor} value={valor}>{valor}</option>)}
+            </select>
+          </label>
+          <label className="field">
+            Perdida Economica
+            <select value={seguimientoForm.perdidaEconomica} onChange={(e) => onFieldChange('perdidaEconomica', e.target.value)}>
+              <option value="">Seleccionar</option>
+              <option value="Si">Si</option>
+              <option value="No">No</option>
+            </select>
+          </label>
+          <label className="field">
+            Aplicacion de Agroquimicos
+            <select value={seguimientoForm.aplicacionAgroquimicos} onChange={(e) => onFieldChange('aplicacionAgroquimicos', e.target.value)}>
+              <option value="">Seleccionar</option>
+              <option value="Si">Si</option>
+              <option value="No">No</option>
+            </select>
+          </label>
+        </div>
+        <label className="field" style={{ marginTop: 16 }}>
+          Observaciones <b>*</b>
+          <input required value={seguimientoForm.observaciones} onChange={(e) => onFieldChange('observaciones', e.target.value)} />
+        </label>
+      </div>
+
       <h2>Insumos/Agroquimicos</h2>
-      {!activeSeguimientoId && (
-        <p style={{ color: '#6b7280', fontSize: 13 }}>Agrega o edita una recorrida arriba para poder cargarle insumos.</p>
-      )}
       <div className="create-form-card dashboard-card">
         <form onSubmit={onAgregarInsumo}>
           <div className="create-grid">
@@ -1620,7 +1689,7 @@ function SeguimientoLive({
             </label>
           </div>
           <div className="form-actions">
-            <button className="green-button" type="submit" disabled={!activeSeguimientoId}>Agregar</button>
+            <button className="green-button" type="submit">Agregar</button>
           </div>
         </form>
       </div>
@@ -1639,7 +1708,7 @@ function SeguimientoLive({
           </thead>
           <tbody>
             {insumos.map((insumo) => (
-              <tr key={insumo.seguimientoInsumoId}>
+              <tr key={insumo.seguimientoInsumoId ?? insumo.tempId}>
                 <td>{insumo.fechaAplicacion || '-'}</td>
                 <td>{insumo.marca || '-'}</td>
                 <td>{insumo.tipo || '-'}</td>
@@ -1659,7 +1728,7 @@ function SeguimientoLive({
 
       <h2>Documentacion</h2>
       <div className="create-form-card dashboard-card">
-        <input type="file" disabled={!activeSeguimientoId} onChange={(e) => onSubirDocumento(e.target.files?.[0])} />
+        <input type="file" onChange={(e) => onSubirDocumento(e.target.files?.[0])} />
         <div className="table-shell" style={{ marginTop: 16 }}>
           <table className="lotes-table">
             <thead>
@@ -1672,12 +1741,14 @@ function SeguimientoLive({
             </thead>
             <tbody>
               {documentos.map((doc) => (
-                <tr key={doc.seguimientoDocumentoId}>
+                <tr key={doc.seguimientoDocumentoId ?? doc.tempId}>
                   <td>{doc.nombreArchivo}</td>
-                  <td>{formatFecha(doc.fechaCarga)}</td>
+                  <td>{doc.fechaCarga ? formatFecha(doc.fechaCarga) : 'Pendiente de guardar'}</td>
                   <td>{doc.cargadoPor || '-'}</td>
                   <td className="actions-cell">
-                    <button type="button" aria-label="Descargar" onClick={() => onDescargarDocumento(doc)}><Download size={18} /></button>
+                    {doc.seguimientoDocumentoId && (
+                      <button type="button" aria-label="Descargar" onClick={() => onDescargarDocumento(doc)}><Download size={18} /></button>
+                    )}
                     <button type="button" aria-label="Eliminar" onClick={() => onEliminarDocumento(doc)}><Trash2 size={18} /></button>
                   </td>
                 </tr>
@@ -1691,70 +1762,16 @@ function SeguimientoLive({
       </div>
 
       <div className="form-actions">
-        <button className="green-button" type="button" onClick={onBack}>Guardar</button>
-        <button className="green-button" type="button" onClick={onFinalizar}>Finalizar Seguimiento</button>
+        <button className="green-button" type="button" disabled={saving} onClick={onGuardar}>
+          {saving ? 'Guardando...' : modoEdicion ? 'Guardar' : 'Registrar'}
+        </button>
         <button className="back-button" type="button" onClick={onBack}>Cancelar</button>
       </div>
     </section>
   );
 }
 
-function SeguimientoHistorial({ siembra, seguimientos, onVerDetalle, onBack }) {
-  if (!siembra) return null;
-
-  return (
-    <section className="content-panel create-panel">
-      <div className="page-heading create-heading">
-        <div>
-          <h1>Historial {siembra.nombre}</h1>
-          <p>{siembra.loteNombre} - {siembra.producto}</p>
-        </div>
-      </div>
-
-      <div className="table-shell dashboard-card">
-        <table className="lotes-table">
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Longitud</th>
-              <th>Latitud</th>
-              <th>Incidencias</th>
-              <th>Perdida Economica</th>
-              <th>Aplicacion de Agroquimicos</th>
-              <th>Observaciones</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {seguimientos.map((s) => (
-              <tr key={s.siembraSeguimientoId}>
-                <td>{formatFecha(s.fecha)}</td>
-                <td>{s.longitud ?? '-'}</td>
-                <td>{s.latitud ?? '-'}</td>
-                <td>{s.incidencia || '-'}</td>
-                <td>{s.perdidaEconomica === null || s.perdidaEconomica === undefined ? '-' : s.perdidaEconomica ? 'Si' : 'No'}</td>
-                <td>{s.aplicacionAgroquimicos === null || s.aplicacionAgroquimicos === undefined ? '-' : s.aplicacionAgroquimicos ? 'Si' : 'No'}</td>
-                <td>{s.observaciones}</td>
-                <td className="actions-cell">
-                  <button type="button" aria-label="Ver detalle" onClick={() => onVerDetalle(s)}><Eye size={18} /></button>
-                </td>
-              </tr>
-            ))}
-            {seguimientos.length === 0 && (
-              <tr><td colSpan={8} style={{ textAlign: 'center' }}>Sin recorridas registradas.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="form-actions">
-        <button className="back-button" type="button" onClick={onBack}>Volver</button>
-      </div>
-    </section>
-  );
-}
-
-function SeguimientoDetalle({ siembra, seguimiento, insumos, documentos, onDescargarDocumento, onBack }) {
+function SeguimientoDetalle({ siembra, lotePoligono, seguimiento, insumos, documentos, onDescargarDocumento, onBack }) {
   if (!siembra || !seguimiento) return null;
 
   const punto = seguimiento.latitud != null && seguimiento.longitud != null
@@ -1773,7 +1790,7 @@ function SeguimientoDetalle({ siembra, seguimiento, insumos, documentos, onDesca
       <div className="create-form-card dashboard-card">
         {punto.length > 0 && (
           <div style={{ marginBottom: 16 }}>
-            <SeguimientoMapa puntos={punto} pendiente={null} onPick={() => {}} readOnly />
+            <SeguimientoMapa puntos={punto} pendiente={null} poligono={lotePoligono} onPick={() => {}} readOnly />
           </div>
         )}
         <div className="create-grid">
