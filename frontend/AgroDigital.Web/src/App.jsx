@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import L from 'leaflet';
 import agroDigitalCompactLogo from './assets/agrodigital-compact-logo.png';
 import agroDigitalLogo from './assets/agrodigital-logo.png';
@@ -9,6 +10,7 @@ import Silos from './Silos';
 import Siembras from './Siembras';
 import {
   BarChart3,
+  Ban,
   Bell,
   Bot,
   Building2,
@@ -24,6 +26,7 @@ import {
   EyeOff,
   FileText,
   Filter,
+  GripVertical,
   Handshake,
   Home,
   KeyRound,
@@ -37,7 +40,6 @@ import {
   MapPin,
   Maximize2,
   Minimize2,
-  MoreVertical,
   MousePointerClick,
   PlusCircle,
   RotateCcw,
@@ -197,6 +199,170 @@ function lotePayloadFromForm(form, areaHa, areaM2) {
   };
 }
 
+function normalizeLoteFormForComparison(form, areaHa, areaM2) {
+  return {
+    nombre: form.nombre.trim(),
+    pais: form.pais.trim(),
+    provincia: form.provincia.trim(),
+    ciudad: form.ciudad.trim(),
+    condicion: form.condicion.trim(),
+    cerrado: Boolean(form.cerrado),
+    hectareas: Number(areaHa.toFixed(4)),
+    superficieTotal: Number(areaM2.toFixed(4)),
+    coordenadas: form.coordenadas.map((point) => ({
+      lat: Number(point.lat.toFixed(6)),
+      lng: Number(point.lng.toFixed(6))
+    }))
+  };
+}
+
+function hasLoteFormChanges(lote, form, areaHa, areaM2) {
+  if (!lote) return false;
+
+  const originalForm = formFromLote(lote);
+  const originalAreaM2 = polygonAreaSquareMeters(originalForm.coordenadas);
+  const originalAreaHa = originalAreaM2 / 10000;
+  const originalValue = normalizeLoteFormForComparison(originalForm, originalAreaHa, originalAreaM2);
+  const currentValue = normalizeLoteFormForComparison(form, areaHa, areaM2);
+
+  return JSON.stringify(originalValue) !== JSON.stringify(currentValue);
+}
+
+function moveArrayItem(items, fromIndex, toIndex) {
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= items.length || toIndex >= items.length) {
+    return items;
+  }
+
+  const reorderedItems = [...items];
+  const [movedItem] = reorderedItems.splice(fromIndex, 1);
+  reorderedItems.splice(toIndex, 0, movedItem);
+  return reorderedItems;
+}
+
+function useCoordinateDrag({ disabled = false, onMove }) {
+  const [draggingIndex, setDraggingIndex] = useState(null);
+  const [dropIndex, setDropIndex] = useState(null);
+  const autoScrollRef = useRef({ container: null, speed: 0 });
+  const scrollFrameRef = useRef(null);
+
+  const stopAutoScroll = useCallback(() => {
+    autoScrollRef.current = { container: null, speed: 0 };
+    if (scrollFrameRef.current) {
+      cancelAnimationFrame(scrollFrameRef.current);
+      scrollFrameRef.current = null;
+    }
+  }, []);
+
+  const runAutoScroll = useCallback(() => {
+    const { container, speed } = autoScrollRef.current;
+    if (!container || speed === 0) {
+      scrollFrameRef.current = null;
+      return;
+    }
+
+    container.scrollTop += speed;
+    scrollFrameRef.current = requestAnimationFrame(runAutoScroll);
+  }, []);
+
+  const updateAutoScroll = useCallback((event) => {
+    if (disabled || draggingIndex === null) return;
+
+    const container = event.currentTarget.closest?.('.scroll-area, .expanded-coordinate-list') ?? event.currentTarget;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const threshold = 78;
+    const maxSpeed = 18;
+    const topDistance = event.clientY - rect.top;
+    const bottomDistance = rect.bottom - event.clientY;
+    let speed = 0;
+
+    if (topDistance < threshold) {
+      speed = -Math.ceil((1 - Math.max(topDistance, 0) / threshold) * maxSpeed);
+    } else if (bottomDistance < threshold) {
+      speed = Math.ceil((1 - Math.max(bottomDistance, 0) / threshold) * maxSpeed);
+    }
+
+    autoScrollRef.current = { container, speed };
+
+    if (speed !== 0 && !scrollFrameRef.current) {
+      scrollFrameRef.current = requestAnimationFrame(runAutoScroll);
+    }
+
+    if (speed === 0) {
+      stopAutoScroll();
+    }
+  }, [disabled, draggingIndex, runAutoScroll, stopAutoScroll]);
+
+  const resetDrag = useCallback(() => {
+    setDraggingIndex(null);
+    setDropIndex(null);
+    stopAutoScroll();
+  }, [stopAutoScroll]);
+
+  useEffect(() => () => stopAutoScroll(), [stopAutoScroll]);
+
+  function readDraggedIndex(event) {
+    const rawIndex = event.dataTransfer.getData('application/x-agrodigital-point-index') || event.dataTransfer.getData('text/plain');
+    const parsedIndex = Number(rawIndex);
+    return Number.isInteger(parsedIndex) ? parsedIndex : null;
+  }
+
+  function getContainerProps() {
+    return {
+      onDragOver: (event) => {
+        if (disabled) return;
+        event.preventDefault();
+        updateAutoScroll(event);
+      },
+      onDragLeave: (event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          stopAutoScroll();
+        }
+      }
+    };
+  }
+
+  function getItemProps(index) {
+    if (disabled) {
+      return {};
+    }
+
+    return {
+      draggable: true,
+      onDragStart: (event) => {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('application/x-agrodigital-point-index', String(index));
+        event.dataTransfer.setData('text/plain', String(index));
+        setDraggingIndex(index);
+        setDropIndex(index);
+      },
+      onDragOver: (event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        setDropIndex(index);
+        updateAutoScroll(event);
+      },
+      onDrop: (event) => {
+        event.preventDefault();
+        const fromIndex = readDraggedIndex(event);
+        if (fromIndex !== null) {
+          onMove(fromIndex, index);
+        }
+        resetDrag();
+      },
+      onDragEnd: resetDrag
+    };
+  }
+
+  return {
+    containerProps: getContainerProps(),
+    getItemProps,
+    draggingIndex,
+    dropIndex
+  };
+}
+
 function formatDate(value) {
   if (!value) return '-';
   const date = new Date(value);
@@ -260,6 +426,7 @@ function App() {
   const [selectedLote, setSelectedLote] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loteStatusSaving, setLoteStatusSaving] = useState('');
   const [status, setStatus] = useState('Conectando...');
   const [form, setForm] = useState(emptyForm);
   const [isMapExpanded, setIsMapExpanded] = useState(false);
@@ -567,6 +734,21 @@ function App() {
     loadLotes();
   }, [session?.type, session?.token]);
 
+  useEffect(() => {
+    document.body.classList.toggle('agro-sidebar-collapsed', sidebarCollapsed);
+    return () => document.body.classList.remove('agro-sidebar-collapsed');
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    const textScaleBySize = {
+      small: '1',
+      medium: '1.12',
+      large: '1.24'
+    };
+
+    document.body.style.setProperty('--text-scale', textScaleBySize[textSize] ?? '1');
+    return () => document.body.style.removeProperty('--text-scale');
+  }, [textSize]);
 
   useEffect(() => {
     if (session?.type === 'manager-demo') {
@@ -728,6 +910,11 @@ function App() {
       return;
     }
 
+    if (!hasLoteFormChanges(selectedLote, form, areaHa, areaM2)) {
+      setStatus('No hay cambios para guardar.');
+      return;
+    }
+
     setSaving(true);
     setStatus('Guardando cambios del lote...');
 
@@ -747,6 +934,30 @@ function App() {
       setStatus(`No se pudo actualizar: ${error.message}`);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleToggleLoteStatus(lote) {
+    if (!session?.token || !lote) return;
+
+    const action = lote.activo ? 'deshabilitar' : 'habilitar';
+    setLoteStatusSaving(`${action}-${lote.loteId}`);
+    setStatus(`${lote.activo ? 'Deshabilitando' : 'Habilitando'} lote...`);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/lotes/${lote.loteId}/${action}`, {
+        method: 'POST',
+        headers: authHeaders()
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      await loadLotes();
+      setStatus(lote.activo ? 'Lote deshabilitado correctamente' : 'Lote habilitado correctamente');
+    } catch (error) {
+      setStatus(`No se pudo actualizar el lote: ${error.message.replace(/^"|"$/g, '')}`);
+    } finally {
+      setLoteStatusSaving('');
     }
   }
 
@@ -1443,6 +1654,8 @@ function App() {
             onAdd={startCreate}
             onView={(lote) => openLote(lote, 'detail')}
             onEdit={(lote) => openLote(lote, 'edit')}
+            onToggleStatus={handleToggleLoteStatus}
+            statusSaving={loteStatusSaving}
           />
         ) : view === 'create' ? (
           <LoteCreate
@@ -3480,36 +3693,53 @@ function OtpSecretCredential({ value, copied, onCopy }) {
     </div>
   );
 }
-function LotesList({ lotes, loading, onAdd, onView, onEdit }) {
+function LotesList({ lotes, loading, onAdd, onView, onEdit, onToggleStatus, statusSaving }) {
   const [query, setQuery] = useState('');
   const [conditionFilter, setConditionFilter] = useState('');
   const [zoneFilter, setZoneFilter] = useState('');
   const [provinceFilter, setProvinceFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('habilitados');
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [dateFromFilter, setDateFromFilter] = useState('');
+  const [dateToFilter, setDateToFilter] = useState('');
 
   const provinceOptions = useMemo(() => [...new Set(lotes.map((lote) => lote.provincia).filter(Boolean))], [lotes]);
   const zoneOptions = useMemo(() => [...new Set(lotes.map((lote) => lote.ciudad).filter(Boolean))], [lotes]);
-  const summary = useMemo(() => ({
-    total: lotes.length,
-    hectareasPropias: lotes
-      .filter((lote) => lote.condicion === 'Propio')
-      .reduce((sum, lote) => sum + Number(lote.hectareas ?? 0), 0),
-    hectareasAlquiladas: lotes
-      .filter((lote) => lote.condicion === 'Alquilado')
-      .reduce((sum, lote) => sum + Number(lote.hectareas ?? 0), 0)
-  }), [lotes]);
-  const filteredLotes = useMemo(() => lotes.filter((lote) => {
+  const statusFilteredLotes = useMemo(() => lotes.filter((lote) => (
+    statusFilter === 'habilitados' ? lote.activo : !lote.activo
+  )), [lotes, statusFilter]);
+  const filteredLotes = useMemo(() => statusFilteredLotes.filter((lote) => {
+    const createdAt = lote.fechaCreacion ? new Date(lote.fechaCreacion) : null;
+    const fromDate = dateFromFilter ? new Date(`${dateFromFilter}T00:00:00`) : null;
+    const toDate = dateToFilter ? new Date(`${dateToFilter}T23:59:59`) : null;
     const matchesQuery = normalizeSearchText(lote.nombre).includes(normalizeSearchText(query.trim()));
     const matchesCondition = !conditionFilter || lote.condicion === conditionFilter;
     const matchesZone = !zoneFilter || lote.ciudad === zoneFilter;
     const matchesProvince = !provinceFilter || lote.provincia === provinceFilter;
-    return matchesQuery && matchesCondition && matchesZone && matchesProvince;
-  }), [conditionFilter, lotes, provinceFilter, query, zoneFilter]);
+    const matchesDateFrom = !fromDate || (createdAt && createdAt >= fromDate);
+    const matchesDateTo = !toDate || (createdAt && createdAt <= toDate);
+    return matchesQuery && matchesCondition && matchesZone && matchesProvince && matchesDateFrom && matchesDateTo;
+  }), [conditionFilter, dateFromFilter, dateToFilter, provinceFilter, query, statusFilteredLotes, zoneFilter]);
+  const summary = useMemo(() => ({
+    total: filteredLotes.length,
+    hectareasTotales: filteredLotes
+      .reduce((sum, lote) => sum + Number(lote.hectareas ?? 0), 0),
+    hectareasPropias: filteredLotes
+      .filter((lote) => lote.condicion === 'Propio')
+      .reduce((sum, lote) => sum + Number(lote.hectareas ?? 0), 0),
+    hectareasAlquiladas: filteredLotes
+      .filter((lote) => lote.condicion === 'Alquilado')
+      .reduce((sum, lote) => sum + Number(lote.hectareas ?? 0), 0)
+  }), [filteredLotes]);
 
   function clearFilters() {
     setQuery('');
     setConditionFilter('');
     setZoneFilter('');
     setProvinceFilter('');
+    setDateFromFilter('');
+    setDateToFilter('');
+    setStatusFilter('habilitados');
   }
 
   return (
@@ -3525,13 +3755,30 @@ function LotesList({ lotes, loading, onAdd, onView, onEdit }) {
         </button>
       </div>
 
-      <div className="summary-grid">
+      <div className="summary-grid summary-grid-four">
         <SummaryCard icon={<MapIcon size={30} />} label="Total de lotes" value={summary.total} helper="Lotes registrados en el sistema" />
+        <SummaryCard icon={<Sprout size={30} />} label="Hectareas totales" value={`${formatHectares(summary.hectareasTotales)} ha`} helper="Superficie total de los lotes filtrados" />
         <SummaryCard icon={<Home size={30} />} label="Hectareas propias" value={`${formatHectares(summary.hectareasPropias)} ha`} helper="Superficie total con condicion propio" />
         <SummaryCard icon={<Handshake size={30} />} label="Hectareas alquiladas" value={`${formatHectares(summary.hectareasAlquiladas)} ha`} helper="Superficie total con condicion alquilado" />
       </div>
 
       <div className="filters-card">
+        <div className="status-segmented" role="group" aria-label="Estado de lotes">
+          <button
+            className={statusFilter === 'habilitados' ? 'status-segmented-active' : ''}
+            type="button"
+            onClick={() => setStatusFilter('habilitados')}
+          >
+            Habilitados
+          </button>
+          <button
+            className={statusFilter === 'deshabilitados' ? 'status-segmented-active' : ''}
+            type="button"
+            onClick={() => setStatusFilter('deshabilitados')}
+          >
+            Deshabilitados
+          </button>
+        </div>
         <label className="search-field">
           <Search size={21} />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nombre de lote..." />
@@ -3549,7 +3796,7 @@ function LotesList({ lotes, loading, onAdd, onView, onEdit }) {
           <option value="">Provincia</option>
           {provinceOptions.map((province) => <option key={province}>{province}</option>)}
         </select>
-        <button className="soft-filter-button" type="button">
+        <button className="soft-filter-button" type="button" onClick={() => setShowMoreFilters((current) => !current)}>
           <Filter size={17} />
           <span>Mas filtros</span>
         </button>
@@ -3557,6 +3804,18 @@ function LotesList({ lotes, loading, onAdd, onView, onEdit }) {
           <RotateCcw size={17} />
           <span>Limpiar</span>
         </button>
+        {showMoreFilters && (
+          <div className="extra-filters-row">
+            <label>
+              <span>Desde</span>
+              <input type="date" value={dateFromFilter} onChange={(event) => setDateFromFilter(event.target.value)} />
+            </label>
+            <label>
+              <span>Hasta</span>
+              <input type="date" value={dateToFilter} onChange={(event) => setDateToFilter(event.target.value)} />
+            </label>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -3620,7 +3879,19 @@ function LotesList({ lotes, loading, onAdd, onView, onEdit }) {
                     <td className="actions-cell">
                       <button type="button" aria-label={`Ver ${lote.nombre}`} onClick={() => onView(lote)}><Eye size={18} /></button>
                       <button type="button" aria-label={`Editar ${lote.nombre}`} onClick={() => onEdit(lote)}><Edit size={18} /></button>
-                      <button type="button" aria-label={`Mas acciones para ${lote.nombre}`}><MoreVertical size={18} /></button>
+                      <button
+                        className={`status-action-button ${lote.activo ? 'status-action-disable' : 'status-action-enable'}`}
+                        type="button"
+                        aria-label={`${lote.activo ? 'Deshabilitar' : 'Habilitar'} ${lote.nombre}`}
+                        title={lote.activo ? 'Deshabilitar lote' : 'Habilitar lote'}
+                        disabled={statusSaving === `deshabilitar-${lote.loteId}` || statusSaving === `habilitar-${lote.loteId}`}
+                        onClick={() => onToggleStatus(lote)}
+                      >
+                        {statusSaving === `deshabilitar-${lote.loteId}` || statusSaving === `habilitar-${lote.loteId}`
+                          ? <LoaderCircle className="spin" size={18} />
+                          : lote.activo ? <Ban size={18} /> : <CheckCircle2 size={18} />}
+                        <span>{lote.activo ? 'Deshabilitar' : 'Habilitar'}</span>
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -3633,7 +3904,7 @@ function LotesList({ lotes, loading, onAdd, onView, onEdit }) {
               <ChevronDown size={17} />
               <span>Volver</span>
             </button>
-            <span>Mostrando 1 a {filteredLotes.length} de {lotes.length} lotes</span>
+            <span>Mostrando 1 a {filteredLotes.length} de {statusFilteredLotes.length} lotes {statusFilter === 'habilitados' ? 'habilitados' : 'deshabilitados'}</span>
             <div className="pagination">
               <button type="button" disabled>{'<'}</button>
               <strong>1</strong>
@@ -3696,6 +3967,13 @@ function LoteCreate({
     const updatedPoints = form.coordenadas.filter((_, index) => index !== indexToDelete);
     onCoordinatesChange(updatedPoints, form.cerrado && updatedPoints.length >= 3);
   }
+
+  function moveCoordinate(fromIndex, toIndex) {
+    const updatedPoints = moveArrayItem(form.coordenadas, fromIndex, toIndex);
+    onCoordinatesChange(updatedPoints, form.cerrado && updatedPoints.length >= 3);
+  }
+
+  const coordinateDrag = useCoordinateDrag({ onMove: moveCoordinate });
 
   return (
     <section className="content-panel create-panel">
@@ -3783,10 +4061,15 @@ function LoteCreate({
               <MapTutorial />
             ) : (
               <>
-                <div className="scroll-area">
+                <div className="scroll-area" {...coordinateDrag.containerProps}>
                   {form.coordenadas.map((point, index) => (
-                    <div className="corner-card" key={`${point.lat}-${point.lng}-${index}`}>
+                    <div
+                      className={`corner-card corner-card-draggable ${coordinateDrag.dropIndex === index && coordinateDrag.draggingIndex !== index ? 'coordinate-drop-target' : ''} ${coordinateDrag.draggingIndex === index ? 'coordinate-dragging' : ''}`}
+                      key={`${point.lat}-${point.lng}-${index}`}
+                      {...coordinateDrag.getItemProps(index)}
+                    >
                       <div className="corner-card-header">
+                        <GripVertical className="drag-handle" size={18} />
                         <span className="point-number">{index + 1}</span>
                         <strong>Esquina {index + 1}</strong>
                         <button type="button" onClick={() => deleteCoordinate(index)} aria-label={`Eliminar esquina ${index + 1}`}>
@@ -3841,6 +4124,18 @@ function LoteDetailEdit({
     const updatedPoints = form.coordenadas.filter((_, index) => index !== indexToDelete);
     onCoordinatesChange(updatedPoints, form.cerrado && updatedPoints.length >= 3);
   }
+
+  function moveCoordinate(fromIndex, toIndex) {
+    if (isDetail) return;
+    const updatedPoints = moveArrayItem(form.coordenadas, fromIndex, toIndex);
+    onCoordinatesChange(updatedPoints, form.cerrado && updatedPoints.length >= 3);
+  }
+
+  const coordinateDrag = useCoordinateDrag({ disabled: isDetail, onMove: moveCoordinate });
+  const hasChanges = useMemo(
+    () => hasLoteFormChanges(lote, form, areaHa, areaM2),
+    [lote, form, areaHa, areaM2]
+  );
 
   if (!lote) {
     return (
@@ -3944,7 +4239,7 @@ function LoteDetailEdit({
                 </button>
               ) : (
                 <>
-                  <button className="green-button wide" disabled={saving} type="submit">
+                  <button className="green-button wide" disabled={saving || !hasChanges} type="submit">
                     <CheckCircle2 size={18} />
                     <span>{saving ? 'Guardando...' : 'Guardar cambios'}</span>
                   </button>
@@ -3972,10 +4267,15 @@ function LoteDetailEdit({
               <MapTutorial />
             ) : (
               <>
-                <div className="scroll-area">
+                <div className="scroll-area" {...coordinateDrag.containerProps}>
                   {form.coordenadas.map((point, index) => (
-                    <div className="corner-card" key={`${point.lat}-${point.lng}-${index}`}>
+                    <div
+                      className={`corner-card ${isDetail ? '' : 'corner-card-draggable'} ${coordinateDrag.dropIndex === index && coordinateDrag.draggingIndex !== index ? 'coordinate-drop-target' : ''} ${coordinateDrag.draggingIndex === index ? 'coordinate-dragging' : ''}`}
+                      key={`${point.lat}-${point.lng}-${index}`}
+                      {...coordinateDrag.getItemProps(index)}
+                    >
                       <div className="corner-card-header">
+                        {!isDetail && <GripVertical className="drag-handle" size={18} />}
                         <span className="point-number">{index + 1}</span>
                         <strong>Esquina {index + 1}</strong>
                         {!isDetail && (
@@ -4158,22 +4458,31 @@ function SearchableDropdown({ label, value, onChange, options, placeholder = 'Bu
 
 function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange, readOnly = false }) {
   const [expanded, setExpanded] = useState(false);
-  const mapNodeRef = useRef(null);
+  const [addingPoints, setAddingPoints] = useState(false);
+  const [mapNode, setMapNode] = useState(null);
   const mapRef = useRef(null);
-  const layerRef = useRef(L.layerGroup());
+  const layerRef = useRef(null);
   const baseLayersRef = useRef({});
   const pointsRef = useRef(points);
   const closedRef = useRef(closed);
   const readOnlyRef = useRef(readOnly);
+  const addingPointsRef = useRef(addingPoints);
   const initialFitDoneRef = useRef(false);
+  const selectedBaseLayerRef = useRef('hibrido');
+  const mapViewRef = useRef(null);
+  const coordinateDrag = useCoordinateDrag({ disabled: readOnly, onMove: movePoint });
 
   useEffect(() => {
     pointsRef.current = points;
     closedRef.current = closed;
     readOnlyRef.current = readOnly;
+    addingPointsRef.current = addingPoints;
+    if (!closed || readOnly) {
+      setAddingPoints(false);
+    }
     renderLayers();
     fitInitialBounds();
-  }, [points, closed, readOnly]);
+  }, [points, closed, readOnly, addingPoints]);
 
   useEffect(() => {
     onExpandedChange?.(expanded);
@@ -4181,25 +4490,23 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
     const previousHtmlOverflow = document.documentElement.style.overflow;
 
     if (expanded) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      document.body.classList.add('agro-map-expanded');
       document.body.style.overflow = 'hidden';
       document.documentElement.style.overflow = 'hidden';
     }
 
-    if (expanded && mapRef.current && baseLayersRef.current.calles) {
-      const map = mapRef.current;
-      Object.values(baseLayersRef.current).forEach((layer) => {
-        if (map.hasLayer(layer)) {
-          map.removeLayer(layer);
-        }
-      });
-      baseLayersRef.current.calles.addTo(map);
-      map.setMaxZoom(22);
-      map.invalidateSize();
+    if (expanded) {
+      requestAnimationFrame(() => mapRef.current?.invalidateSize());
+      setTimeout(() => mapRef.current?.invalidateSize(), 80);
+      setTimeout(() => mapRef.current?.invalidateSize(), 240);
+      setTimeout(() => mapRef.current?.invalidateSize(), 480);
+    } else {
+      setTimeout(() => mapRef.current?.invalidateSize(), 120);
     }
 
-    setTimeout(() => mapRef.current?.invalidateSize(), 120);
-
     return () => {
+      document.body.classList.remove('agro-map-expanded');
       document.body.style.overflow = previousBodyOverflow;
       document.documentElement.style.overflow = previousHtmlOverflow;
     };
@@ -4208,11 +4515,13 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
   useEffect(() => () => onExpandedChange?.(false), [onExpandedChange]);
 
   useEffect(() => {
-    if (!mapNodeRef.current || mapRef.current) return;
+    if (!mapNode) return;
 
-    const map = L.map(mapNodeRef.current, {
-      center: defaultCenter,
-      zoom: 16,
+    layerRef.current = L.layerGroup();
+    const savedView = mapViewRef.current;
+    const map = L.map(mapNode, {
+      center: savedView?.center ?? defaultCenter,
+      zoom: savedView?.zoom ?? 16,
       minZoom: 4,
       maxZoom: 22,
       zoomControl: true,
@@ -4242,8 +4551,7 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
       attribution: 'Labels © Esri'
     });
 
-    const hibrido = L.layerGroup([sateliteConEtiquetas, etiquetas]).addTo(map);
-    map.setMaxZoom(17);
+    const hibrido = L.layerGroup([sateliteConEtiquetas, etiquetas]);
     baseLayersRef.current = {
       calles,
       hibrido,
@@ -4256,9 +4564,23 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
       'Satelite limpio': sateliteLimpio
     };
 
+    const selectedLayerKey = selectedBaseLayerRef.current;
+    const selectedLayer = baseLayersRef.current[selectedLayerKey] ?? hibrido;
+    selectedLayer.addTo(map);
+    const selectedLayerIsSatellite = selectedLayerKey !== 'calles';
+    map.setMaxZoom(selectedLayerIsSatellite ? 17 : 22);
+    if (selectedLayerIsSatellite && map.getZoom() > 17) {
+      map.setZoom(17, { animate: false });
+    }
+
     L.control.layers(baseLayers, {}, { position: 'topright', collapsed: false }).addTo(map);
 
     map.on('baselayerchange', (event) => {
+      selectedBaseLayerRef.current = event.name === 'Calles y limites'
+        ? 'calles'
+        : event.name === 'Satelite limpio'
+          ? 'sateliteLimpio'
+          : 'hibrido';
       const isSatellite = event.name.includes('Satelite');
       map.setMaxZoom(isSatellite ? 17 : 22);
       if (isSatellite && map.getZoom() > 17) {
@@ -4271,7 +4593,11 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
       if (readOnlyRef.current) return;
 
       const currentPoints = pointsRef.current;
-      if (closedRef.current) return;
+      if (closedRef.current) {
+        if (!addingPointsRef.current) return;
+        onChange([...currentPoints, event.latlng], true);
+        return;
+      }
 
       if (currentPoints.length >= 3 && distanceMeters(event.latlng, currentPoints[0]) < 18) {
         onChange(currentPoints, true);
@@ -4293,13 +4619,20 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
     }, 180);
 
     return () => {
+      const center = map.getCenter();
+      mapViewRef.current = {
+        center: [center.lat, center.lng],
+        zoom: map.getZoom()
+      };
       map.remove();
       mapRef.current = null;
+      layerRef.current = null;
+      baseLayersRef.current = {};
     };
-  }, [onChange]);
+  }, [expanded, mapNode, onChange]);
 
   function renderLayers() {
-    if (!mapRef.current) return;
+    if (!mapRef.current || !layerRef.current) return;
 
     layerRef.current.clearLayers();
 
@@ -4372,32 +4705,75 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
   function resetMap() {
     onChange([], false);
     initialFitDoneRef.current = false;
+    setAddingPoints(false);
   }
 
   function deletePoint(indexToDelete) {
     const updatedPoints = points.filter((_, index) => index !== indexToDelete);
+    const shouldStayClosed = closed && updatedPoints.length >= 3;
+    onChange(updatedPoints, shouldStayClosed);
+    if (!shouldStayClosed) {
+      setAddingPoints(false);
+    }
+  }
+
+  function movePoint(fromIndex, toIndex) {
+    if (readOnly) return;
+    const updatedPoints = moveArrayItem(points, fromIndex, toIndex);
     onChange(updatedPoints, closed && updatedPoints.length >= 3);
   }
 
-  return (
+  function toggleExpandedMap() {
+    if (mapRef.current) {
+      const center = mapRef.current.getCenter();
+      mapViewRef.current = {
+        center: [center.lat, center.lng],
+        zoom: mapRef.current.getZoom()
+      };
+    }
+
+    if (!expanded) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }
+
+    setExpanded((current) => !current);
+  }
+
+  const mapContent = (
     <div className={`map-box ${expanded ? 'map-box-expanded' : ''} ${readOnly ? 'map-box-readonly' : ''}`}>
-      <div ref={mapNodeRef} className="map-canvas" />
+      <div ref={setMapNode} className="map-canvas" />
       <div className="map-help">
         <MapPin size={24} />
         <span>
           <strong>{readOnly ? 'Poligono del lote.' : closed ? 'Poligono cerrado.' : 'Marca las esquinas del lote.'}</strong>
-          {readOnly ? ' Consulta los vertices registrados.' : closed ? ' Podes mover los puntos.' : ' Toca el primer punto para cerrar.'}
+          {readOnly ? ' Consulta los vertices registrados.' : closed ? (addingPoints ? ' Hace clic para sumar vertices.' : ' Podes mover los puntos.') : ' Toca el primer punto para cerrar.'}
         </span>
       </div>
-      <button className="map-expand" type="button" onClick={() => setExpanded((current) => !current)}>
+      <button
+        className="map-expand"
+        type="button"
+        onClick={toggleExpandedMap}
+      >
         {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
         <span>{expanded ? 'Contraer' : 'Expandir'}</span>
       </button>
       {!readOnly && (
-        <button className="map-reset" type="button" onClick={resetMap}>
-          <Wand2 size={17} />
-          <span>Limpiar puntos</span>
-        </button>
+        <div className="map-edit-actions">
+          {closed && (
+            <button
+              className={`map-add-points ${addingPoints ? 'map-add-points-active' : ''}`}
+              type="button"
+              onClick={() => setAddingPoints((current) => !current)}
+            >
+              <PlusCircle size={17} />
+              <span>{addingPoints ? 'Finalizar agregado' : 'Agregar puntos'}</span>
+            </button>
+          )}
+          <button className="map-reset" type="button" onClick={resetMap}>
+            <Wand2 size={17} />
+            <span>Limpiar puntos</span>
+          </button>
+        </div>
       )}
       {expanded && (
         <div className="expanded-coordinates">
@@ -4420,9 +4796,14 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
           {points.length === 0 && (
             <p className="expanded-empty">Marca las esquinas del lote sobre el mapa.</p>
           )}
-          <div className="expanded-coordinate-list">
+          <div className="expanded-coordinate-list" {...coordinateDrag.containerProps}>
             {points.map((point, index) => (
-              <div className="expanded-coordinate-row" key={`${point.lat}-${point.lng}-${index}`}>
+              <div
+                className={`expanded-coordinate-row ${readOnly ? '' : 'expanded-coordinate-row-draggable'} ${coordinateDrag.dropIndex === index && coordinateDrag.draggingIndex !== index ? 'coordinate-drop-target' : ''} ${coordinateDrag.draggingIndex === index ? 'coordinate-dragging' : ''}`}
+                key={`${point.lat}-${point.lng}-${index}`}
+                {...coordinateDrag.getItemProps(index)}
+              >
+                {!readOnly && <GripVertical className="drag-handle" size={16} />}
                 <span className="point-number">{index + 1}</span>
                 <div>
                   <small>Latitud</small>
@@ -4444,6 +4825,14 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
       )}
     </div>
   );
+
+  return expanded ? createPortal(
+    <>
+      <div className="map-expanded-backdrop" />
+      {mapContent}
+    </>,
+    document.body
+  ) : mapContent;
 }
 
 export default App;
