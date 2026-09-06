@@ -242,6 +242,9 @@ function App() {
   const [selectedLote, setSelectedLote] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loteStatusSaving, setLoteStatusSaving] = useState('');
+  const [lotePendingDisable, setLotePendingDisable] = useState(null);
+  const [lotePendingEnable, setLotePendingEnable] = useState(null);
   const [status, setStatus] = useState('Conectando...');
   const [form, setForm] = useState(emptyForm);
   const [isMapExpanded, setIsMapExpanded] = useState(false);
@@ -738,6 +741,59 @@ function App() {
       setStatus(`No se pudo actualizar: ${error.message}`);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleToggleLoteStatus(lote) {
+    if (!session?.token || !lote) return false;
+
+    const action = lote.activo ? 'deshabilitar' : 'habilitar';
+    setLoteStatusSaving(`${action}-${lote.loteId}`);
+    setStatus(`${lote.activo ? 'Deshabilitando' : 'Habilitando'} lote...`);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/lotes/${lote.loteId}/${action}`, {
+        method: 'POST',
+        headers: authHeaders()
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      await loadLotes();
+      setStatus(lote.activo ? 'Lote deshabilitado correctamente' : 'Lote habilitado correctamente');
+      return true;
+    } catch (error) {
+      setStatus(`No se pudo actualizar el lote: ${error.message.replace(/^"|"$/g, '')}`);
+      return false;
+    } finally {
+      setLoteStatusSaving('');
+    }
+  }
+
+  function requestToggleLoteStatus(lote) {
+    if (lote?.activo) {
+      setLotePendingDisable(lote);
+      return;
+    }
+
+    setLotePendingEnable(lote);
+  }
+
+  async function confirmDisableLote() {
+    if (!lotePendingDisable) return;
+
+    const wasDisabled = await handleToggleLoteStatus(lotePendingDisable);
+    if (wasDisabled) {
+      setLotePendingDisable(null);
+    }
+  }
+
+  async function confirmEnableLote() {
+    if (!lotePendingEnable) return;
+
+    const wasEnabled = await handleToggleLoteStatus(lotePendingEnable);
+    if (wasEnabled) {
+      setLotePendingEnable(null);
     }
   }
 
@@ -1383,6 +1439,8 @@ function App() {
             onAdd={startCreate}
             onView={(lote) => openLote(lote, 'detail')}
             onEdit={(lote) => openLote(lote, 'edit')}
+            onToggleStatus={requestToggleLoteStatus}
+            statusSaving={loteStatusSaving}
           />
         ) : view === 'create' ? (
           <LoteCreate
@@ -1420,6 +1478,22 @@ function App() {
       </section>
 
       {floatingWidgets}
+      {lotePendingDisable && (
+        <DisableLoteConfirmation
+          lote={lotePendingDisable}
+          saving={loteStatusSaving === `deshabilitar-${lotePendingDisable.loteId}`}
+          onCancel={() => setLotePendingDisable(null)}
+          onConfirm={confirmDisableLote}
+        />
+      )}
+      {lotePendingEnable && (
+        <EnableLoteConfirmation
+          lote={lotePendingEnable}
+          saving={loteStatusSaving === `habilitar-${lotePendingEnable.loteId}`}
+          onCancel={() => setLotePendingEnable(null)}
+          onConfirm={confirmEnableLote}
+        />
+      )}
     </main>
   );
 }
@@ -3207,7 +3281,55 @@ function OtpSecretCredential({ value, copied, onCopy }) {
     </div>
   );
 }
-function LotesList({ lotes, loading, onAdd, onView, onEdit }) {
+function DisableLoteConfirmation({ lote, saving, onCancel, onConfirm }) {
+  return createPortal(
+    <div className="confirmation-modal-backdrop" role="presentation">
+      <section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="disable-lote-title" aria-describedby="disable-lote-description">
+        <span className="confirmation-modal-icon" aria-hidden="true"><Ban size={28} /></span>
+        <div>
+          <h2 id="disable-lote-title">¿Deshabilitar lote?</h2>
+          <p id="disable-lote-description">
+            Vas a deshabilitar <strong>{lote.nombre}</strong>. El lote dejará de estar disponible para nuevas operaciones, pero se conservará su historial.
+          </p>
+        </div>
+        <div className="confirmation-modal-actions">
+          <button className="confirmation-cancel-button" type="button" onClick={onCancel} disabled={saving}>Cancelar</button>
+          <button className="confirmation-danger-button" type="button" onClick={onConfirm} disabled={saving} autoFocus>
+            {saving ? <LoaderCircle className="spin" size={18} /> : <Ban size={18} />}
+            {saving ? 'Deshabilitando...' : 'Sí, deshabilitar'}
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+function EnableLoteConfirmation({ lote, saving, onCancel, onConfirm }) {
+  return createPortal(
+    <div className="confirmation-modal-backdrop" role="presentation">
+      <section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="enable-lote-title" aria-describedby="enable-lote-description">
+        <span className="confirmation-modal-icon confirmation-modal-icon-success" aria-hidden="true"><CheckCircle2 size={28} /></span>
+        <div>
+          <h2 id="enable-lote-title">¿Habilitar lote?</h2>
+          <p id="enable-lote-description">
+            Vas a habilitar <strong>{lote.nombre}</strong>. El lote volverá a estar disponible para registrar nuevas operaciones.
+          </p>
+        </div>
+        <div className="confirmation-modal-actions">
+          <button className="confirmation-cancel-button" type="button" onClick={onCancel} disabled={saving}>Cancelar</button>
+          <button className="confirmation-success-button" type="button" onClick={onConfirm} disabled={saving} autoFocus>
+            {saving ? <LoaderCircle className="spin" size={18} /> : <CheckCircle2 size={18} />}
+            {saving ? 'Habilitando...' : 'Sí, habilitar'}
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+function LotesList({ lotes, loading, onAdd, onView, onEdit, onToggleStatus, statusSaving }) {
   const [query, setQuery] = useState('');
   const [conditionFilter, setConditionFilter] = useState('');
   const [zoneFilter, setZoneFilter] = useState('');
@@ -3345,9 +3467,23 @@ function LotesList({ lotes, loading, onAdd, onView, onEdit }) {
                     </td>
                     <td>{Number(lote.hectareas).toLocaleString('es-AR', { maximumFractionDigits: 2 })} ha</td>
                     <td className="actions-cell">
-                      <button type="button" aria-label={`Ver ${lote.nombre}`} onClick={() => onView(lote)}><Eye size={18} /></button>
-                      <button type="button" aria-label={`Editar ${lote.nombre}`} onClick={() => onEdit(lote)}><Edit size={18} /></button>
-                      <button type="button" aria-label={`Mas acciones para ${lote.nombre}`}><MoreVertical size={18} /></button>
+                      <div className="actions-cell-content">
+                        <button type="button" aria-label={`Ver ${lote.nombre}`} onClick={() => onView(lote)}><Eye size={18} /></button>
+                        <button type="button" aria-label={`Editar ${lote.nombre}`} onClick={() => onEdit(lote)}><Edit size={18} /></button>
+                        <button
+                          className={`status-action-button ${lote.activo ? 'status-action-disable' : 'status-action-enable'}`}
+                          type="button"
+                          aria-label={`${lote.activo ? 'Deshabilitar' : 'Habilitar'} ${lote.nombre}`}
+                          title={lote.activo ? 'Deshabilitar lote' : 'Habilitar lote'}
+                          disabled={statusSaving === `deshabilitar-${lote.loteId}` || statusSaving === `habilitar-${lote.loteId}`}
+                          onClick={() => onToggleStatus(lote)}
+                        >
+                          {statusSaving === `deshabilitar-${lote.loteId}` || statusSaving === `habilitar-${lote.loteId}`
+                            ? <LoaderCircle className="spin" size={18} />
+                            : lote.activo ? <Ban size={18} /> : <CheckCircle2 size={18} />}
+                          <span>{lote.activo ? 'Deshabilitar' : 'Habilitar'}</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
