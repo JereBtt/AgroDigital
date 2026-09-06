@@ -1887,6 +1887,35 @@ button {
   gap: 10px;
 }
 
+.lotes-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.export-lotes-button {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 18px;
+  border: 1px solid #cfe2d3;
+  border-radius: 13px;
+  background: #eff8f1;
+  color: #187c37;
+  font-weight: 900;
+}
+
+.export-lotes-button:disabled {
+  cursor: not-allowed;
+  border-color: #e4eae5;
+  background: #f4f6f4;
+  color: #9ba69f;
+}
+
 .green-button.secondary {
   background: #18883b;
 }
