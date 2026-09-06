@@ -41,6 +41,22 @@ public class LotesController(ILoteRepository loteRepository, IAuthTokenService a
         return actualizado ? NoContent() : NotFound();
     }
 
+    [HttpPost("{loteId:int}/deshabilitar")]
+    public async Task<IActionResult> Deshabilitar(int loteId)
+    {
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        var actualizado = await loteRepository.CambiarEstadoAsync(loteId, false, usuario.UsuarioId, usuario.Rol == "Admin");
+        return actualizado ? Ok(new { mensaje = "Lote deshabilitado correctamente." }) : NotFound();
+    }
+
+    [HttpPost("{loteId:int}/habilitar")]
+    public async Task<IActionResult> Habilitar(int loteId)
+    {
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        var actualizado = await loteRepository.CambiarEstadoAsync(loteId, true, usuario.UsuarioId, usuario.Rol == "Admin");
+        return actualizado ? Ok(new { mensaje = "Lote habilitado correctamente." }) : NotFound();
+    }
+
     private bool TryGetAuthenticatedUser(out AuthenticatedUser usuario, out ActionResult error)
     {
         usuario = null!;

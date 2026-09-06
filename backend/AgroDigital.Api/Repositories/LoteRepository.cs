@@ -26,7 +26,7 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
                       AND ue.EmpresaId = l.EmpresaId
                       AND ue.Activo = 1
                )
-            ORDER BY l.LoteId, c.Orden;
+            ORDER BY l.FechaCreacion DESC, l.LoteId DESC, c.Orden;
             """;
 
         await using var connection = new SqlConnection(_connectionString);
@@ -189,6 +189,37 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
             await transaction.RollbackAsync();
             throw;
         }
+    }
+
+    public async Task<bool> CambiarEstadoAsync(int loteId, bool activo, int usuarioId, bool incluirTodos = false)
+    {
+        const string sql = """
+            UPDATE l
+            SET Activo = @Activo,
+                FechaModificacion = SYSDATETIME()
+            FROM dbo.Lotes AS l
+            WHERE l.LoteId = @LoteId
+              AND (
+                    @IncluirTodos = 1
+                    OR EXISTS (
+                        SELECT 1
+                        FROM dbo.UsuarioEmpresas AS ue
+                        WHERE ue.UsuarioId = @UsuarioId
+                          AND ue.EmpresaId = l.EmpresaId
+                          AND ue.Activo = 1
+                    )
+              );
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@LoteId", loteId);
+        command.Parameters.AddWithValue("@Activo", activo);
+        command.Parameters.AddWithValue("@UsuarioId", usuarioId);
+        command.Parameters.AddWithValue("@IncluirTodos", incluirTodos);
+
+        return await command.ExecuteNonQueryAsync() > 0;
     }
 
     private static async Task<int> ObtenerEmpresaPrincipalAsync(SqlConnection connection, SqlTransaction transaction, int usuarioId, bool incluirTodos)

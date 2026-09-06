@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import L from 'leaflet';
 import agroDigitalCompactLogo from './assets/agrodigital-compact-logo.png';
 import agroDigitalLogo from './assets/agrodigital-logo.png';
 import profileCardLandscape from './assets/profile-card-landscape.png';
 import sidebarLandscapeCollapsed from './assets/sidebar-landscape-collapsed.png';
 import sidebarLandscapeExpanded from './assets/sidebar-landscape-expanded.png';
+import Silos from './Silos';
+import Siembras from './Siembras';
 import {
   BarChart3,
+  Ban,
   Bell,
   Bot,
   Building2,
@@ -22,6 +26,7 @@ import {
   EyeOff,
   FileText,
   Filter,
+  GripVertical,
   Handshake,
   Home,
   KeyRound,
@@ -35,7 +40,6 @@ import {
   MapPin,
   Maximize2,
   Minimize2,
-  MoreVertical,
   MousePointerClick,
   PlusCircle,
   RotateCcw,
@@ -195,12 +199,187 @@ function lotePayloadFromForm(form, areaHa, areaM2) {
   };
 }
 
+function normalizeLoteFormForComparison(form, areaHa, areaM2) {
+  return {
+    nombre: form.nombre.trim(),
+    pais: form.pais.trim(),
+    provincia: form.provincia.trim(),
+    ciudad: form.ciudad.trim(),
+    condicion: form.condicion.trim(),
+    cerrado: Boolean(form.cerrado),
+    hectareas: Number(areaHa.toFixed(4)),
+    superficieTotal: Number(areaM2.toFixed(4)),
+    coordenadas: form.coordenadas.map((point) => ({
+      lat: Number(point.lat.toFixed(6)),
+      lng: Number(point.lng.toFixed(6))
+    }))
+  };
+}
+
+function hasLoteFormChanges(lote, form, areaHa, areaM2) {
+  if (!lote) return false;
+
+  const originalForm = formFromLote(lote);
+  const originalAreaM2 = polygonAreaSquareMeters(originalForm.coordenadas);
+  const originalAreaHa = originalAreaM2 / 10000;
+  const originalValue = normalizeLoteFormForComparison(originalForm, originalAreaHa, originalAreaM2);
+  const currentValue = normalizeLoteFormForComparison(form, areaHa, areaM2);
+
+  return JSON.stringify(originalValue) !== JSON.stringify(currentValue);
+}
+
+function moveArrayItem(items, fromIndex, toIndex) {
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= items.length || toIndex >= items.length) {
+    return items;
+  }
+
+  const reorderedItems = [...items];
+  const [movedItem] = reorderedItems.splice(fromIndex, 1);
+  reorderedItems.splice(toIndex, 0, movedItem);
+  return reorderedItems;
+}
+
+function useCoordinateDrag({ disabled = false, onMove }) {
+  const [draggingIndex, setDraggingIndex] = useState(null);
+  const [dropIndex, setDropIndex] = useState(null);
+  const autoScrollRef = useRef({ container: null, speed: 0 });
+  const scrollFrameRef = useRef(null);
+
+  const stopAutoScroll = useCallback(() => {
+    autoScrollRef.current = { container: null, speed: 0 };
+    if (scrollFrameRef.current) {
+      cancelAnimationFrame(scrollFrameRef.current);
+      scrollFrameRef.current = null;
+    }
+  }, []);
+
+  const runAutoScroll = useCallback(() => {
+    const { container, speed } = autoScrollRef.current;
+    if (!container || speed === 0) {
+      scrollFrameRef.current = null;
+      return;
+    }
+
+    container.scrollTop += speed;
+    scrollFrameRef.current = requestAnimationFrame(runAutoScroll);
+  }, []);
+
+  const updateAutoScroll = useCallback((event) => {
+    if (disabled || draggingIndex === null) return;
+
+    const container = event.currentTarget.closest?.('.scroll-area, .expanded-coordinate-list') ?? event.currentTarget;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const threshold = 78;
+    const maxSpeed = 18;
+    const topDistance = event.clientY - rect.top;
+    const bottomDistance = rect.bottom - event.clientY;
+    let speed = 0;
+
+    if (topDistance < threshold) {
+      speed = -Math.ceil((1 - Math.max(topDistance, 0) / threshold) * maxSpeed);
+    } else if (bottomDistance < threshold) {
+      speed = Math.ceil((1 - Math.max(bottomDistance, 0) / threshold) * maxSpeed);
+    }
+
+    autoScrollRef.current = { container, speed };
+
+    if (speed !== 0 && !scrollFrameRef.current) {
+      scrollFrameRef.current = requestAnimationFrame(runAutoScroll);
+    }
+
+    if (speed === 0) {
+      stopAutoScroll();
+    }
+  }, [disabled, draggingIndex, runAutoScroll, stopAutoScroll]);
+
+  const resetDrag = useCallback(() => {
+    setDraggingIndex(null);
+    setDropIndex(null);
+    stopAutoScroll();
+  }, [stopAutoScroll]);
+
+  useEffect(() => () => stopAutoScroll(), [stopAutoScroll]);
+
+  function readDraggedIndex(event) {
+    const rawIndex = event.dataTransfer.getData('application/x-agrodigital-point-index') || event.dataTransfer.getData('text/plain');
+    const parsedIndex = Number(rawIndex);
+    return Number.isInteger(parsedIndex) ? parsedIndex : null;
+  }
+
+  function getContainerProps() {
+    return {
+      onDragOver: (event) => {
+        if (disabled) return;
+        event.preventDefault();
+        updateAutoScroll(event);
+      },
+      onDragLeave: (event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          stopAutoScroll();
+        }
+      }
+    };
+  }
+
+  function getItemProps(index) {
+    if (disabled) {
+      return {};
+    }
+
+    return {
+      draggable: true,
+      onDragStart: (event) => {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('application/x-agrodigital-point-index', String(index));
+        event.dataTransfer.setData('text/plain', String(index));
+        setDraggingIndex(index);
+        setDropIndex(index);
+      },
+      onDragOver: (event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        setDropIndex(index);
+        updateAutoScroll(event);
+      },
+      onDrop: (event) => {
+        event.preventDefault();
+        const fromIndex = readDraggedIndex(event);
+        if (fromIndex !== null) {
+          onMove(fromIndex, index);
+        }
+        resetDrag();
+      },
+      onDragEnd: resetDrag
+    };
+  }
+
+  return {
+    containerProps: getContainerProps(),
+    getItemProps,
+    draggingIndex,
+    dropIndex
+  };
+}
+
 function formatDate(value) {
   if (!value) return '-';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '-';
 
   return date.toLocaleDateString('es-AR');
+}
+
+const ROLE_LABELS = {
+  Gerente: 'Gerente',
+  Encargado: 'Encargado',
+  EmpleadoCampo: 'Empleado de campo',
+  EmpleadoAdministrativo: 'Empleado administrativo'
+};
+
+function formatRole(value) {
+  return ROLE_LABELS[value] ?? value ?? '-';
 }
 
 function adminAccountFromApi(account, passwordTemporal = null) {
@@ -230,6 +409,11 @@ function App() {
   const [managerContextError, setManagerContextError] = useState('');
   const [managerRequests, setManagerRequests] = useState([]);
   const [managerRequestsError, setManagerRequestsError] = useState('');
+  const [managerUsers, setManagerUsers] = useState([]);
+  const [managerUsersError, setManagerUsersError] = useState('');
+  const [managerUserSaving, setManagerUserSaving] = useState('');
+  const [managerTeamUsers, setManagerTeamUsers] = useState({});
+  const [managerTeamUsersLoading, setManagerTeamUsersLoading] = useState('');
   const [managerActionStatus, setManagerActionStatus] = useState('');
   const [managerTeamStatus, setManagerTeamStatus] = useState('');
   const [managerTeamError, setManagerTeamError] = useState('');
@@ -249,8 +433,6 @@ function App() {
   const [form, setForm] = useState(emptyForm);
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
-  const [sidebarClosing, setSidebarClosing] = useState(false);
-  const [sidebarTransitionMode, setSidebarTransitionMode] = useState('hover');
   const [accessibilityOpen, setAccessibilityOpen] = useState(false);
   const [textSize, setTextSize] = useState('small');
   const [availableZones, setAvailableZones] = useState(ARGENTINA_ZONES[emptyForm.provincia] ?? []);
@@ -264,8 +446,6 @@ function App() {
   const [profilePasswordError, setProfilePasswordError] = useState('');
   const [showManagerWelcome, setShowManagerWelcome] = useState(true);
   const userMenuRef = useRef(null);
-  const sidebarCollapseTimeoutRef = useRef(null);
-  const sidebarTransitionTimeoutRef = useRef(null);
 
   const areaM2 = useMemo(() => polygonAreaSquareMeters(form.coordenadas), [form.coordenadas]);
   const areaHa = areaM2 / 10000;
@@ -276,48 +456,8 @@ function App() {
       : extraHeaders;
   }
 
-  function handleSidebarEnter() {
-    if (sidebarCollapseTimeoutRef.current) {
-      window.clearTimeout(sidebarCollapseTimeoutRef.current);
-      sidebarCollapseTimeoutRef.current = null;
-    }
-
-    setSidebarTransitionMode('hover');
-    setSidebarClosing(false);
-    setSidebarCollapsed(false);
-  }
-
-  function handleSidebarLeave() {
-    if (sidebarCollapseTimeoutRef.current) {
-      window.clearTimeout(sidebarCollapseTimeoutRef.current);
-    }
-
-    setSidebarTransitionMode('hover');
-    setSidebarClosing(true);
-    sidebarCollapseTimeoutRef.current = window.setTimeout(() => {
-      setSidebarCollapsed(true);
-      sidebarCollapseTimeoutRef.current = null;
-      window.setTimeout(() => setSidebarClosing(false), 950);
-    }, 2000);
-  }
-
   function handleSidebarToggle() {
-    if (sidebarCollapseTimeoutRef.current) {
-      window.clearTimeout(sidebarCollapseTimeoutRef.current);
-      sidebarCollapseTimeoutRef.current = null;
-    }
-
-    if (sidebarTransitionTimeoutRef.current) {
-      window.clearTimeout(sidebarTransitionTimeoutRef.current);
-    }
-
-    setSidebarTransitionMode('fast');
-    setSidebarClosing(false);
     setSidebarCollapsed((current) => !current);
-    sidebarTransitionTimeoutRef.current = window.setTimeout(() => {
-      setSidebarTransitionMode('hover');
-      sidebarTransitionTimeoutRef.current = null;
-    }, 420);
   }
 
 
@@ -446,6 +586,50 @@ function App() {
     }
   }
 
+  async function loadManagerUsers() {
+    if (!session?.token || session.role !== 'Gerente') {
+      setManagerUsers([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/manager/usuarios`, {
+        headers: authHeaders()
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      const data = await response.json();
+      setManagerUsers(data);
+      setManagerUsersError('');
+    } catch (error) {
+      setManagerUsers([]);
+      setManagerUsersError(error.message.replace(/^"|"$/g, '') || 'No se pudieron cargar los usuarios del grupo.');
+    }
+  }
+
+  async function loadManagerTeamUsers(empresaId) {
+    if (!session?.token || !empresaId) return;
+
+    setManagerTeamUsersLoading(String(empresaId));
+    setManagerTeamError('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/manager/equipos/${empresaId}/usuarios`, {
+        headers: authHeaders()
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      const data = await response.json();
+      setManagerTeamUsers((current) => ({ ...current, [empresaId]: data }));
+    } catch (error) {
+      setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudieron cargar los usuarios del equipo.');
+    } finally {
+      setManagerTeamUsersLoading('');
+    }
+  }
+
   async function loadManagerContext() {
     if (!session?.token || session.role !== 'Gerente') {
       setManagerContext(null);
@@ -464,6 +648,7 @@ function App() {
       setManagerContextError('');
     } catch (error) {
       setManagerContext(null);
+      setManagerUsers([]);
       setManagerContextError(error.message.replace(/^"|"$/g, '') || 'No se pudo cargar el contexto del gerente.');
     }
   }
@@ -543,17 +728,6 @@ function App() {
   }, []);
 
   useEffect(() => {
-    return () => {
-      if (sidebarCollapseTimeoutRef.current) {
-        window.clearTimeout(sidebarCollapseTimeoutRef.current);
-      }
-      if (sidebarTransitionTimeoutRef.current) {
-        window.clearTimeout(sidebarTransitionTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
     if (session?.type !== 'manager-demo') {
       setLoading(false);
       return;
@@ -562,11 +736,27 @@ function App() {
     loadLotes();
   }, [session?.type, session?.token]);
 
+  useEffect(() => {
+    document.body.classList.toggle('agro-sidebar-collapsed', sidebarCollapsed);
+    return () => document.body.classList.remove('agro-sidebar-collapsed');
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    const textScaleBySize = {
+      small: '1',
+      medium: '1.12',
+      large: '1.24'
+    };
+
+    document.body.style.setProperty('--text-scale', textScaleBySize[textSize] ?? '1');
+    return () => document.body.style.removeProperty('--text-scale');
+  }, [textSize]);
 
   useEffect(() => {
     if (session?.type === 'manager-demo') {
       loadManagerContext();
       loadManagerRequests();
+      loadManagerUsers();
     }
   }, [session?.type, session?.token, session?.role]);
   useEffect(() => {
@@ -722,6 +912,11 @@ function App() {
       return;
     }
 
+    if (!hasLoteFormChanges(selectedLote, form, areaHa, areaM2)) {
+      setStatus('No hay cambios para guardar.');
+      return;
+    }
+
     setSaving(true);
     setStatus('Guardando cambios del lote...');
 
@@ -782,8 +977,7 @@ function App() {
   async function confirmDisableLote() {
     if (!lotePendingDisable) return;
 
-    const wasDisabled = await handleToggleLoteStatus(lotePendingDisable);
-    if (wasDisabled) {
+    if (await handleToggleLoteStatus(lotePendingDisable)) {
       setLotePendingDisable(null);
     }
   }
@@ -791,8 +985,7 @@ function App() {
   async function confirmEnableLote() {
     if (!lotePendingEnable) return;
 
-    const wasEnabled = await handleToggleLoteStatus(lotePendingEnable);
-    if (wasEnabled) {
+    if (await handleToggleLoteStatus(lotePendingEnable)) {
       setLotePendingEnable(null);
     }
   }
@@ -814,8 +1007,10 @@ function App() {
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
       setManagerTeamStatus(data.mensaje ?? 'Equipo creado correctamente.');
+      setManagerTeamUsers({});
       await loadManagerContext();
       await loadManagerRequests();
+      await loadManagerUsers();
     } catch (error) {
       setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudo crear el equipo.');
     } finally {
@@ -839,8 +1034,10 @@ function App() {
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
       setManagerTeamStatus(data.mensaje ?? 'Equipo actualizado correctamente.');
+      setManagerTeamUsers({});
       await loadManagerContext();
       await loadManagerRequests();
+      await loadManagerUsers();
     } catch (error) {
       setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudo actualizar el equipo.');
     } finally {
@@ -864,8 +1061,10 @@ function App() {
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
       setManagerTeamStatus(data.mensaje ?? 'Equipo actualizado correctamente.');
+      setManagerTeamUsers({});
       await loadManagerContext();
       await loadManagerRequests();
+      await loadManagerUsers();
       await loadLotes();
     } catch (error) {
       setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudo actualizar el equipo.');
@@ -890,6 +1089,7 @@ function App() {
       const data = await response.json();
       setManagerTeamStatus(data.mensaje ?? 'Equipo principal actualizado.');
       await loadManagerContext();
+      await loadManagerUsers();
       await loadLotes();
     } catch (error) {
       setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudo marcar el equipo como principal.');
@@ -936,8 +1136,10 @@ function App() {
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
       setManagerActionStatus(data.mensaje ?? 'Solicitud aprobada correctamente.');
+      setManagerTeamUsers({});
       await loadManagerContext();
       await loadManagerRequests();
+      await loadManagerUsers();
     } catch (error) {
       setManagerRequestsError(error.message.replace(/^"|"$/g, '') || 'No se pudo aprobar la solicitud.');
     }
@@ -961,6 +1163,33 @@ function App() {
       await loadManagerRequests();
     } catch (error) {
       setManagerRequestsError(error.message.replace(/^"|"$/g, '') || 'No se pudo resolver la solicitud.');
+    }
+  }
+
+  async function handleToggleManagerUserStatus(user) {
+    if (!session?.token || !user) return;
+    const action = user.activo ? 'deshabilitar' : 'habilitar';
+    setManagerActionStatus('');
+    setManagerUsersError('');
+    setManagerUserSaving(`${action}-${user.usuarioId}`);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/manager/usuarios/${user.usuarioId}/${action}`, {
+        method: 'POST',
+        headers: authHeaders()
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      const data = await response.json();
+      setManagerActionStatus(data.mensaje ?? 'Usuario actualizado correctamente.');
+      setManagerTeamUsers({});
+      await loadManagerUsers();
+      await loadManagerContext();
+    } catch (error) {
+      setManagerUsersError(error.message.replace(/^"|"$/g, '') || 'No se pudo actualizar el usuario.');
+    } finally {
+      setManagerUserSaving('');
     }
   }
 
@@ -1160,6 +1389,11 @@ function App() {
     setManagerContextError('');
     setManagerRequests([]);
     setManagerRequestsError('');
+    setManagerUsers([]);
+    setManagerUsersError('');
+    setManagerUserSaving('');
+    setManagerTeamUsers({});
+    setManagerTeamUsersLoading('');
     setManagerActionStatus('');
     setManagerTeamStatus('');
     setManagerTeamError('');
@@ -1271,8 +1505,8 @@ function App() {
   }
 
   return (
-    <main className={`app-frame ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${sidebarClosing ? 'sidebar-closing' : ''} sidebar-transition-${sidebarTransitionMode} text-size-${textSize}`}>
-      <aside className="sidebar" onMouseEnter={handleSidebarEnter} onMouseLeave={handleSidebarLeave}>
+    <main className={`app-frame ${sidebarCollapsed ? 'sidebar-collapsed' : ''} text-size-${textSize}`}>
+      <aside className="sidebar">
         <div className="sidebar-header">
           <div className="sidebar-brand">
             <img src={agroDigitalLogo} alt="AgroDigital" />
@@ -1302,7 +1536,7 @@ function App() {
             <CalendarDays size={23} />
             <span>Campañas</span>
           </button>
-          <button className="nav-item" type="button">
+          <button className={`nav-item ${activeModule === 'siembras' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('siembras'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
             <Sprout size={23} />
             <span>Siembras</span>
           </button>
@@ -1310,7 +1544,7 @@ function App() {
             <MapIcon size={23} />
             <span>Cosechas</span>
           </button>
-          <button className="nav-item" type="button">
+                    <button className={`nav-item ${activeModule === 'silos' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('silos'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
             <Warehouse size={23} />
             <span>Silos</span>
           </button>
@@ -1349,7 +1583,7 @@ function App() {
               <Home size={17} />
             </button>
             <button className="breadcrumb-link" type="button" onClick={activeModule === 'lotes' ? goToList : undefined}>
-              {activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Equipos' : 'Lotes'}
+                          {activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Equipos' : activeModule === 'silos' ? 'Silos' : activeModule === 'siembras' ? 'Siembras' : 'Lotes'}
             </button>
             {false && activeModule === 'users' && (
               <>
@@ -1410,16 +1644,19 @@ function App() {
         ) : activeModule === 'users' ? (
           <ManagerUsersPage
             context={managerContext}
-            error={managerContextError || managerRequestsError || otpError}
+            error={managerContextError || managerRequestsError || managerUsersError || otpError}
             generatedOtp={generatedOtp}
             copiedKey={copiedKey}
             loadingOtp={otpLoading}
             onGenerateOtp={handleGenerateOtp}
             onCopy={handleCopy}
             requests={managerRequests}
+            users={managerUsers}
+            userSaving={managerUserSaving}
             actionStatus={managerActionStatus}
             onApproveRequest={handleApproveUserRequest}
             onResolveRequest={handleResolveUserRequest}
+            onToggleUserStatus={handleToggleManagerUserStatus}
           />
         ) : activeModule === 'teams' ? (
           <ManagerTeamsPage
@@ -1427,11 +1664,18 @@ function App() {
             error={managerContextError || managerTeamError}
             status={managerTeamStatus}
             savingAction={managerTeamSaving}
+            teamUsers={managerTeamUsers}
+            loadingTeamUsers={managerTeamUsersLoading}
             onCreateTeam={handleCreateTeam}
             onUpdateTeam={handleUpdateTeam}
             onToggleTeamStatus={handleToggleTeamStatus}
             onSetPrincipalTeam={handleSetPrincipalTeam}
+            onLoadTeamUsers={loadManagerTeamUsers}
           />
+        ) : activeModule === 'silos' ? (
+          <Silos session={session} lotes={lotes} />
+        ) : activeModule === 'siembras' ? (
+          <Siembras session={session} lotes={lotes} />
         ) : view === 'list' ? (
           <LotesList
             lotes={lotes}
@@ -1933,11 +2177,11 @@ function JoinTeamPage({ error, status, onSubmit, onBack }) {
         <div>
           <span className="auth-kicker">Alta segura al grupo de gestión</span>
           <h1>Unite a un grupo de gestión</h1>
-          <p>Ingresá tus datos, el ID del grupo y la OTP que te compartió el gerente. Si todo coincide, se genera una solicitud pendiente de aprobación.</p>
+          <p>Ingresá tus datos, el código del grupo y la OTP que te compartió el gerente. Si todo coincide, se genera una solicitud pendiente de aprobación.</p>
         </div>
         <div className="join-flow-card">
           <span><KeyRound size={22} /></span>
-          <strong>ID + OTP de un solo uso</strong>
+          <strong>Código + OTP de un solo uso</strong>
           <p>La OTP vence a los 7 días y queda consumida al enviar la solicitud.</p>
         </div>
         <div className="auth-hero-visual" aria-hidden="true">
@@ -1945,6 +2189,25 @@ function JoinTeamPage({ error, status, onSubmit, onBack }) {
         </div>
       </div>
 
+      {status ? (
+        <section className="login-card join-card join-success-card">
+          <span className="join-success-icon">
+            <CheckCircle2 size={44} />
+          </span>
+          <div>
+            <strong>Solicitud enviada correctamente</strong>
+            <p>{status}</p>
+          </div>
+          <div className="join-success-detail">
+            <Users size={20} />
+            <span>El gerente va a revisar tus datos y definir tus permisos por equipo.</span>
+          </div>
+          <button className="primary-auth-button" type="button" onClick={onBack}>
+            <LogIn size={21} />
+            Volver al login
+          </button>
+        </section>
+      ) : (
       <form className="login-card join-card" onSubmit={submitJoinRequest}>
         <div className="login-card-header">
           <span className="login-icon">
@@ -1989,7 +2252,7 @@ function JoinTeamPage({ error, status, onSubmit, onBack }) {
 
         <div className="join-form-grid">
           <label className="auth-field">
-            <span>ID del grupo *</span>
+            <span>Código del grupo *</span>
             <div>
               <Users size={20} />
               <input value={form.grupoGestionCodigo} onChange={(event) => updateField('grupoGestionCodigo', event.target.value.toUpperCase())} placeholder="GG-WDUAWXZA" required />
@@ -2041,6 +2304,7 @@ function JoinTeamPage({ error, status, onSubmit, onBack }) {
           Volver al login
         </button>
       </form>
+      )}
     </section>
   );
 }
@@ -2298,7 +2562,7 @@ function ManagerRegistrationPage({ initialName, error, onSubmit, onLogout }) {
           <div className="registration-step-card">
             <Users size={29} />
             <strong>Se crea tu grupo de gestión</strong>
-            <span>Ese grupo tendrá un ID propio para invitar empleados con OTP en la próxima etapa.</span>
+            <span>Ese grupo tendrá un código propio para invitar empleados con OTP en la próxima etapa.</span>
           </div>
           <div className="registration-step-card">
             <Warehouse size={29} />
@@ -2414,7 +2678,7 @@ function AdminPanel({
       <div className="admin-summary-grid">
         <AdminSummaryCard icon={<UserPlus size={31} />} label="Accesos creados" value={accounts.length} helper="Credenciales gerente generadas" />
         <AdminSummaryCard icon={<KeyRound size={31} />} label="Primer ingreso pendiente" value={pendingAccounts} helper="Credenciales de un solo inicio" />
-        <AdminSummaryCard icon={<Users size={31} />} label="Registro gerente" value="ID" helper="El grupo se genera al completar datos" />
+        <AdminSummaryCard icon={<Users size={31} />} label="Registro gerente" value="Código" helper="El grupo se genera al completar datos" />
       </div>
 
       <div className="admin-workspace">
@@ -2465,7 +2729,7 @@ function AdminPanel({
                 Copiá la contraseña ahora: por seguridad se guarda solo su hash y no se puede recuperar al recargar.
               </p>
               <p className="credential-warning">
-                El ID de grupo de gestion se generara cuando el gerente complete su registro y cargue sus equipos/empresas.
+                El código de grupo de gestion se generara cuando el gerente complete su registro y cargue sus equipos/empresas.
               </p>
             </div>
           ) : (
@@ -2780,10 +3044,39 @@ function AccessibilityControl({ open, textSize, onToggle, onClose, onSelectSize 
 }
 
 
-function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp, onGenerateOtp, onCopy, requests = [], actionStatus, onApproveRequest, onResolveRequest }) {
+function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp, onGenerateOtp, onCopy, requests = [], users = [], userSaving, actionStatus, onApproveRequest, onResolveRequest, onToggleUserStatus }) {
   const empresas = context?.empresas ?? [];
+  const [userFilters, setUserFilters] = useState({
+    search: '',
+    estado: 'todos',
+    desde: '',
+    hasta: ''
+  });
   const principal = empresas.find((empresa) => empresa.esPrincipal);
   const solicitudesPendientes = requests.length;
+  const usuariosHabilitados = users.filter((user) => user.activo).length;
+  const usuariosDeshabilitados = users.filter((user) => !user.activo).length;
+  const filteredUsers = users.filter((user) => {
+    const search = normalizeSearchText(userFilters.search.trim());
+    const userDate = user.fechaAlta ? new Date(user.fechaAlta) : null;
+    const fromDate = userFilters.desde ? new Date(`${userFilters.desde}T00:00:00`) : null;
+    const toDate = userFilters.hasta ? new Date(`${userFilters.hasta}T23:59:59`) : null;
+    const matchesSearch = !search || normalizeSearchText([
+      user.nombre,
+      user.apellido,
+      user.correoElectronico,
+      user.telefono,
+      formatRole(user.rolGeneral),
+      ...(user.equipos ?? []).flatMap((team) => [team.empresaNombre, formatRole(team.rol)])
+    ].filter(Boolean).join(' ')).includes(search);
+    const matchesState = userFilters.estado === 'todos'
+      || (userFilters.estado === 'habilitados' && user.activo)
+      || (userFilters.estado === 'deshabilitados' && !user.activo);
+    const matchesFrom = !fromDate || (userDate && userDate >= fromDate);
+    const matchesTo = !toDate || (userDate && userDate <= toDate);
+
+    return matchesSearch && matchesState && matchesFrom && matchesTo;
+  });
   const otpExpiration = generatedOtp?.fechaVencimiento
     ? new Date(generatedOtp.fechaVencimiento).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
     : null;
@@ -2805,7 +3098,7 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
       {actionStatus && <p className="auth-success">{actionStatus}</p>}
 
       <div className="summary-grid users-summary-grid">
-        <SummaryCard icon={<Users size={30} />} label="Grupo de gestión" value={context?.grupoGestionCodigo ?? 'Sin ID'} helper="ID que se comparte junto a una OTP" />
+        <SummaryCard icon={<Users size={30} />} label="Grupo de gestión" value={context?.grupoGestionCodigo ?? 'Sin código'} helper="Código que se comparte junto a una OTP" />
         <SummaryCard icon={<Warehouse size={30} />} label="Empresa principal" value={principal?.nombre ?? 'Sin empresa'} helper="Contexto operativo seleccionado" />
         <SummaryCard icon={<ClipboardList size={30} />} label="Solicitudes pendientes" value={solicitudesPendientes} helper="Altas esperando aprobación" />
       </div>
@@ -2816,16 +3109,16 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
             <div className="card-heading-icon"><KeyRound size={18} /></div>
             <div>
               <h2>Invitación segura</h2>
-              <p>El empleado se une con el ID del grupo y una OTP de un solo uso.</p>
+              <p>El empleado se une con el código del grupo y una OTP de un solo uso.</p>
             </div>
           </div>
           <div className="otp-preview-card">
             <div className="otp-value-row">
               <div>
-                <span>ID de grupo</span>
+                <span>Código de grupo</span>
                 <strong>{context?.grupoGestionCodigo ?? 'Se carga al completar registro'}</strong>
               </div>
-              <button className={`otp-copy-button ${copiedKey === context?.grupoGestionCodigo ? 'copy-button-copied' : ''}`} type="button" onClick={() => onCopy(context?.grupoGestionCodigo)} disabled={!context?.grupoGestionCodigo} aria-label="Copiar ID de grupo">
+              <button className={`otp-copy-button ${copiedKey === context?.grupoGestionCodigo ? 'copy-button-copied' : ''}`} type="button" onClick={() => onCopy(context?.grupoGestionCodigo)} disabled={!context?.grupoGestionCodigo} aria-label="Copiar código de grupo">
                 {copiedKey === context?.grupoGestionCodigo ? <CheckCircle2 size={18} /> : <Copy size={18} />}
               </button>
             </div>
@@ -2877,7 +3170,7 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
           <div className="card-heading-icon"><UserPlus size={18} /></div>
           <div>
             <h2>Usuarios pendientes de aprobación</h2>
-            <p>Cuando un empleado use el ID y la OTP, su solicitud aparecerá acá para asignar rol por equipo.</p>
+            <p>Cuando un empleado use el código y la OTP, su solicitud aparecerá acá para asignar rol por equipo.</p>
           </div>
           <span className="points-count">{solicitudesPendientes} pendientes</span>
         </div>
@@ -2886,7 +3179,7 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
             <div className="pending-users-empty-row">
               <Users size={52} strokeWidth={1.8} />
               <strong>Aún no hay solicitudes pendientes</strong>
-              <span>Las nuevas solicitudes aparecerán en esta tabla para aprobar, rechazar o descartar.</span>
+              <span>Las nuevas solicitudes aparecerán en esta tabla para aprobar o rechazar.</span>
             </div>
           ) : (
             <div className="pending-request-list">
@@ -2897,16 +3190,127 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
           )}
         </div>
       </section>
+
+      <section className="dashboard-card users-card approved-users-card">
+        <div className="card-heading">
+          <div className="card-heading-icon"><Users size={18} /></div>
+          <div>
+            <h2>Usuarios del grupo</h2>
+            <p>Usuarios aprobados o deshabilitados, con sus accesos por equipo y rol.</p>
+          </div>
+          <span className="points-count">{usuariosHabilitados} habilitados · {usuariosDeshabilitados} deshabilitados</span>
+        </div>
+
+        <div className="approved-users-filters">
+          <label className="filter-search-field">
+            <Search size={18} />
+            <input
+              value={userFilters.search}
+              onChange={(event) => setUserFilters((current) => ({ ...current, search: event.target.value }))}
+              placeholder="Buscar por nombre, correo, equipo o rol..."
+            />
+          </label>
+          <label className="approved-filter-field">
+            <span>Estado</span>
+            <select value={userFilters.estado} onChange={(event) => setUserFilters((current) => ({ ...current, estado: event.target.value }))}>
+              <option value="todos">Todos</option>
+              <option value="habilitados">Habilitados</option>
+              <option value="deshabilitados">Deshabilitados</option>
+            </select>
+          </label>
+          <label className="approved-filter-field">
+            <span>Desde</span>
+            <input type="date" value={userFilters.desde} onChange={(event) => setUserFilters((current) => ({ ...current, desde: event.target.value }))} />
+          </label>
+          <label className="approved-filter-field">
+            <span>Hasta</span>
+            <input type="date" value={userFilters.hasta} onChange={(event) => setUserFilters((current) => ({ ...current, hasta: event.target.value }))} />
+          </label>
+          <button className="clear-users-filters-button" type="button" onClick={() => setUserFilters({ search: '', estado: 'todos', desde: '', hasta: '' })}>
+            <RotateCcw size={17} />
+            Limpiar
+          </button>
+        </div>
+
+        {users.length === 0 ? (
+          <div className="pending-users-empty-row approved-users-empty-row">
+            <Users size={52} strokeWidth={1.8} />
+            <strong>Aún no hay usuarios aprobados</strong>
+            <span>Cuando apruebes una solicitud, el usuario aparecerá en esta tabla.</span>
+          </div>
+        ) : filteredUsers.length === 0 ? (
+          <div className="pending-users-empty-row approved-users-empty-row">
+            <Search size={52} strokeWidth={1.8} />
+            <strong>No hay usuarios para esos filtros</strong>
+            <span>Ajustá la búsqueda, el estado o el rango de fechas para ver más resultados.</span>
+          </div>
+        ) : (
+          <div className="approved-users-table">
+            {filteredUsers.map((user) => (
+              <ApprovedUserRow key={user.usuarioId} user={user} saving={userSaving} onToggleStatus={onToggleUserStatus} />
+            ))}
+          </div>
+        )}
+      </section>
     </section>
   );
 }
 
+function ApprovedUserRow({ user, saving, onToggleStatus }) {
+  const fullName = `${user.nombre ?? ''} ${user.apellido ?? ''}`.trim() || user.correoElectronico;
+  const action = user.activo ? 'deshabilitar' : 'habilitar';
+  const isSaving = saving === `${action}-${user.usuarioId}`;
 
-function ManagerTeamsPage({ context, error, status, savingAction, onCreateTeam, onUpdateTeam, onToggleTeamStatus, onSetPrincipalTeam }) {
+  return (
+    <article className={`approved-user-row ${!user.activo ? 'approved-user-row-disabled' : ''}`}>
+      <span className="approved-user-avatar"><User size={23} /></span>
+      <div className="approved-user-main">
+        <strong>{fullName}</strong>
+        <small><Mail size={14} /> {user.correoElectronico}</small>
+        <small><Phone size={14} /> {user.telefono || 'Sin teléfono'}</small>
+      </div>
+      {user.tieneRolGeneral ? (
+        <div className="approved-user-meta">
+          <span className="approved-user-label">Rol general</span>
+          <em className="role-chip">{formatRole(user.rolGeneral)}</em>
+        </div>
+      ) : (
+        <div className="approved-user-meta approved-user-meta-empty">
+          <span className="approved-user-label">Rol por equipo</span>
+        </div>
+      )}
+      <div className="approved-user-teams">
+        {(user.equipos ?? []).map((team) => (
+          <span className={`team-role-pill ${team.activo ? '' : 'team-role-pill-disabled'}`} key={team.empresaId}>
+            <Building2 size={14} />
+            <strong>{team.empresaNombre}</strong>
+            <em>{formatRole(team.rol)}</em>
+          </span>
+        ))}
+      </div>
+      <div className="approved-user-status-actions">
+        <em className={user.activo ? 'company-active' : 'company-disabled'}>{user.activo ? 'Habilitado' : 'Deshabilitado'}</em>
+        <button
+          className={'team-action-button ' + (user.activo ? 'team-danger-action' : 'team-enable-action')}
+          type="button"
+          onClick={() => onToggleStatus(user)}
+          disabled={isSaving}
+        >
+          {isSaving ? <LoaderCircle className="spin-icon" size={16} /> : user.activo ? <Trash2 size={16} /> : <CheckCircle2 size={16} />}
+          {user.activo ? 'Deshabilitar' : 'Habilitar'}
+        </button>
+      </div>
+    </article>
+  );
+}
+
+
+function ManagerTeamsPage({ context, error, status, savingAction, teamUsers = {}, loadingTeamUsers, onCreateTeam, onUpdateTeam, onToggleTeamStatus, onSetPrincipalTeam, onLoadTeamUsers }) {
   const empresas = context?.empresas ?? [];
   const [teamName, setTeamName] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState('');
+  const [expandedTeamId, setExpandedTeamId] = useState(null);
   const activeTeams = empresas.filter((empresa) => empresa.activo);
   const disabledTeams = empresas.filter((empresa) => !empresa.activo);
   const principal = empresas.find((empresa) => empresa.esPrincipal);
@@ -2935,6 +3339,14 @@ function ManagerTeamsPage({ context, error, status, savingAction, onCreateTeam, 
     if (!editingId || !nombre) return;
     onUpdateTeam(editingId, nombre);
     cancelEdit();
+  }
+
+  function toggleTeamUsers(empresaId) {
+    setExpandedTeamId((current) => {
+      const next = current === empresaId ? null : empresaId;
+      if (next && !teamUsers[next]) onLoadTeamUsers(next);
+      return next;
+    });
   }
 
   return (
@@ -3044,6 +3456,10 @@ function ManagerTeamsPage({ context, error, status, savingAction, onCreateTeam, 
                         Editar
                       </button>
                     )}
+                    <button className="team-action-button" type="button" onClick={() => toggleTeamUsers(empresa.empresaId)}>
+                      {loadingTeamUsers === String(empresa.empresaId) ? <LoaderCircle className="spin-icon" size={16} /> : <Users size={16} />}
+                      {expandedTeamId === empresa.empresaId ? 'Ocultar usuarios' : 'Ver usuarios'}
+                    </button>
                     {!empresa.esPrincipal && empresa.activo && (
                       <button className="team-action-button" type="button" onClick={() => onSetPrincipalTeam(empresa.empresaId)} disabled={savingAction === 'principal-' + empresa.empresaId}>
                         {savingAction === 'principal-' + empresa.empresaId ? <LoaderCircle className="spin-icon" size={16} /> : <Home size={16} />}
@@ -3055,6 +3471,9 @@ function ManagerTeamsPage({ context, error, status, savingAction, onCreateTeam, 
                       {empresa.activo ? 'Deshabilitar' : 'Habilitar'}
                     </button>
                   </div>
+                  {expandedTeamId === empresa.empresaId && (
+                    <TeamUsersPanel users={teamUsers[empresa.empresaId] ?? []} loading={loadingTeamUsers === String(empresa.empresaId)} />
+                  )}
                 </article>
               );
             })}
@@ -3062,6 +3481,47 @@ function ManagerTeamsPage({ context, error, status, savingAction, onCreateTeam, 
         )}
       </section>
     </section>
+  );
+}
+
+function TeamUsersPanel({ users, loading }) {
+  if (loading) {
+    return (
+      <div className="team-users-panel">
+        <span className="team-users-loading"><LoaderCircle className="spin-icon" size={18} /> Cargando usuarios del equipo...</span>
+      </div>
+    );
+  }
+
+  if (users.length === 0) {
+    return (
+      <div className="team-users-panel team-users-panel-empty">
+        <Users size={34} />
+        <strong>Este equipo todavía no tiene usuarios vinculados</strong>
+      </div>
+    );
+  }
+
+  return (
+    <div className="team-users-panel">
+      {users.map((user) => {
+        const teamRole = user.equipos?.[0]?.rol ?? user.rolGeneral;
+        const accessActive = user.activo && (user.equipos?.[0]?.activo ?? true);
+        const fullName = `${user.nombre ?? ''} ${user.apellido ?? ''}`.trim() || user.correoElectronico;
+
+        return (
+          <article className="team-user-item" key={user.usuarioId}>
+            <span className="team-user-avatar"><User size={19} /></span>
+            <div>
+              <strong>{fullName}</strong>
+              <small>{user.correoElectronico}</small>
+            </div>
+            <em className="role-chip">{formatRole(teamRole)}</em>
+            <span className={accessActive ? 'company-active' : 'company-disabled'}>{accessActive ? 'Habilitado' : 'Deshabilitado'}</span>
+          </article>
+        );
+      })}
+    </div>
   );
 }
 
@@ -3221,9 +3681,6 @@ function PendingUserRequestCard({ request, empresas, onApprove, onResolve }) {
           <Trash2 size={18} />
           Rechazar
         </button>
-        <button className="discard-request-button" type="button" onClick={() => onResolve(request.solicitudUsuarioId, 'descartar')}>
-          Descartar
-        </button>
       </div>
     </article>
   );
@@ -3288,9 +3745,7 @@ function DisableLoteConfirmation({ lote, saving, onCancel, onConfirm }) {
         <span className="confirmation-modal-icon" aria-hidden="true"><Ban size={28} /></span>
         <div>
           <h2 id="disable-lote-title">¿Deshabilitar lote?</h2>
-          <p id="disable-lote-description">
-            Vas a deshabilitar <strong>{lote.nombre}</strong>. El lote dejará de estar disponible para nuevas operaciones, pero se conservará su historial.
-          </p>
+          <p id="disable-lote-description">Vas a deshabilitar <strong>{lote.nombre}</strong>. El lote dejará de estar disponible para nuevas operaciones, pero se conservará su historial.</p>
         </div>
         <div className="confirmation-modal-actions">
           <button className="confirmation-cancel-button" type="button" onClick={onCancel} disabled={saving}>Cancelar</button>
@@ -3312,9 +3767,7 @@ function EnableLoteConfirmation({ lote, saving, onCancel, onConfirm }) {
         <span className="confirmation-modal-icon confirmation-modal-icon-success" aria-hidden="true"><CheckCircle2 size={28} /></span>
         <div>
           <h2 id="enable-lote-title">¿Habilitar lote?</h2>
-          <p id="enable-lote-description">
-            Vas a habilitar <strong>{lote.nombre}</strong>. El lote volverá a estar disponible para registrar nuevas operaciones.
-          </p>
+          <p id="enable-lote-description">Vas a habilitar <strong>{lote.nombre}</strong>. El lote volverá a estar disponible para registrar nuevas operaciones.</p>
         </div>
         <div className="confirmation-modal-actions">
           <button className="confirmation-cancel-button" type="button" onClick={onCancel} disabled={saving}>Cancelar</button>
@@ -3334,31 +3787,48 @@ function LotesList({ lotes, loading, onAdd, onView, onEdit, onToggleStatus, stat
   const [conditionFilter, setConditionFilter] = useState('');
   const [zoneFilter, setZoneFilter] = useState('');
   const [provinceFilter, setProvinceFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('habilitados');
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [dateFromFilter, setDateFromFilter] = useState('');
+  const [dateToFilter, setDateToFilter] = useState('');
 
   const provinceOptions = useMemo(() => [...new Set(lotes.map((lote) => lote.provincia).filter(Boolean))], [lotes]);
   const zoneOptions = useMemo(() => [...new Set(lotes.map((lote) => lote.ciudad).filter(Boolean))], [lotes]);
-  const summary = useMemo(() => ({
-    total: lotes.length,
-    hectareasPropias: lotes
-      .filter((lote) => lote.condicion === 'Propio')
-      .reduce((sum, lote) => sum + Number(lote.hectareas ?? 0), 0),
-    hectareasAlquiladas: lotes
-      .filter((lote) => lote.condicion === 'Alquilado')
-      .reduce((sum, lote) => sum + Number(lote.hectareas ?? 0), 0)
-  }), [lotes]);
-  const filteredLotes = useMemo(() => lotes.filter((lote) => {
+  const statusFilteredLotes = useMemo(() => lotes.filter((lote) => (
+    statusFilter === 'habilitados' ? lote.activo : !lote.activo
+  )), [lotes, statusFilter]);
+  const filteredLotes = useMemo(() => statusFilteredLotes.filter((lote) => {
+    const createdAt = lote.fechaCreacion ? new Date(lote.fechaCreacion) : null;
+    const fromDate = dateFromFilter ? new Date(`${dateFromFilter}T00:00:00`) : null;
+    const toDate = dateToFilter ? new Date(`${dateToFilter}T23:59:59`) : null;
     const matchesQuery = normalizeSearchText(lote.nombre).includes(normalizeSearchText(query.trim()));
     const matchesCondition = !conditionFilter || lote.condicion === conditionFilter;
     const matchesZone = !zoneFilter || lote.ciudad === zoneFilter;
     const matchesProvince = !provinceFilter || lote.provincia === provinceFilter;
-    return matchesQuery && matchesCondition && matchesZone && matchesProvince;
-  }), [conditionFilter, lotes, provinceFilter, query, zoneFilter]);
+    const matchesDateFrom = !fromDate || (createdAt && createdAt >= fromDate);
+    const matchesDateTo = !toDate || (createdAt && createdAt <= toDate);
+    return matchesQuery && matchesCondition && matchesZone && matchesProvince && matchesDateFrom && matchesDateTo;
+  }), [conditionFilter, dateFromFilter, dateToFilter, provinceFilter, query, statusFilteredLotes, zoneFilter]);
+  const summary = useMemo(() => ({
+    total: filteredLotes.length,
+    hectareasTotales: filteredLotes
+      .reduce((sum, lote) => sum + Number(lote.hectareas ?? 0), 0),
+    hectareasPropias: filteredLotes
+      .filter((lote) => lote.condicion === 'Propio')
+      .reduce((sum, lote) => sum + Number(lote.hectareas ?? 0), 0),
+    hectareasAlquiladas: filteredLotes
+      .filter((lote) => lote.condicion === 'Alquilado')
+      .reduce((sum, lote) => sum + Number(lote.hectareas ?? 0), 0)
+  }), [filteredLotes]);
 
   function clearFilters() {
     setQuery('');
     setConditionFilter('');
     setZoneFilter('');
     setProvinceFilter('');
+    setDateFromFilter('');
+    setDateToFilter('');
+    setStatusFilter('habilitados');
   }
 
   return (
@@ -3374,13 +3844,30 @@ function LotesList({ lotes, loading, onAdd, onView, onEdit, onToggleStatus, stat
         </button>
       </div>
 
-      <div className="summary-grid">
+      <div className="summary-grid summary-grid-four">
         <SummaryCard icon={<MapIcon size={30} />} label="Total de lotes" value={summary.total} helper="Lotes registrados en el sistema" />
+        <SummaryCard icon={<Sprout size={30} />} label="Hectareas totales" value={`${formatHectares(summary.hectareasTotales)} ha`} helper="Superficie total de los lotes filtrados" />
         <SummaryCard icon={<Home size={30} />} label="Hectareas propias" value={`${formatHectares(summary.hectareasPropias)} ha`} helper="Superficie total con condicion propio" />
         <SummaryCard icon={<Handshake size={30} />} label="Hectareas alquiladas" value={`${formatHectares(summary.hectareasAlquiladas)} ha`} helper="Superficie total con condicion alquilado" />
       </div>
 
       <div className="filters-card">
+        <div className="status-segmented" role="group" aria-label="Estado de lotes">
+          <button
+            className={statusFilter === 'habilitados' ? 'status-segmented-active' : ''}
+            type="button"
+            onClick={() => setStatusFilter('habilitados')}
+          >
+            Habilitados
+          </button>
+          <button
+            className={statusFilter === 'deshabilitados' ? 'status-segmented-active' : ''}
+            type="button"
+            onClick={() => setStatusFilter('deshabilitados')}
+          >
+            Deshabilitados
+          </button>
+        </div>
         <label className="search-field">
           <Search size={21} />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nombre de lote..." />
@@ -3398,7 +3885,7 @@ function LotesList({ lotes, loading, onAdd, onView, onEdit, onToggleStatus, stat
           <option value="">Provincia</option>
           {provinceOptions.map((province) => <option key={province}>{province}</option>)}
         </select>
-        <button className="soft-filter-button" type="button">
+        <button className="soft-filter-button" type="button" onClick={() => setShowMoreFilters((current) => !current)}>
           <Filter size={17} />
           <span>Mas filtros</span>
         </button>
@@ -3406,6 +3893,18 @@ function LotesList({ lotes, loading, onAdd, onView, onEdit, onToggleStatus, stat
           <RotateCcw size={17} />
           <span>Limpiar</span>
         </button>
+        {showMoreFilters && (
+          <div className="extra-filters-row">
+            <label>
+              <span>Desde</span>
+              <input type="date" value={dateFromFilter} onChange={(event) => setDateFromFilter(event.target.value)} />
+            </label>
+            <label>
+              <span>Hasta</span>
+              <input type="date" value={dateToFilter} onChange={(event) => setDateToFilter(event.target.value)} />
+            </label>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -3468,21 +3967,21 @@ function LotesList({ lotes, loading, onAdd, onView, onEdit, onToggleStatus, stat
                     <td>{Number(lote.hectareas).toLocaleString('es-AR', { maximumFractionDigits: 2 })} ha</td>
                     <td className="actions-cell">
                       <div className="actions-cell-content">
-                        <button type="button" aria-label={`Ver ${lote.nombre}`} onClick={() => onView(lote)}><Eye size={18} /></button>
-                        <button type="button" aria-label={`Editar ${lote.nombre}`} onClick={() => onEdit(lote)}><Edit size={18} /></button>
-                        <button
-                          className={`status-action-button ${lote.activo ? 'status-action-disable' : 'status-action-enable'}`}
-                          type="button"
-                          aria-label={`${lote.activo ? 'Deshabilitar' : 'Habilitar'} ${lote.nombre}`}
-                          title={lote.activo ? 'Deshabilitar lote' : 'Habilitar lote'}
-                          disabled={statusSaving === `deshabilitar-${lote.loteId}` || statusSaving === `habilitar-${lote.loteId}`}
-                          onClick={() => onToggleStatus(lote)}
-                        >
-                          {statusSaving === `deshabilitar-${lote.loteId}` || statusSaving === `habilitar-${lote.loteId}`
-                            ? <LoaderCircle className="spin" size={18} />
-                            : lote.activo ? <Ban size={18} /> : <CheckCircle2 size={18} />}
-                          <span>{lote.activo ? 'Deshabilitar' : 'Habilitar'}</span>
-                        </button>
+                      <button type="button" aria-label={`Ver ${lote.nombre}`} onClick={() => onView(lote)}><Eye size={18} /></button>
+                      <button type="button" aria-label={`Editar ${lote.nombre}`} onClick={() => onEdit(lote)}><Edit size={18} /></button>
+                      <button
+                        className={`status-action-button ${lote.activo ? 'status-action-disable' : 'status-action-enable'}`}
+                        type="button"
+                        aria-label={`${lote.activo ? 'Deshabilitar' : 'Habilitar'} ${lote.nombre}`}
+                        title={lote.activo ? 'Deshabilitar lote' : 'Habilitar lote'}
+                        disabled={statusSaving === `deshabilitar-${lote.loteId}` || statusSaving === `habilitar-${lote.loteId}`}
+                        onClick={() => onToggleStatus(lote)}
+                      >
+                        {statusSaving === `deshabilitar-${lote.loteId}` || statusSaving === `habilitar-${lote.loteId}`
+                          ? <LoaderCircle className="spin" size={18} />
+                          : lote.activo ? <Ban size={18} /> : <CheckCircle2 size={18} />}
+                        <span>{lote.activo ? 'Deshabilitar' : 'Habilitar'}</span>
+                      </button>
                       </div>
                     </td>
                   </tr>
@@ -3496,7 +3995,7 @@ function LotesList({ lotes, loading, onAdd, onView, onEdit, onToggleStatus, stat
               <ChevronDown size={17} />
               <span>Volver</span>
             </button>
-            <span>Mostrando 1 a {filteredLotes.length} de {lotes.length} lotes</span>
+            <span>Mostrando 1 a {filteredLotes.length} de {statusFilteredLotes.length} lotes {statusFilter === 'habilitados' ? 'habilitados' : 'deshabilitados'}</span>
             <div className="pagination">
               <button type="button" disabled>{'<'}</button>
               <strong>1</strong>
@@ -3559,6 +4058,13 @@ function LoteCreate({
     const updatedPoints = form.coordenadas.filter((_, index) => index !== indexToDelete);
     onCoordinatesChange(updatedPoints, form.cerrado && updatedPoints.length >= 3);
   }
+
+  function moveCoordinate(fromIndex, toIndex) {
+    const updatedPoints = moveArrayItem(form.coordenadas, fromIndex, toIndex);
+    onCoordinatesChange(updatedPoints, form.cerrado && updatedPoints.length >= 3);
+  }
+
+  const coordinateDrag = useCoordinateDrag({ onMove: moveCoordinate });
 
   return (
     <section className="content-panel create-panel">
@@ -3646,10 +4152,15 @@ function LoteCreate({
               <MapTutorial />
             ) : (
               <>
-                <div className="scroll-area">
+                <div className="scroll-area" {...coordinateDrag.containerProps}>
                   {form.coordenadas.map((point, index) => (
-                    <div className="corner-card" key={`${point.lat}-${point.lng}-${index}`}>
+                    <div
+                      className={`corner-card corner-card-draggable ${coordinateDrag.dropIndex === index && coordinateDrag.draggingIndex !== index ? 'coordinate-drop-target' : ''} ${coordinateDrag.draggingIndex === index ? 'coordinate-dragging' : ''}`}
+                      key={`${point.lat}-${point.lng}-${index}`}
+                      {...coordinateDrag.getItemProps(index)}
+                    >
                       <div className="corner-card-header">
+                        <GripVertical className="drag-handle" size={18} />
                         <span className="point-number">{index + 1}</span>
                         <strong>Esquina {index + 1}</strong>
                         <button type="button" onClick={() => deleteCoordinate(index)} aria-label={`Eliminar esquina ${index + 1}`}>
@@ -3704,6 +4215,18 @@ function LoteDetailEdit({
     const updatedPoints = form.coordenadas.filter((_, index) => index !== indexToDelete);
     onCoordinatesChange(updatedPoints, form.cerrado && updatedPoints.length >= 3);
   }
+
+  function moveCoordinate(fromIndex, toIndex) {
+    if (isDetail) return;
+    const updatedPoints = moveArrayItem(form.coordenadas, fromIndex, toIndex);
+    onCoordinatesChange(updatedPoints, form.cerrado && updatedPoints.length >= 3);
+  }
+
+  const coordinateDrag = useCoordinateDrag({ disabled: isDetail, onMove: moveCoordinate });
+  const hasChanges = useMemo(
+    () => hasLoteFormChanges(lote, form, areaHa, areaM2),
+    [lote, form, areaHa, areaM2]
+  );
 
   if (!lote) {
     return (
@@ -3807,7 +4330,7 @@ function LoteDetailEdit({
                 </button>
               ) : (
                 <>
-                  <button className="green-button wide" disabled={saving} type="submit">
+                  <button className="green-button wide" disabled={saving || !hasChanges} type="submit">
                     <CheckCircle2 size={18} />
                     <span>{saving ? 'Guardando...' : 'Guardar cambios'}</span>
                   </button>
@@ -3835,10 +4358,15 @@ function LoteDetailEdit({
               <MapTutorial />
             ) : (
               <>
-                <div className="scroll-area">
+                <div className="scroll-area" {...coordinateDrag.containerProps}>
                   {form.coordenadas.map((point, index) => (
-                    <div className="corner-card" key={`${point.lat}-${point.lng}-${index}`}>
+                    <div
+                      className={`corner-card ${isDetail ? '' : 'corner-card-draggable'} ${coordinateDrag.dropIndex === index && coordinateDrag.draggingIndex !== index ? 'coordinate-drop-target' : ''} ${coordinateDrag.draggingIndex === index ? 'coordinate-dragging' : ''}`}
+                      key={`${point.lat}-${point.lng}-${index}`}
+                      {...coordinateDrag.getItemProps(index)}
+                    >
                       <div className="corner-card-header">
+                        {!isDetail && <GripVertical className="drag-handle" size={18} />}
                         <span className="point-number">{index + 1}</span>
                         <strong>Esquina {index + 1}</strong>
                         {!isDetail && (
@@ -4021,22 +4549,31 @@ function SearchableDropdown({ label, value, onChange, options, placeholder = 'Bu
 
 function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange, readOnly = false }) {
   const [expanded, setExpanded] = useState(false);
-  const mapNodeRef = useRef(null);
+  const [addingPoints, setAddingPoints] = useState(false);
+  const [mapNode, setMapNode] = useState(null);
   const mapRef = useRef(null);
-  const layerRef = useRef(L.layerGroup());
+  const layerRef = useRef(null);
   const baseLayersRef = useRef({});
   const pointsRef = useRef(points);
   const closedRef = useRef(closed);
   const readOnlyRef = useRef(readOnly);
+  const addingPointsRef = useRef(addingPoints);
   const initialFitDoneRef = useRef(false);
+  const selectedBaseLayerRef = useRef('hibrido');
+  const mapViewRef = useRef(null);
+  const coordinateDrag = useCoordinateDrag({ disabled: readOnly, onMove: movePoint });
 
   useEffect(() => {
     pointsRef.current = points;
     closedRef.current = closed;
     readOnlyRef.current = readOnly;
+    addingPointsRef.current = addingPoints;
+    if (!closed || readOnly) {
+      setAddingPoints(false);
+    }
     renderLayers();
     fitInitialBounds();
-  }, [points, closed, readOnly]);
+  }, [points, closed, readOnly, addingPoints]);
 
   useEffect(() => {
     onExpandedChange?.(expanded);
@@ -4044,25 +4581,23 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
     const previousHtmlOverflow = document.documentElement.style.overflow;
 
     if (expanded) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      document.body.classList.add('agro-map-expanded');
       document.body.style.overflow = 'hidden';
       document.documentElement.style.overflow = 'hidden';
     }
 
-    if (expanded && mapRef.current && baseLayersRef.current.calles) {
-      const map = mapRef.current;
-      Object.values(baseLayersRef.current).forEach((layer) => {
-        if (map.hasLayer(layer)) {
-          map.removeLayer(layer);
-        }
-      });
-      baseLayersRef.current.calles.addTo(map);
-      map.setMaxZoom(22);
-      map.invalidateSize();
+    if (expanded) {
+      requestAnimationFrame(() => mapRef.current?.invalidateSize());
+      setTimeout(() => mapRef.current?.invalidateSize(), 80);
+      setTimeout(() => mapRef.current?.invalidateSize(), 240);
+      setTimeout(() => mapRef.current?.invalidateSize(), 480);
+    } else {
+      setTimeout(() => mapRef.current?.invalidateSize(), 120);
     }
 
-    setTimeout(() => mapRef.current?.invalidateSize(), 120);
-
     return () => {
+      document.body.classList.remove('agro-map-expanded');
       document.body.style.overflow = previousBodyOverflow;
       document.documentElement.style.overflow = previousHtmlOverflow;
     };
@@ -4071,11 +4606,13 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
   useEffect(() => () => onExpandedChange?.(false), [onExpandedChange]);
 
   useEffect(() => {
-    if (!mapNodeRef.current || mapRef.current) return;
+    if (!mapNode) return;
 
-    const map = L.map(mapNodeRef.current, {
-      center: defaultCenter,
-      zoom: 16,
+    layerRef.current = L.layerGroup();
+    const savedView = mapViewRef.current;
+    const map = L.map(mapNode, {
+      center: savedView?.center ?? defaultCenter,
+      zoom: savedView?.zoom ?? 16,
       minZoom: 4,
       maxZoom: 22,
       zoomControl: true,
@@ -4105,8 +4642,7 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
       attribution: 'Labels © Esri'
     });
 
-    const hibrido = L.layerGroup([sateliteConEtiquetas, etiquetas]).addTo(map);
-    map.setMaxZoom(17);
+    const hibrido = L.layerGroup([sateliteConEtiquetas, etiquetas]);
     baseLayersRef.current = {
       calles,
       hibrido,
@@ -4119,9 +4655,23 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
       'Satelite limpio': sateliteLimpio
     };
 
+    const selectedLayerKey = selectedBaseLayerRef.current;
+    const selectedLayer = baseLayersRef.current[selectedLayerKey] ?? hibrido;
+    selectedLayer.addTo(map);
+    const selectedLayerIsSatellite = selectedLayerKey !== 'calles';
+    map.setMaxZoom(selectedLayerIsSatellite ? 17 : 22);
+    if (selectedLayerIsSatellite && map.getZoom() > 17) {
+      map.setZoom(17, { animate: false });
+    }
+
     L.control.layers(baseLayers, {}, { position: 'topright', collapsed: false }).addTo(map);
 
     map.on('baselayerchange', (event) => {
+      selectedBaseLayerRef.current = event.name === 'Calles y limites'
+        ? 'calles'
+        : event.name === 'Satelite limpio'
+          ? 'sateliteLimpio'
+          : 'hibrido';
       const isSatellite = event.name.includes('Satelite');
       map.setMaxZoom(isSatellite ? 17 : 22);
       if (isSatellite && map.getZoom() > 17) {
@@ -4134,7 +4684,11 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
       if (readOnlyRef.current) return;
 
       const currentPoints = pointsRef.current;
-      if (closedRef.current) return;
+      if (closedRef.current) {
+        if (!addingPointsRef.current) return;
+        onChange([...currentPoints, event.latlng], true);
+        return;
+      }
 
       if (currentPoints.length >= 3 && distanceMeters(event.latlng, currentPoints[0]) < 18) {
         onChange(currentPoints, true);
@@ -4156,13 +4710,20 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
     }, 180);
 
     return () => {
+      const center = map.getCenter();
+      mapViewRef.current = {
+        center: [center.lat, center.lng],
+        zoom: map.getZoom()
+      };
       map.remove();
       mapRef.current = null;
+      layerRef.current = null;
+      baseLayersRef.current = {};
     };
-  }, [onChange]);
+  }, [expanded, mapNode, onChange]);
 
   function renderLayers() {
-    if (!mapRef.current) return;
+    if (!mapRef.current || !layerRef.current) return;
 
     layerRef.current.clearLayers();
 
@@ -4235,32 +4796,75 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
   function resetMap() {
     onChange([], false);
     initialFitDoneRef.current = false;
+    setAddingPoints(false);
   }
 
   function deletePoint(indexToDelete) {
     const updatedPoints = points.filter((_, index) => index !== indexToDelete);
+    const shouldStayClosed = closed && updatedPoints.length >= 3;
+    onChange(updatedPoints, shouldStayClosed);
+    if (!shouldStayClosed) {
+      setAddingPoints(false);
+    }
+  }
+
+  function movePoint(fromIndex, toIndex) {
+    if (readOnly) return;
+    const updatedPoints = moveArrayItem(points, fromIndex, toIndex);
     onChange(updatedPoints, closed && updatedPoints.length >= 3);
   }
 
-  return (
+  function toggleExpandedMap() {
+    if (mapRef.current) {
+      const center = mapRef.current.getCenter();
+      mapViewRef.current = {
+        center: [center.lat, center.lng],
+        zoom: mapRef.current.getZoom()
+      };
+    }
+
+    if (!expanded) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }
+
+    setExpanded((current) => !current);
+  }
+
+  const mapContent = (
     <div className={`map-box ${expanded ? 'map-box-expanded' : ''} ${readOnly ? 'map-box-readonly' : ''}`}>
-      <div ref={mapNodeRef} className="map-canvas" />
+      <div ref={setMapNode} className="map-canvas" />
       <div className="map-help">
         <MapPin size={24} />
         <span>
           <strong>{readOnly ? 'Poligono del lote.' : closed ? 'Poligono cerrado.' : 'Marca las esquinas del lote.'}</strong>
-          {readOnly ? ' Consulta los vertices registrados.' : closed ? ' Podes mover los puntos.' : ' Toca el primer punto para cerrar.'}
+          {readOnly ? ' Consulta los vertices registrados.' : closed ? (addingPoints ? ' Hace clic para sumar vertices.' : ' Podes mover los puntos.') : ' Toca el primer punto para cerrar.'}
         </span>
       </div>
-      <button className="map-expand" type="button" onClick={() => setExpanded((current) => !current)}>
+      <button
+        className="map-expand"
+        type="button"
+        onClick={toggleExpandedMap}
+      >
         {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
         <span>{expanded ? 'Contraer' : 'Expandir'}</span>
       </button>
       {!readOnly && (
-        <button className="map-reset" type="button" onClick={resetMap}>
-          <Wand2 size={17} />
-          <span>Limpiar puntos</span>
-        </button>
+        <div className="map-edit-actions">
+          {closed && (
+            <button
+              className={`map-add-points ${addingPoints ? 'map-add-points-active' : ''}`}
+              type="button"
+              onClick={() => setAddingPoints((current) => !current)}
+            >
+              <PlusCircle size={17} />
+              <span>{addingPoints ? 'Finalizar agregado' : 'Agregar puntos'}</span>
+            </button>
+          )}
+          <button className="map-reset" type="button" onClick={resetMap}>
+            <Wand2 size={17} />
+            <span>Limpiar puntos</span>
+          </button>
+        </div>
       )}
       {expanded && (
         <div className="expanded-coordinates">
@@ -4283,9 +4887,14 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
           {points.length === 0 && (
             <p className="expanded-empty">Marca las esquinas del lote sobre el mapa.</p>
           )}
-          <div className="expanded-coordinate-list">
+          <div className="expanded-coordinate-list" {...coordinateDrag.containerProps}>
             {points.map((point, index) => (
-              <div className="expanded-coordinate-row" key={`${point.lat}-${point.lng}-${index}`}>
+              <div
+                className={`expanded-coordinate-row ${readOnly ? '' : 'expanded-coordinate-row-draggable'} ${coordinateDrag.dropIndex === index && coordinateDrag.draggingIndex !== index ? 'coordinate-drop-target' : ''} ${coordinateDrag.draggingIndex === index ? 'coordinate-dragging' : ''}`}
+                key={`${point.lat}-${point.lng}-${index}`}
+                {...coordinateDrag.getItemProps(index)}
+              >
+                {!readOnly && <GripVertical className="drag-handle" size={16} />}
                 <span className="point-number">{index + 1}</span>
                 <div>
                   <small>Latitud</small>
@@ -4307,6 +4916,14 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
       )}
     </div>
   );
+
+  return expanded ? createPortal(
+    <>
+      <div className="map-expanded-backdrop" />
+      {mapContent}
+    </>,
+    document.body
+  ) : mapContent;
 }
 
 export default App;

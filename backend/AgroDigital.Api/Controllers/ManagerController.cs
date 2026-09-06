@@ -352,6 +352,176 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
         return Ok(solicitudes);
     }
 
+    [HttpGet("usuarios")]
+    public async Task<ActionResult<IReadOnlyList<ManagerUsuarioDto>>> ObtenerUsuarios()
+    {
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        if (usuario.Rol != "Gerente") return StatusCode(StatusCodes.Status403Forbidden, "Solo un gerente puede realizar esta accion.");
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        var grupoId = await ObtenerGrupoGestionIdAsync(connection, usuario.UsuarioId);
+        if (grupoId is null) return NotFound("No se encontro un grupo de gestion activo para este gerente.");
+
+        const string sql = """
+            SELECT
+                u.UsuarioId,
+                u.Nombre,
+                ISNULL(u.Apellido, N'') AS Apellido,
+                ISNULL(u.Telefono, N'') AS Telefono,
+                ISNULL(u.CorreoElectronico, u.Usuario) AS CorreoElectronico,
+                u.Rol,
+                u.Activo,
+                COALESCE(s.FechaResolucion, u.FechaCreacion) AS FechaAlta,
+                e.EmpresaId,
+                e.Nombre AS EmpresaNombre,
+                ue.Rol AS RolEquipo,
+                ue.Activo AS AccesoActivo
+            FROM dbo.UsuarioEmpresas AS ue
+            INNER JOIN dbo.Empresas AS e ON e.EmpresaId = ue.EmpresaId
+            INNER JOIN dbo.Usuarios AS u ON u.UsuarioId = ue.UsuarioId
+            OUTER APPLY (
+                SELECT TOP (1) FechaResolucion
+                FROM dbo.SolicitudesUsuario
+                WHERE GrupoGestionId = e.GrupoGestionId
+                  AND UsuarioId = u.UsuarioId
+                  AND Estado = N'Aprobada'
+                ORDER BY FechaResolucion DESC
+            ) AS s
+            WHERE e.GrupoGestionId = @GrupoGestionId
+              AND u.UsuarioId <> @GerenteUsuarioId
+              AND u.Rol IN (N'Encargado', N'EmpleadoCampo', N'EmpleadoAdministrativo')
+            ORDER BY u.Activo DESC, u.Nombre, u.Apellido, e.Nombre;
+            """;
+
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@GrupoGestionId", grupoId.Value);
+        command.Parameters.AddWithValue("@GerenteUsuarioId", usuario.UsuarioId);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        return Ok(await LeerUsuariosAsync(reader));
+    }
+
+    [HttpGet("equipos/{empresaId:int}/usuarios")]
+    public async Task<ActionResult<IReadOnlyList<ManagerUsuarioDto>>> ObtenerUsuariosPorEquipo(int empresaId)
+    {
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        if (usuario.Rol != "Gerente") return StatusCode(StatusCodes.Status403Forbidden, "Solo un gerente puede realizar esta accion.");
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        var grupoId = await ObtenerGrupoGestionIdAsync(connection, usuario.UsuarioId);
+        if (grupoId is null) return NotFound("No se encontro un grupo de gestion activo para este gerente.");
+
+        if (!await EquipoPerteneceAlGrupoAsync(connection, grupoId.Value, empresaId, incluirInactivos: true))
+        {
+            return NotFound("No se encontro el equipo dentro de tu grupo de gestion.");
+        }
+
+        const string sql = """
+            SELECT
+                u.UsuarioId,
+                u.Nombre,
+                ISNULL(u.Apellido, N'') AS Apellido,
+                ISNULL(u.Telefono, N'') AS Telefono,
+                ISNULL(u.CorreoElectronico, u.Usuario) AS CorreoElectronico,
+                u.Rol,
+                u.Activo,
+                COALESCE(s.FechaResolucion, u.FechaCreacion) AS FechaAlta,
+                e.EmpresaId,
+                e.Nombre AS EmpresaNombre,
+                ue.Rol AS RolEquipo,
+                ue.Activo AS AccesoActivo
+            FROM dbo.UsuarioEmpresas AS ue
+            INNER JOIN dbo.Empresas AS e ON e.EmpresaId = ue.EmpresaId
+            INNER JOIN dbo.Usuarios AS u ON u.UsuarioId = ue.UsuarioId
+            OUTER APPLY (
+                SELECT TOP (1) FechaResolucion
+                FROM dbo.SolicitudesUsuario
+                WHERE GrupoGestionId = e.GrupoGestionId
+                  AND UsuarioId = u.UsuarioId
+                  AND Estado = N'Aprobada'
+                ORDER BY FechaResolucion DESC
+            ) AS s
+            WHERE e.GrupoGestionId = @GrupoGestionId
+              AND e.EmpresaId = @EmpresaId
+              AND u.Rol <> N'Admin'
+            ORDER BY CASE WHEN u.UsuarioId = @GerenteUsuarioId THEN 0 ELSE 1 END, u.Activo DESC, u.Nombre, u.Apellido;
+            """;
+
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@GrupoGestionId", grupoId.Value);
+        command.Parameters.AddWithValue("@EmpresaId", empresaId);
+        command.Parameters.AddWithValue("@GerenteUsuarioId", usuario.UsuarioId);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        return Ok(await LeerUsuariosAsync(reader));
+    }
+
+    [HttpPost("usuarios/{usuarioId:int}/deshabilitar")]
+    public Task<ActionResult> DeshabilitarUsuario(int usuarioId) => CambiarHabilitacionUsuario(usuarioId, false);
+
+    [HttpPost("usuarios/{usuarioId:int}/habilitar")]
+    public Task<ActionResult> HabilitarUsuario(int usuarioId) => CambiarHabilitacionUsuario(usuarioId, true);
+
+    private async Task<ActionResult> CambiarHabilitacionUsuario(int usuarioId, bool activo)
+    {
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        if (usuario.Rol != "Gerente") return StatusCode(StatusCodes.Status403Forbidden, "Solo un gerente puede realizar esta accion.");
+        if (usuarioId == usuario.UsuarioId) return BadRequest("No podes modificar tu propio acceso desde esta pantalla.");
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        var grupoId = await ObtenerGrupoGestionIdAsync(connection, usuario.UsuarioId);
+        if (grupoId is null) return NotFound("No se encontro un grupo de gestion activo para este gerente.");
+
+        if (!await UsuarioPerteneceAlGrupoAsync(connection, grupoId.Value, usuarioId))
+        {
+            return NotFound("No se encontro el usuario dentro de tu grupo de gestion.");
+        }
+
+        await using var transaction = await connection.BeginTransactionAsync();
+        try
+        {
+            await using (var updateUser = new SqlCommand("""
+                UPDATE dbo.Usuarios
+                SET Activo = @Activo,
+                    FechaModificacion = SYSDATETIME()
+                WHERE UsuarioId = @UsuarioId
+                  AND Rol IN (N'Encargado', N'EmpleadoCampo', N'EmpleadoAdministrativo');
+                """, connection, (SqlTransaction)transaction))
+            {
+                updateUser.Parameters.AddWithValue("@Activo", activo);
+                updateUser.Parameters.AddWithValue("@UsuarioId", usuarioId);
+                await updateUser.ExecuteNonQueryAsync();
+            }
+
+            await using (var updateAccess = new SqlCommand("""
+                UPDATE ue
+                SET ue.Activo = @Activo,
+                    ue.FechaModificacion = SYSDATETIME()
+                FROM dbo.UsuarioEmpresas AS ue
+                INNER JOIN dbo.Empresas AS e ON e.EmpresaId = ue.EmpresaId
+                WHERE ue.UsuarioId = @UsuarioId
+                  AND e.GrupoGestionId = @GrupoGestionId;
+                """, connection, (SqlTransaction)transaction))
+            {
+                updateAccess.Parameters.AddWithValue("@Activo", activo);
+                updateAccess.Parameters.AddWithValue("@UsuarioId", usuarioId);
+                updateAccess.Parameters.AddWithValue("@GrupoGestionId", grupoId.Value);
+                await updateAccess.ExecuteNonQueryAsync();
+            }
+
+            await transaction.CommitAsync();
+            return Ok(new { mensaje = activo ? "Usuario habilitado correctamente." : "Usuario deshabilitado correctamente." });
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
     [HttpPost("otp")]
     public async Task<ActionResult<ManagerOtpResponse>> GenerarOtp()
     {
@@ -667,6 +837,23 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
         return count == empresaIds.Count;
     }
 
+    private static async Task<bool> UsuarioPerteneceAlGrupoAsync(SqlConnection connection, int grupoGestionId, int usuarioId)
+    {
+        await using var command = new SqlCommand("""
+            SELECT COUNT(1)
+            FROM dbo.UsuarioEmpresas AS ue
+            INNER JOIN dbo.Empresas AS e ON e.EmpresaId = ue.EmpresaId
+            INNER JOIN dbo.Usuarios AS u ON u.UsuarioId = ue.UsuarioId
+            WHERE e.GrupoGestionId = @GrupoGestionId
+              AND ue.UsuarioId = @UsuarioId
+              AND u.Rol IN (N'Encargado', N'EmpleadoCampo', N'EmpleadoAdministrativo');
+            """, connection);
+        command.Parameters.AddWithValue("@GrupoGestionId", grupoGestionId);
+        command.Parameters.AddWithValue("@UsuarioId", usuarioId);
+        var count = Convert.ToInt32(await command.ExecuteScalarAsync() ?? 0);
+        return count > 0;
+    }
+
     private static async Task<int?> ObtenerSolicitudPendienteAsync(SqlConnection connection, SqlTransaction transaction, int grupoGestionId, int solicitudId)
     {
         await using var command = new SqlCommand("""
@@ -696,6 +883,66 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
         command.Parameters.AddWithValue("@ResueltoPorUsuarioId", resueltoPorUsuarioId);
         command.Parameters.AddWithValue("@SolicitudUsuarioId", solicitudId);
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<IReadOnlyList<ManagerUsuarioDto>> LeerUsuariosAsync(SqlDataReader reader)
+    {
+        var usuarios = new Dictionary<int, ManagerUsuarioMutable>();
+
+        while (await reader.ReadAsync())
+        {
+            var usuarioId = reader.GetInt32(0);
+            if (!usuarios.TryGetValue(usuarioId, out var usuario))
+            {
+                usuario = new ManagerUsuarioMutable(
+                    usuarioId,
+                    reader.GetString(1),
+                    reader.GetString(2),
+                    reader.GetString(3),
+                    reader.GetString(4),
+                    reader.GetString(5),
+                    reader.GetBoolean(6),
+                    reader.GetDateTime(7)
+                );
+                usuarios.Add(usuarioId, usuario);
+            }
+
+            usuario.Equipos.Add(new ManagerUsuarioEquipoDto(
+                reader.GetInt32(8),
+                reader.GetString(9),
+                reader.GetString(10),
+                reader.GetBoolean(11)
+            ));
+        }
+
+        return usuarios.Values
+            .Select(usuario => new ManagerUsuarioDto(
+                usuario.UsuarioId,
+                usuario.Nombre,
+                usuario.Apellido,
+                usuario.Telefono,
+                usuario.CorreoElectronico,
+                usuario.RolGeneral,
+                usuario.Equipos.Count > 0 && usuario.Equipos.All(equipo => equipo.Rol == usuario.RolGeneral),
+                usuario.Activo,
+                usuario.FechaAlta,
+                usuario.Equipos
+            ))
+            .ToArray();
+    }
+
+    private sealed record ManagerUsuarioMutable(
+        int UsuarioId,
+        string Nombre,
+        string Apellido,
+        string Telefono,
+        string CorreoElectronico,
+        string RolGeneral,
+        bool Activo,
+        DateTime FechaAlta
+    )
+    {
+        public List<ManagerUsuarioEquipoDto> Equipos { get; } = [];
     }
 }
 
