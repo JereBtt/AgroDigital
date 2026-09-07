@@ -1448,8 +1448,10 @@ function App() {
           : { ...updatedAccount, passwordTemporal: current.passwordTemporal ?? null };
       });
       setAdminError('');
+      return true;
     } catch (error) {
       setAdminError(error.message.replace(/^"|"$/g, '') || `No se pudo ${isDisabled ? 'habilitar' : 'deshabilitar'} el acceso.`);
+      return false;
     }
   }
 
@@ -2697,6 +2699,8 @@ function AdminPanel({
   const [accountForm, setAccountForm] = useState({ responsable: '' });
   const [editingAccountId, setEditingAccountId] = useState(null);
   const [editingResponsible, setEditingResponsible] = useState('');
+  const [pendingAccountStatus, setPendingAccountStatus] = useState(null);
+  const [updatingAccountStatus, setUpdatingAccountStatus] = useState(false);
 
   function submitAccount(event) {
     event.preventDefault();
@@ -2722,6 +2726,15 @@ function AdminPanel({
 
     onUpdateResponsible(accountId, responsable);
     cancelResponsibleEdit();
+  }
+
+  async function confirmAccountStatus() {
+    if (!pendingAccountStatus || updatingAccountStatus) return;
+
+    setUpdatingAccountStatus(true);
+    const updated = await onToggleAccountStatus(pendingAccountStatus);
+    setUpdatingAccountStatus(false);
+    if (updated) setPendingAccountStatus(null);
   }
 
   const pendingAccounts = accounts.filter((account) => account.estado === 'Pendiente de primer ingreso').length;
@@ -2914,7 +2927,7 @@ function AdminPanel({
                         <button
                           className={`admin-action-button ${account.estado === 'Deshabilitado' ? 'admin-action-button-enable' : 'admin-action-button-danger'}`}
                           type="button"
-                          onClick={() => onToggleAccountStatus(account)}
+                          onClick={() => setPendingAccountStatus(account)}
                         >
                           {account.estado === 'Deshabilitado' ? <CheckCircle2 size={15} /> : <LockKeyhole size={15} />}
                           {account.estado === 'Deshabilitado' ? 'Habilitar' : 'Deshabilitar'}
@@ -2928,7 +2941,44 @@ function AdminPanel({
           </div>
         )}
       </section>
+      {pendingAccountStatus && (
+        <AdminAccountStatusConfirmation
+          account={pendingAccountStatus}
+          saving={updatingAccountStatus}
+          onCancel={() => setPendingAccountStatus(null)}
+          onConfirm={confirmAccountStatus}
+        />
+      )}
     </section>
+  );
+}
+
+function AdminAccountStatusConfirmation({ account, saving, onCancel, onConfirm }) {
+  const enabling = account.estado === 'Deshabilitado';
+  const action = enabling ? 'habilitar' : 'deshabilitar';
+
+  return createPortal(
+    <div className="confirmation-modal-backdrop" role="presentation">
+      <section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="admin-account-status-title" aria-describedby="admin-account-status-description">
+        <span className={`confirmation-modal-icon ${enabling ? 'confirmation-modal-icon-success' : ''}`} aria-hidden="true">
+          {enabling ? <CheckCircle2 size={28} /> : <Ban size={28} />}
+        </span>
+        <div>
+          <h2 id="admin-account-status-title">¿{enabling ? 'Habilitar' : 'Deshabilitar'} cuenta?</h2>
+          <p id="admin-account-status-description">
+            {enabling ? <>Vas a habilitar la cuenta de <strong>{account.responsable}</strong>. El responsable podrá volver a ingresar al sistema.</> : <>Vas a deshabilitar la cuenta de <strong>{account.responsable}</strong>. Se bloqueará su acceso, pero se conservará su historial.</>}
+          </p>
+        </div>
+        <div className="confirmation-modal-actions">
+          <button className="confirmation-cancel-button" type="button" onClick={onCancel} disabled={saving}>Cancelar</button>
+          <button className={enabling ? 'confirmation-success-button' : 'confirmation-danger-button'} type="button" onClick={onConfirm} disabled={saving} autoFocus>
+            {saving ? <LoaderCircle className="spin" size={18} /> : enabling ? <CheckCircle2 size={18} /> : <Ban size={18} />}
+            {saving ? `${enabling ? 'Habilitando' : 'Deshabilitando'}...` : `Sí, ${action}`}
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body
   );
 }
 
