@@ -1761,7 +1761,7 @@ button {
 
 .filters-card {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.5fr) repeat(3, minmax(130px, 0.7fr)) minmax(140px, 0.75fr) minmax(120px, 0.6fr);
+  grid-template-columns: minmax(270px, 1fr) minmax(260px, 1.5fr) repeat(3, minmax(130px, 0.7fr)) minmax(140px, 0.75fr) minmax(120px, 0.6fr);
   gap: 14px;
   padding: 22px;
 }
@@ -1783,9 +1783,11 @@ button {
 }
 
 .status-segmented {
+  box-sizing: border-box;
+  width: 288px;
   min-height: 48px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 112px 1fr;
   gap: 6px;
   padding: 5px;
   border: 1px solid #d6e8d9;
@@ -1794,11 +1796,13 @@ button {
 }
 
 .status-segmented button {
+  padding: 0 10px;
   border: 0;
   border-radius: 10px;
   background: transparent;
   color: #496055;
   font-weight: 900;
+  white-space: nowrap;
 }
 
 .status-segmented-active {
@@ -1883,6 +1887,35 @@ button {
   gap: 10px;
 }
 
+.lotes-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.export-lotes-button {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 18px;
+  border: 1px solid #cfe2d3;
+  border-radius: 13px;
+  background: #eff8f1;
+  color: #187c37;
+  font-weight: 900;
+}
+
+.export-lotes-button:disabled {
+  cursor: not-allowed;
+  border-color: #e4eae5;
+  background: #f4f6f4;
+  color: #9ba69f;
+}
+
 .green-button.secondary {
   background: #18883b;
 }
@@ -1917,6 +1950,11 @@ button {
   font-weight: 900;
 }
 
+.lotes-table th:last-child {
+  min-width: 248px;
+  text-align: center;
+}
+
 .lotes-table td {
   height: 74px;
   padding: 10px 14px;
@@ -1939,11 +1977,15 @@ button {
 }
 
 .actions-cell {
+  color: #10271a;
+  text-align: center;
+}
+
+.actions-cell-content {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: #10271a;
 }
 
 .actions-cell button {
@@ -1996,6 +2038,120 @@ button {
   border-color: #cdebd4;
   background: #effaf1;
   color: #18883b;
+}
+
+.confirmation-modal-backdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(12, 35, 21, 0.46);
+  backdrop-filter: blur(5px);
+}
+
+.confirmation-modal {
+  width: min(100%, 480px);
+  display: grid;
+  gap: 20px;
+  padding: 30px;
+  border: 1px solid #f2d8d5;
+  border-radius: 26px;
+  background: #ffffff;
+  box-shadow: 0 28px 70px rgba(16, 39, 26, 0.28);
+}
+
+.confirmation-modal-icon {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: #fff0ee;
+  color: #d92d20;
+}
+
+.confirmation-modal-icon-success {
+  background: #e9f8ed;
+  color: #18883b;
+}
+
+.confirmation-modal h2 {
+  margin: 0 0 8px;
+  color: #173522;
+  font-size: 23px;
+}
+
+.confirmation-modal p {
+  margin: 0;
+  color: #607066;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.confirmation-modal p strong {
+  color: #173522;
+}
+
+.confirmation-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.confirmation-modal-actions button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 18px;
+  border-radius: 12px;
+  font-weight: 900;
+}
+
+.confirmation-cancel-button {
+  border: 1px solid #d9e4dc;
+  background: #ffffff;
+  color: #244332;
+}
+
+.confirmation-danger-button {
+  border: 1px solid #d92d20;
+  background: #d92d20;
+  color: #ffffff;
+}
+
+.confirmation-success-button {
+  border: 1px solid #1f963f;
+  background: #1f963f;
+  color: #ffffff;
+}
+
+.confirmation-modal-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+@media (max-width: 520px) {
+  .confirmation-modal-backdrop {
+    align-items: end;
+    padding: 14px;
+  }
+
+  .confirmation-modal {
+    padding: 24px;
+    border-radius: 24px;
+  }
+
+  .confirmation-modal-actions {
+    flex-direction: column-reverse;
+  }
+
+  .confirmation-modal-actions button {
+    width: 100%;
+  }
 }
 
 .lote-icon-cell {
