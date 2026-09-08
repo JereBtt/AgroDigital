@@ -69,15 +69,17 @@ public class SiloRepository(IConfiguration configuration) : ISiloRepository
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
 
-        var cantidadInicial = request.CantidadGranoAlmacenado ?? 0;
-
+        // El silo siempre arranca en 0: si viene con stock inicial, ese
+        // valor se aplica como Ingreso automatico en Almacenamiento
+        // (ALM-04), que es quien termina fijando CantidadGranoAlmacenado.
+        // Esto evita contar el stock inicial dos veces.
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.AddWithValue("@LoteId", (object?)request.LoteId ?? DBNull.Value);
         command.Parameters.AddWithValue("@Nombre", request.Nombre.Trim());
         command.Parameters.AddWithValue("@TipoSilo", request.TipoSilo.Trim());
         command.Parameters.AddWithValue("@CapacidadMax", request.CapacidadMax);
         command.Parameters.AddWithValue("@Producto", string.IsNullOrWhiteSpace(request.Producto) ? DBNull.Value : request.Producto.Trim());
-        command.Parameters.AddWithValue("@CantidadGranoAlmacenado", cantidadInicial);
+        command.Parameters.AddWithValue("@CantidadGranoAlmacenado", 0);
         command.Parameters.AddWithValue("@Pais", request.Pais.Trim());
         command.Parameters.AddWithValue("@Provincia", request.Provincia.Trim());
         command.Parameters.AddWithValue("@Ciudad", request.Ciudad.Trim());

@@ -10,6 +10,10 @@
     cuelgan de la recorrida puntual (SiembraSeguimientoId), no de la Siembra en general.
     Los campos de Insumos ya nacen opcionales (mismo criterio que el resto del sistema).
 */
+
+use AgroDigital
+go
+
 IF OBJECT_ID(N'dbo.SiembraSeguimientos', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.SiembraSeguimientos

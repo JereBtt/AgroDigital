@@ -14,6 +14,10 @@
     Siembra se agregan en una etapa posterior (tablas propias, siguiendo el mismo patron ya
     usado en Silos: sub-tablas con FK a SiembraId).
 */
+
+use AgroDigital
+go
+
 IF OBJECT_ID(N'dbo.Siembras', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.Siembras

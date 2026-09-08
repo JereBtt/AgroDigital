@@ -19,6 +19,7 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddScoped<ILoteRepository, LoteRepository>();
 builder.Services.AddScoped<ISiloRepository, SiloRepository>();
+builder.Services.AddScoped<IAlmacenamientoRepository, AlmacenamientoRepository>();
 builder.Services.AddScoped<ISiembraRepository, SiembraRepository>();
 builder.Services.AddScoped<ISeguimientoRepository, SeguimientoRepository>();
 builder.Services.AddScoped<IAuthRepository, AuthRepository>();
@@ -33,7 +34,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 app.UseCors("FrontendLocal");
 app.UseAuthorization();
 app.MapControllers();
