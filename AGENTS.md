@@ -243,6 +243,8 @@ La tesis describe el flujo operativo de campania:
 
 ## Convenciones de trabajo con Codex
 
+- En la tabla de Lotes, la celda de acciones conserva display table-cell y el contenedor interno actions-cell-content dispone los botones en una fila flex sin saltos, centrada verticalmente. No aplicar flex directamente a esa celda ni dejar el contenedor interno sin estilos al integrar cambios.
+
 - La revision final de Siembras usa tarjetas amplias en dos columnas en escritorio y una en pantallas chicas, con texto de datos de 16px como base, titulos de 19px y espaciado generoso; respeta el ajuste de texto de accesibilidad.
 
 - Accesibilidad cambia exclusivamente el tamaño de las fuentes (Chico 100%, Medio 112%, Grande 124%) mediante font-size. No aplicar zoom ni transform de escala al body o contenedores; imagenes, iconos, sidebar y anchos de la estructura mantienen sus dimensiones. El texto puede ocupar mas lineas y aumentar naturalmente la altura del contenido.

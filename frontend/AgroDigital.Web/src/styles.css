@@ -1983,6 +1983,25 @@ button {
   justify-content: center;
 }
 
+.lotes-table td.lote-actions-cell {
+  display: table-cell;
+  vertical-align: middle;
+}
+
+.lote-actions-cell .actions-cell-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 10px;
+  width: max-content;
+  margin: 0 auto;
+}
+
+.lote-actions-cell .actions-cell-content > button {
+  flex-shrink: 0;
+}
+
 .actions-cell button {
   width: 40px;
   height: 40px;

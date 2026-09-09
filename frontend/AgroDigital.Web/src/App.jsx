@@ -4447,7 +4447,7 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
                     <td><CultivoChip value={lote.cultivoActual || lote.cultivoAnterior || '-'} estado={lote.estadoCultivo} /></td>
                     <td><CultivoChip value={lote.estadoCultivo || 'Sin cultivo'} estado={lote.estadoCultivo} /></td>
                     <td>{Number(lote.hectareas).toLocaleString('es-AR', { maximumFractionDigits: 2 })} ha</td>
-                    <td className="actions-cell">
+                    <td className="actions-cell lote-actions-cell">
                       <div className="actions-cell-content">
                       <button className="table-action-tooltip" data-tooltip="Ver detalle" type="button" aria-label={`Ver ${lote.nombre}`} onClick={() => onView(lote)}><Eye size={18} /></button>
                       <button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label={`Editar ${lote.nombre}`} onClick={() => onEdit(lote)}><Edit size={18} /></button>
