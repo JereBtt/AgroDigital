@@ -29,6 +29,11 @@ public class LotesController(ILoteRepository loteRepository, IAuthTokenService a
     public async Task<ActionResult<LoteDto>> Crear(CrearLoteRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        if (await loteRepository.ExisteNombreAsync(request.Nombre, usuario.UsuarioId, usuario.Rol == "Admin"))
+        {
+            return Conflict("Ya existe un lote registrado con ese nombre. Revisa mayusculas, minusculas o espacios.");
+        }
+
         var lote = await loteRepository.CrearAsync(request, usuario.UsuarioId, usuario.Rol == "Admin");
         return CreatedAtAction(nameof(ObtenerPorId), new { loteId = lote.LoteId }, lote);
     }
@@ -37,6 +42,11 @@ public class LotesController(ILoteRepository loteRepository, IAuthTokenService a
     public async Task<IActionResult> Actualizar(int loteId, ActualizarLoteRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        if (await loteRepository.ExisteNombreAsync(request.Nombre, usuario.UsuarioId, usuario.Rol == "Admin", loteId))
+        {
+            return Conflict("Ya existe otro lote registrado con ese nombre. Revisa mayusculas, minusculas o espacios.");
+        }
+
         var actualizado = await loteRepository.ActualizarAsync(loteId, request, usuario.UsuarioId, usuario.Rol == "Admin");
         return actualizado ? NoContent() : NotFound();
     }

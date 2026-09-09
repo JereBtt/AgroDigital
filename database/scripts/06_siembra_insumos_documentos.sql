@@ -21,11 +21,18 @@ BEGIN
         Tipo NVARCHAR(100) NOT NULL,
         Variedad NVARCHAR(100) NULL,
         CantidadAplicada DECIMAL(18,4) NOT NULL,
+        UnidadMedida NVARCHAR(10) NOT NULL,
 
         CONSTRAINT PK_SiembraInsumos PRIMARY KEY CLUSTERED (SiembraInsumoId),
         CONSTRAINT FK_SiembraInsumos_Siembras FOREIGN KEY (SiembraId) REFERENCES dbo.Siembras (SiembraId),
         CONSTRAINT CK_SiembraInsumos_CantidadAplicada CHECK (CantidadAplicada > 0)
     );
+END;
+GO
+
+IF COL_LENGTH(N'dbo.SiembraInsumos', N'UnidadMedida') IS NULL
+BEGIN
+    ALTER TABLE dbo.SiembraInsumos ADD UnidadMedida NVARCHAR(10) NULL;
 END;
 GO
 

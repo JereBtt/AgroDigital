@@ -24,6 +24,14 @@ public class CrearLoteRequest
     [RegularExpression("^(Propio|Alquilado)$")]
     public string Condicion { get; set; } = string.Empty;
 
+    [Required]
+    [StringLength(60)]
+    public string CultivoAnterior { get; set; } = string.Empty;
+
+    [Required]
+    [StringLength(20)]
+    public string CultivoAnteriorCampania { get; set; } = string.Empty;
+
     [Range(0.0001, double.MaxValue)]
     public decimal Hectareas { get; set; }
 

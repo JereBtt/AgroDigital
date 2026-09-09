@@ -7,7 +7,9 @@ import profileCardLandscape from './assets/profile-card-landscape.png';
 import sidebarLandscapeCollapsed from './assets/sidebar-landscape-collapsed.png';
 import sidebarLandscapeExpanded from './assets/sidebar-landscape-expanded.png';
 import Silos from './Silos';
+import Campanias from './Campanias';
 import Siembras from './Siembras';
+import Cosechas from './Cosechas';
 import {
   BarChart3,
   Ban,
@@ -94,6 +96,7 @@ const ARGENTINA_ZONES = {
 };
 
 const provinces = Object.keys(ARGENTINA_ZONES);
+const commonGrains = ['Soja', 'Maiz', 'Sorgo', 'Trigo', 'Girasol', 'Otro'];
 
 const emptyForm = {
   nombre: '',
@@ -101,6 +104,8 @@ const emptyForm = {
   provincia: 'Cordoba',
   ciudad: 'Los Condores',
   condicion: 'Propio',
+  cultivoAnterior: '',
+  cultivoAnteriorCampania: '',
   coordenadas: [],
   cerrado: false
 };
@@ -163,6 +168,17 @@ function formatHectares(value) {
   });
 }
 
+function getPreviousCampaignOptions(date = new Date()) {
+  const currentYear = date.getFullYear();
+  const currentMonth = date.getMonth() + 1;
+  const firstEnabledYear = currentMonth >= 6 ? currentYear : currentYear - 1;
+
+  return Array.from({ length: 3 }, (_, index) => {
+    const year = firstEnabledYear - index;
+    return `${year}-${year - 1}`;
+  });
+}
+
 function formFromLote(lote) {
   return {
     nombre: lote?.nombre ?? '',
@@ -170,6 +186,8 @@ function formFromLote(lote) {
     provincia: lote?.provincia ?? emptyForm.provincia,
     ciudad: lote?.ciudad ?? '',
     condicion: lote?.condicion ?? 'Propio',
+    cultivoAnterior: lote?.cultivoAnterior ?? '',
+    cultivoAnteriorCampania: lote?.cultivoAnteriorCampania ?? '',
     coordenadas: (lote?.coordenadas ?? [])
       .slice()
       .sort((a, b) => Number(a.orden ?? 0) - Number(b.orden ?? 0))
@@ -189,6 +207,8 @@ function lotePayloadFromForm(form, areaHa, areaM2) {
     provincia: form.provincia,
     ciudad: form.ciudad,
     condicion: form.condicion,
+    cultivoAnterior: form.cultivoAnterior,
+    cultivoAnteriorCampania: form.cultivoAnteriorCampania,
     hectareas: Number(areaHa.toFixed(4)),
     superficieTotal: Number(areaM2.toFixed(4)),
     coordenadas: form.coordenadas.map((point, index) => ({
@@ -206,6 +226,8 @@ function normalizeLoteFormForComparison(form, areaHa, areaM2) {
     provincia: form.provincia.trim(),
     ciudad: form.ciudad.trim(),
     condicion: form.condicion.trim(),
+    cultivoAnterior: form.cultivoAnterior.trim(),
+    cultivoAnteriorCampania: form.cultivoAnteriorCampania.trim(),
     cerrado: Boolean(form.cerrado),
     hectareas: Number(areaHa.toFixed(4)),
     superficieTotal: Number(areaM2.toFixed(4)),
@@ -423,12 +445,16 @@ function App() {
   const [otpLoading, setOtpLoading] = useState(false);
   const [view, setView] = useState('list');
   const [lotes, setLotes] = useState([]);
+  const [parentCampanias, setParentCampanias] = useState([]);
+  const [selectedParentEmpresaId, setSelectedParentEmpresaId] = useState(() => localStorage.getItem('agrodigital.parentEmpresaId') || '');
+  const [selectedParentCampaniaId, setSelectedParentCampaniaId] = useState(() => localStorage.getItem('agrodigital.parentCampaniaId') || '');
   const [selectedLote, setSelectedLote] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loteStatusSaving, setLoteStatusSaving] = useState('');
   const [status, setStatus] = useState('Conectando...');
   const [form, setForm] = useState(emptyForm);
+  const [loteFieldErrors, setLoteFieldErrors] = useState({});
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [accessibilityOpen, setAccessibilityOpen] = useState(false);
@@ -447,6 +473,38 @@ function App() {
 
   const areaM2 = useMemo(() => polygonAreaSquareMeters(form.coordenadas), [form.coordenadas]);
   const areaHa = areaM2 / 10000;
+  const empresasDisponibles = useMemo(
+    () => (managerContext?.empresas ?? []).filter((empresa) => empresa.activo),
+    [managerContext]
+  );
+  const selectedParentEmpresa = useMemo(
+    () => empresasDisponibles.find((empresa) => String(empresa.empresaId) === String(selectedParentEmpresaId)) ?? null,
+    [empresasDisponibles, selectedParentEmpresaId]
+  );
+  const campaniasDisponibles = useMemo(() => {
+    const unique = new Map();
+    parentCampanias.forEach((item) => {
+      if (!item?.campaniaId || unique.has(item.campaniaId)) return;
+      unique.set(item.campaniaId, item);
+    });
+
+    return [...unique.values()]
+      .filter((campania) => !selectedParentEmpresaId || String(campania.empresaId) === String(selectedParentEmpresaId))
+      .sort((a, b) => new Date(b.fechaInicio) - new Date(a.fechaInicio));
+  }, [parentCampanias, selectedParentEmpresaId]);
+  const selectedParentCampania = useMemo(
+    () => campaniasDisponibles.find((campania) => String(campania.campaniaId) === String(selectedParentCampaniaId)) ?? null,
+    [campaniasDisponibles, selectedParentCampaniaId]
+  );
+  const selectedParentCampaniaCombinaciones = useMemo(
+    () => parentCampanias.filter((campania) => String(campania.campaniaId) === String(selectedParentCampaniaId)),
+    [parentCampanias, selectedParentCampaniaId]
+  );
+  const parentFilteredLotes = useMemo(() => (
+    selectedParentEmpresaId
+      ? lotes.filter((lote) => String(lote.empresaId) === String(selectedParentEmpresaId))
+      : lotes
+  ), [lotes, selectedParentEmpresaId]);
 
   function authHeaders(extraHeaders = {}) {
     return session?.token
@@ -558,6 +616,21 @@ function App() {
       setStatus(`Sin conexion: ${error.message}`);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadParentCampanias() {
+    if (!session?.token || session.type !== 'manager-demo') {
+      setParentCampanias([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/campanias`, { headers: authHeaders() });
+      if (!response.ok) throw new Error(`API ${response.status}`);
+      setParentCampanias(await response.json());
+    } catch {
+      setParentCampanias([]);
     }
   }
 
@@ -728,11 +801,56 @@ function App() {
   useEffect(() => {
     if (session?.type !== 'manager-demo') {
       setLoading(false);
+      setParentCampanias([]);
       return;
     }
 
     loadLotes();
+    loadParentCampanias();
   }, [session?.type, session?.token]);
+
+  useEffect(() => {
+    if (empresasDisponibles.length === 0) {
+      setSelectedParentEmpresaId('');
+      return;
+    }
+
+    const currentStillValid = empresasDisponibles.some((empresa) => String(empresa.empresaId) === String(selectedParentEmpresaId));
+    if (currentStillValid) return;
+
+    const principal = empresasDisponibles.find((empresa) => empresa.esPrincipal) ?? empresasDisponibles[0];
+    setSelectedParentEmpresaId(String(principal.empresaId));
+  }, [empresasDisponibles, selectedParentEmpresaId]);
+
+  useEffect(() => {
+    if (selectedParentEmpresaId) {
+      localStorage.setItem('agrodigital.parentEmpresaId', selectedParentEmpresaId);
+    } else {
+      localStorage.removeItem('agrodigital.parentEmpresaId');
+    }
+  }, [selectedParentEmpresaId]);
+
+  useEffect(() => {
+    if (campaniasDisponibles.length === 0) {
+      setSelectedParentCampaniaId('');
+      return;
+    }
+
+    const currentStillValid = campaniasDisponibles.some((campania) => String(campania.campaniaId) === String(selectedParentCampaniaId));
+    if (currentStillValid) return;
+
+    const enCurso = campaniasDisponibles.find((campania) => campania.estado === 'En curso');
+    const fallback = enCurso ?? campaniasDisponibles[0];
+    setSelectedParentCampaniaId(String(fallback.campaniaId));
+  }, [campaniasDisponibles, selectedParentCampaniaId]);
+
+  useEffect(() => {
+    if (selectedParentCampaniaId) {
+      localStorage.setItem('agrodigital.parentCampaniaId', selectedParentCampaniaId);
+    } else {
+      localStorage.removeItem('agrodigital.parentCampaniaId');
+    }
+  }, [selectedParentCampaniaId]);
 
   useEffect(() => {
     document.body.classList.toggle('agro-sidebar-collapsed', sidebarCollapsed);
@@ -747,7 +865,11 @@ function App() {
     };
 
     document.body.style.setProperty('--text-scale', textScaleBySize[textSize] ?? '1');
-    return () => document.body.style.removeProperty('--text-scale');
+    document.body.dataset.textSize = textSize;
+    return () => {
+      document.body.style.removeProperty('--text-scale');
+      delete document.body.dataset.textSize;
+    };
   }, [textSize]);
 
   useEffect(() => {
@@ -827,6 +949,13 @@ function App() {
   }, [form.provincia]);
 
   function updateField(field, value) {
+    setLoteFieldErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+
     setForm((current) => {
       if (field === 'provincia') {
         return { ...current, provincia: value, ciudad: '' };
@@ -837,6 +966,13 @@ function App() {
   }
 
   const setCoordinates = useCallback((coordenadas, cerrado = false) => {
+    setLoteFieldErrors((current) => {
+      if (!current.coordenadas) return current;
+      const next = { ...current };
+      delete next.coordenadas;
+      return next;
+    });
+
     setForm((current) => ({
       ...current,
       coordenadas,
@@ -849,12 +985,14 @@ function App() {
     setView('list');
     setSelectedLote(null);
     setIsMapExpanded(false);
+    setLoteFieldErrors({});
   }
 
   function startCreate() {
     setActiveModule('lotes');
     setForm(emptyForm);
     setSelectedLote(null);
+    setLoteFieldErrors({});
     setView('create');
   }
 
@@ -862,6 +1000,7 @@ function App() {
     setActiveModule('lotes');
     setSelectedLote(lote);
     setForm(formFromLote(lote));
+    setLoteFieldErrors({});
     setView(nextView);
   }
 
@@ -869,11 +1008,12 @@ function App() {
     event.preventDefault();
 
     if (form.coordenadas.length < 3 || !form.cerrado) {
-      setStatus('Cerra el poligono del lote antes de registrar.');
+      setLoteFieldErrors({ coordenadas: 'Cerra el poligono del lote antes de registrar.' });
       return;
     }
 
     setSaving(true);
+    setLoteFieldErrors({});
     setStatus('Guardando lote...');
     const payload = lotePayloadFromForm(form, areaHa, areaM2);
 
@@ -891,7 +1031,13 @@ function App() {
       await loadLotes();
       setStatus('Lote registrado correctamente');
     } catch (error) {
-      setStatus(`No se pudo guardar: ${error.message}`);
+      const message = error.message.replace(/^"|"$/g, '');
+      if (message.toLowerCase().includes('ya existe') && message.toLowerCase().includes('lote')) {
+        setLoteFieldErrors({ nombre: message });
+        setStatus('API conectada');
+      } else {
+        setStatus(`No se pudo guardar: ${message}`);
+      }
     } finally {
       setSaving(false);
     }
@@ -906,7 +1052,7 @@ function App() {
     }
 
     if (form.coordenadas.length < 3 || !form.cerrado) {
-      setStatus('Cerra el poligono del lote antes de guardar.');
+      setLoteFieldErrors({ coordenadas: 'Cerra el poligono del lote antes de guardar.' });
       return;
     }
 
@@ -916,6 +1062,7 @@ function App() {
     }
 
     setSaving(true);
+    setLoteFieldErrors({});
     setStatus('Guardando cambios del lote...');
 
     try {
@@ -931,7 +1078,13 @@ function App() {
       await loadLotes();
       setStatus('Lote actualizado correctamente');
     } catch (error) {
-      setStatus(`No se pudo actualizar: ${error.message}`);
+      const message = error.message.replace(/^"|"$/g, '');
+      if (message.toLowerCase().includes('ya existe') && message.toLowerCase().includes('lote')) {
+        setLoteFieldErrors({ nombre: message });
+        setStatus('API conectada');
+      } else {
+        setStatus(`No se pudo actualizar: ${message}`);
+      }
     } finally {
       setSaving(false);
     }
@@ -1383,7 +1536,38 @@ function App() {
     setIsMapExpanded(false);
   }
 
-  const currentCrumb = activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Equipos' : {
+  const parentFiltersForEmpresa = (
+    <ParentFiltersBar>
+      <ParentSearchSelect
+        label="Empresa"
+        value={selectedParentEmpresaId}
+        options={empresasDisponibles.map((empresa) => ({ value: String(empresa.empresaId), label: empresa.nombre }))}
+        placeholder="Seleccionar empresa"
+        onChange={setSelectedParentEmpresaId}
+      />
+    </ParentFiltersBar>
+  );
+
+  const parentFiltersForEmpresaCampania = (
+    <ParentFiltersBar>
+      <ParentSearchSelect
+        label="Empresa"
+        value={selectedParentEmpresaId}
+        options={empresasDisponibles.map((empresa) => ({ value: String(empresa.empresaId), label: empresa.nombre }))}
+        placeholder="Seleccionar empresa"
+        onChange={setSelectedParentEmpresaId}
+      />
+      <ParentSearchSelect
+        label="Campaña"
+        value={selectedParentCampaniaId}
+        options={campaniasDisponibles.map((campania) => ({ value: String(campania.campaniaId), label: campania.campaniaNombre }))}
+        placeholder="Seleccionar campaña"
+        onChange={setSelectedParentCampaniaId}
+      />
+    </ParentFiltersBar>
+  );
+
+  const currentCrumb = activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Empresas' : {
     create: 'Registrar lote',
     detail: selectedLote ? `Detalle ${selectedLote.nombre}` : 'Detalle lote',
     edit: selectedLote ? `Editar ${selectedLote.nombre}` : 'Editar lote'
@@ -1497,13 +1681,13 @@ function App() {
           </button>
           <button className={`nav-item ${activeModule === 'teams' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('teams'); setView('list'); setIsMapExpanded(false); setProfileMenuOpen(false); }}>
             <Building2 size={23} />
-            <span>Equipos</span>
+            <span>Empresas</span>
           </button>
           <button className={`nav-item ${activeModule === 'lotes' ? 'nav-item-active' : ''}`} type="button" onClick={goToList}>
             <Compass size={23} />
             <span>Lotes</span>
           </button>
-          <button className="nav-item" type="button">
+          <button className={`nav-item ${activeModule === 'campanias' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('campanias'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
             <CalendarDays size={23} />
             <span>Campañas</span>
           </button>
@@ -1511,7 +1695,7 @@ function App() {
             <Sprout size={23} />
             <span>Siembras</span>
           </button>
-          <button className="nav-item" type="button">
+          <button className={`nav-item ${activeModule === 'cosechas' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('cosechas'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
             <MapIcon size={23} />
             <span>Cosechas</span>
           </button>
@@ -1554,7 +1738,7 @@ function App() {
               <Home size={17} />
             </button>
             <button className="breadcrumb-link" type="button" onClick={activeModule === 'lotes' ? goToList : undefined}>
-                          {activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Equipos' : activeModule === 'silos' ? 'Silos' : activeModule === 'siembras' ? 'Siembras' : 'Lotes'}
+                          {activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Empresas' : activeModule === 'campanias' ? 'Campañas' : activeModule === 'silos' ? 'Silos' : activeModule === 'siembras' ? 'Siembras' : activeModule === 'cosechas' ? 'Cosechas' : 'Lotes'}
             </button>
             {false && activeModule === 'users' && (
               <>
@@ -1645,12 +1829,46 @@ function App() {
           />
         ) : activeModule === 'silos' ? (
           <Silos session={session} lotes={lotes} />
+        ) : activeModule === 'campanias' ? (
+          <Campanias
+            session={session}
+            lotes={parentFilteredLotes}
+            parentFilters={parentFiltersForEmpresa}
+            selectedEmpresaId={selectedParentEmpresaId}
+            onLotesChanged={loadLotes}
+            onCampaniasChanged={loadParentCampanias}
+            onRegisterSiembra={(campaniaId) => {
+              setSelectedParentCampaniaId(String(campaniaId));
+              setActiveModule('siembras');
+              setProfileMenuOpen(false);
+              setIsMapExpanded(false);
+            }}
+          />
         ) : activeModule === 'siembras' ? (
-          <Siembras session={session} lotes={lotes} />
+          <Siembras
+            session={session}
+            lotes={parentFilteredLotes}
+            parentFilters={parentFiltersForEmpresaCampania}
+            selectedCampania={selectedParentCampania}
+            selectedCampaniaCombinaciones={selectedParentCampaniaCombinaciones}
+            selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
+            selectedCampaniaName={selectedParentCampania?.campaniaNombre || ''}
+            onLotesChanged={loadLotes}
+            onCampaniasChanged={loadParentCampanias}
+          />
+        ) : activeModule === 'cosechas' ? (
+          <Cosechas
+            session={session}
+            lotes={parentFilteredLotes}
+            parentFilters={parentFiltersForEmpresaCampania}
+            selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
+            selectedCampaniaName={selectedParentCampania?.campaniaNombre || ''}
+          />
         ) : view === 'list' ? (
           <LotesList
-            lotes={lotes}
+            lotes={parentFilteredLotes}
             loading={loading}
+            parentFilters={parentFiltersForEmpresa}
             onAdd={startCreate}
             onView={(lote) => openLote(lote, 'detail')}
             onEdit={(lote) => openLote(lote, 'edit')}
@@ -1663,6 +1881,7 @@ function App() {
             areaHa={areaHa}
             areaM2={areaM2}
             saving={saving}
+            fieldErrors={loteFieldErrors}
             zones={availableZones}
             zonesLoading={zonesLoading}
             onCancel={goToList}
@@ -1679,6 +1898,7 @@ function App() {
             areaHa={areaHa}
             areaM2={areaM2}
             saving={saving}
+            fieldErrors={loteFieldErrors}
             zones={availableZones}
             zonesLoading={zonesLoading}
             onBack={goToList}
@@ -3693,7 +3913,68 @@ function OtpSecretCredential({ value, copied, onCopy }) {
     </div>
   );
 }
-function LotesList({ lotes, loading, onAdd, onView, onEdit, onToggleStatus, statusSaving }) {
+function ParentFiltersBar({ children }) {
+  return <div className="parent-filters-bar">{children}</div>;
+}
+
+function ParentSearchSelect({ label, value, options, placeholder, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const containerRef = useRef(null);
+  const selectedOption = options.find((option) => option.value === value);
+  const filteredOptions = useMemo(() => {
+    const text = normalizeSearchText(query.trim());
+    return text
+      ? options.filter((option) => normalizeSearchText(option.label).includes(text))
+      : options;
+  }, [options, query]);
+
+  useEffect(() => {
+    function close(event) {
+      if (!containerRef.current?.contains(event.target)) setOpen(false);
+    }
+
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+
+  return (
+    <div className="parent-filter-select" ref={containerRef}>
+      <span>{label}</span>
+      <button type="button" onClick={() => setOpen((current) => !current)}>
+        <strong>{selectedOption?.label || placeholder}</strong>
+        <ChevronDown size={17} />
+      </button>
+      {open && (
+        <div className="parent-filter-popover">
+          <label className="search-field parent-filter-search">
+            <Search size={18} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Buscar ${label.toLowerCase()}...`} autoFocus />
+          </label>
+          <div className="parent-filter-options">
+            {filteredOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={option.value === value ? 'parent-filter-option-active' : ''}
+                onClick={() => {
+                  onChange(option.value);
+                  setQuery('');
+                  setOpen(false);
+                }}
+              >
+                {option.label}
+              </button>
+            ))}
+            {filteredOptions.length === 0 && <em>No hay coincidencias.</em>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onToggleStatus, statusSaving }) {
   const [query, setQuery] = useState('');
   const [conditionFilter, setConditionFilter] = useState('');
   const [zoneFilter, setZoneFilter] = useState('');
@@ -3754,6 +4035,7 @@ function LotesList({ lotes, loading, onAdd, onView, onEdit, onToggleStatus, stat
           <span>Registrar lote</span>
         </button>
       </div>
+      {parentFilters}
 
       <div className="summary-grid summary-grid-four">
         <SummaryCard icon={<MapIcon size={30} />} label="Total de lotes" value={summary.total} helper="Lotes registrados en el sistema" />
@@ -3855,6 +4137,8 @@ function LotesList({ lotes, loading, onAdd, onView, onEdit, onToggleStatus, stat
                   <th>Provincia</th>
                   <th>Zona</th>
                   <th>Condicion</th>
+                  <th>Cultivo</th>
+                  <th>Estado cultivo</th>
                   <th>Hectareas</th>
                   <th>Acciones</th>
                 </tr>
@@ -3875,15 +4159,17 @@ function LotesList({ lotes, loading, onAdd, onView, onEdit, onToggleStatus, stat
                         {lote.condicion}
                       </span>
                     </td>
+                    <td><CultivoChip value={lote.cultivoActual || lote.cultivoAnterior || '-'} estado={lote.estadoCultivo} /></td>
+                    <td><CultivoChip value={lote.estadoCultivo || 'Sin cultivo'} estado={lote.estadoCultivo} /></td>
                     <td>{Number(lote.hectareas).toLocaleString('es-AR', { maximumFractionDigits: 2 })} ha</td>
                     <td className="actions-cell">
-                      <button type="button" aria-label={`Ver ${lote.nombre}`} onClick={() => onView(lote)}><Eye size={18} /></button>
-                      <button type="button" aria-label={`Editar ${lote.nombre}`} onClick={() => onEdit(lote)}><Edit size={18} /></button>
+                      <button className="table-action-tooltip" data-tooltip="Ver detalle" type="button" aria-label={`Ver ${lote.nombre}`} onClick={() => onView(lote)}><Eye size={18} /></button>
+                      <button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label={`Editar ${lote.nombre}`} onClick={() => onEdit(lote)}><Edit size={18} /></button>
                       <button
-                        className={`status-action-button ${lote.activo ? 'status-action-disable' : 'status-action-enable'}`}
+                        className={`table-action-tooltip status-action-button ${lote.activo ? 'status-action-disable' : 'status-action-enable'}`}
+                        data-tooltip={lote.activo ? 'Deshabilitar' : 'Habilitar'}
                         type="button"
                         aria-label={`${lote.activo ? 'Deshabilitar' : 'Habilitar'} ${lote.nombre}`}
-                        title={lote.activo ? 'Deshabilitar lote' : 'Habilitar lote'}
                         disabled={statusSaving === `deshabilitar-${lote.loteId}` || statusSaving === `habilitar-${lote.loteId}`}
                         onClick={() => onToggleStatus(lote)}
                       >
@@ -3955,6 +4241,7 @@ function LoteCreate({
   areaHa,
   areaM2,
   saving,
+  fieldErrors = {},
   zones,
   zonesLoading,
   onCancel,
@@ -3974,6 +4261,19 @@ function LoteCreate({
   }
 
   const coordinateDrag = useCoordinateDrag({ onMove: moveCoordinate });
+  const canRegister = Boolean(
+    form.nombre.trim()
+    && form.pais.trim()
+    && form.provincia.trim()
+    && form.ciudad.trim()
+    && form.condicion.trim()
+    && form.cultivoAnterior.trim()
+    && form.cultivoAnteriorCampania.trim()
+    && form.coordenadas.length >= 3
+    && form.cerrado
+    && areaHa > 0
+    && areaM2 > 0
+  );
 
   return (
     <section className="content-panel create-panel">
@@ -3987,9 +4287,9 @@ function LoteCreate({
       <form onSubmit={onSubmit}>
         <div className="create-form-card dashboard-card">
           <div className="create-grid">
-          <RequiredInput label="Nombre del lote" value={form.nombre} onChange={(value) => onFieldChange('nombre', value)} />
-          <SearchableDropdown label="Pais" value={form.pais} onChange={(value) => onFieldChange('pais', value)} options={['Argentina']} />
-          <SearchableDropdown label="Provincia" value={form.provincia} onChange={(value) => onFieldChange('provincia', value)} options={provinces} />
+          <RequiredInput label="Nombre del lote" value={form.nombre} onChange={(value) => onFieldChange('nombre', value)} error={fieldErrors.nombre} />
+          <SearchableDropdown label="Pais" value={form.pais} onChange={(value) => onFieldChange('pais', value)} options={['Argentina']} error={fieldErrors.pais} />
+          <SearchableDropdown label="Provincia" value={form.provincia} onChange={(value) => onFieldChange('provincia', value)} options={provinces} error={fieldErrors.provincia} />
           <SearchableDropdown
             label="Zona"
             value={form.ciudad}
@@ -3997,8 +4297,20 @@ function LoteCreate({
             options={zones}
             placeholder="Buscar ciudad, pueblo o zona"
             loading={zonesLoading}
+            error={fieldErrors.ciudad}
           />
-          <SearchableDropdown label="Condicion" value={form.condicion} onChange={(value) => onFieldChange('condicion', value)} options={['Propio', 'Alquilado']} searchable={false} />
+          <SearchableDropdown label="Condicion" value={form.condicion} onChange={(value) => onFieldChange('condicion', value)} options={['Propio', 'Alquilado']} searchable={false} error={fieldErrors.condicion} />
+          <GrainSelector
+            label="Cultivo anterior"
+            value={form.cultivoAnterior}
+            onChange={(value) => onFieldChange('cultivoAnterior', value)}
+            error={fieldErrors.cultivoAnterior}
+          />
+          <PreviousCampaignSelector
+            value={form.cultivoAnteriorCampania}
+            onChange={(value) => onFieldChange('cultivoAnteriorCampania', value)}
+            error={fieldErrors.cultivoAnteriorCampania}
+          />
           </div>
         </div>
 
@@ -4033,9 +4345,10 @@ function LoteCreate({
                 <input value={areaM2 ? `${areaM2.toLocaleString('es-AR', { maximumFractionDigits: 2 })} m2` : ''} readOnly />
               </label>
             </div>
+            {fieldErrors.coordenadas && <small className="field-error map-field-error">{fieldErrors.coordenadas}</small>}
 
             <div className="form-actions">
-              <button className="green-button wide" disabled={saving} type="submit">
+              <button className="green-button wide" disabled={saving || !canRegister} type="submit">
                 <CheckCircle2 size={18} />
                 <span>{saving ? 'Registrando...' : 'Registrar'}</span>
               </button>
@@ -4109,6 +4422,7 @@ function LoteDetailEdit({
   areaHa,
   areaM2,
   saving,
+  fieldErrors = {},
   zones,
   zonesLoading,
   onBack,
@@ -4178,12 +4492,14 @@ function LoteDetailEdit({
                 <ReadOnlyField label="Provincia" value={form.provincia} />
                 <ReadOnlyField label="Zona" value={form.ciudad} />
                 <ReadOnlyField label="Condicion" value={form.condicion} />
+                <ReadOnlyField label="Cultivo actual" value={lote.cultivoActual || '-'} />
+                <ReadOnlyField label="Estado cultivo" value={lote.estadoCultivo || '-'} />
               </>
             ) : (
               <>
-                <RequiredInput label="Nombre del lote" value={form.nombre} onChange={(value) => onFieldChange('nombre', value)} />
-                <SearchableDropdown label="Pais" value={form.pais} onChange={(value) => onFieldChange('pais', value)} options={['Argentina']} />
-                <SearchableDropdown label="Provincia" value={form.provincia} onChange={(value) => onFieldChange('provincia', value)} options={provinces} />
+                <RequiredInput label="Nombre del lote" value={form.nombre} onChange={(value) => onFieldChange('nombre', value)} error={fieldErrors.nombre} />
+                <SearchableDropdown label="Pais" value={form.pais} onChange={(value) => onFieldChange('pais', value)} options={['Argentina']} error={fieldErrors.pais} />
+                <SearchableDropdown label="Provincia" value={form.provincia} onChange={(value) => onFieldChange('provincia', value)} options={provinces} error={fieldErrors.provincia} />
                 <SearchableDropdown
                   label="Zona"
                   value={form.ciudad}
@@ -4191,12 +4507,26 @@ function LoteDetailEdit({
                   options={zones}
                   placeholder="Buscar ciudad, pueblo o zona"
                   loading={zonesLoading}
+                  error={fieldErrors.ciudad}
                 />
-                <SearchableDropdown label="Condicion" value={form.condicion} onChange={(value) => onFieldChange('condicion', value)} options={['Propio', 'Alquilado']} searchable={false} />
+                <SearchableDropdown label="Condicion" value={form.condicion} onChange={(value) => onFieldChange('condicion', value)} options={['Propio', 'Alquilado']} searchable={false} error={fieldErrors.condicion} />
+                <GrainSelector
+                  label="Cultivo anterior"
+                  value={form.cultivoAnterior}
+                  onChange={(value) => onFieldChange('cultivoAnterior', value)}
+                  error={fieldErrors.cultivoAnterior}
+                />
+                <PreviousCampaignSelector
+                  value={form.cultivoAnteriorCampania}
+                  onChange={(value) => onFieldChange('cultivoAnteriorCampania', value)}
+                  error={fieldErrors.cultivoAnteriorCampania}
+                />
               </>
             )}
           </div>
         </div>
+
+        {isDetail && <LoteCultivosHistory historial={lote.historialCultivos ?? []} />}
 
         <div className="lote-editor-grid">
           <section className="map-card dashboard-card">
@@ -4230,6 +4560,7 @@ function LoteDetailEdit({
                 <input value={areaM2 ? `${areaM2.toLocaleString('es-AR', { maximumFractionDigits: 2 })} m2` : ''} readOnly />
               </label>
             </div>
+            {!isDetail && fieldErrors.coordenadas && <small className="field-error map-field-error">{fieldErrors.coordenadas}</small>}
 
             <div className="form-actions">
               {isDetail ? (
@@ -4366,27 +4697,158 @@ function ReadOnlyField({ label, value }) {
   );
 }
 
-function RequiredInput({ label, value, onChange }) {
+function FieldError({ message }) {
+  return message ? <small className="field-error">{message}</small> : null;
+}
+
+function RequiredInput({ label, value, onChange, error }) {
   return (
-    <label className="field">
+    <label className={`field ${error ? 'field-with-error' : ''}`}>
       <span>{label} <b>*</b></span>
       <input value={value} onChange={(event) => onChange(event.target.value)} required />
+      <FieldError message={error} />
     </label>
   );
 }
 
-function RequiredSelect({ label, value, onChange, options }) {
+function RequiredSelect({ label, value, onChange, options, error }) {
   return (
-    <label className="field">
+    <label className={`field ${error ? 'field-with-error' : ''}`}>
       <span>{label} <b>*</b></span>
       <select value={value} onChange={(event) => onChange(event.target.value)} required>
         {options.map((option) => <option key={option}>{option}</option>)}
       </select>
+      <FieldError message={error} />
     </label>
   );
 }
 
-function SearchableDropdown({ label, value, onChange, options, placeholder = 'Buscar...', loading = false, searchable = true }) {
+function GrainSelector({ label, value, onChange, error }) {
+  const initialSelected = commonGrains.includes(value) ? value : value ? 'Otro' : '';
+  const [selectedGrain, setSelectedGrain] = useState(initialSelected);
+  const [customValue, setCustomValue] = useState(initialSelected === 'Otro' ? value : '');
+
+  useEffect(() => {
+    if (!value || commonGrains.includes(value)) {
+      setSelectedGrain(value || '');
+      setCustomValue('');
+    } else {
+      setSelectedGrain('Otro');
+      setCustomValue(value);
+    }
+  }, [value]);
+
+  function handleSelect(nextValue) {
+    setSelectedGrain(nextValue);
+    if (nextValue === 'Otro') {
+      onChange(customValue);
+      return;
+    }
+
+    onChange(nextValue);
+  }
+
+  function handleCustomChange(nextValue) {
+    const limitedValue = nextValue.slice(0, 10);
+    setCustomValue(limitedValue);
+    onChange(limitedValue);
+  }
+
+  return (
+    <label className={`field ${error ? 'field-with-error' : ''}`}>
+      <span>{label} <b>*</b></span>
+      <select value={selectedGrain} onChange={(event) => handleSelect(event.target.value)} required>
+        <option value="">Seleccionar</option>
+        {commonGrains.map((grain) => <option key={grain} value={grain}>{grain}</option>)}
+      </select>
+      {selectedGrain === 'Otro' && (
+        <input
+          value={customValue}
+          maxLength={10}
+          onChange={(event) => handleCustomChange(event.target.value)}
+          placeholder="Otro grano"
+          required
+        />
+      )}
+      <FieldError message={error} />
+    </label>
+  );
+}
+
+function PreviousCampaignSelector({ value, onChange, error }) {
+  const options = useMemo(() => getPreviousCampaignOptions(), []);
+
+  return (
+    <label className={`field ${error ? 'field-with-error' : ''}`}>
+      <span>Campaña del cultivo anterior <b>*</b></span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} required>
+        <option value="">Seleccionar</option>
+        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+      <FieldError message={error} />
+    </label>
+  );
+}
+
+function CultivoChip({ value, estado }) {
+  const state = estado || 'Sin cultivo';
+  const className = [
+    'cultivo-chip',
+    state === 'Pendiente' ? 'cultivo-chip-pending' : '',
+    state === 'Cultivado' ? 'cultivo-chip-active' : '',
+    state === 'Cosechado' ? 'cultivo-chip-done' : '',
+    state === 'Sin cultivo' ? 'cultivo-chip-empty' : ''
+  ].filter(Boolean).join(' ');
+
+  return <span className={className}>{value}</span>;
+}
+
+function LoteCultivosHistory({ historial }) {
+  return (
+    <section className="lote-history-card dashboard-card">
+      <div className="card-heading">
+        <div className="card-heading-icon">
+          <Sprout size={18} />
+        </div>
+        <div>
+          <h2>Historial de cultivos</h2>
+          <p>Cultivos registrados por campaña, del mas reciente al mas antiguo.</p>
+        </div>
+      </div>
+      <div className="table-shell table-shell-inner">
+        <table className="lotes-table">
+          <thead>
+            <tr>
+              <th>Campaña</th>
+              <th>Cultivo</th>
+              <th>Fecha de Inicio</th>
+              <th>Fecha de Fin</th>
+              <th>Estado cultivo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {historial.map((item, index) => (
+              <tr key={`${item.campania}-${item.cultivo}-${index}`}>
+                <td>{item.campania}</td>
+                <td><CultivoChip value={item.cultivo} estado={item.estadoCultivo} /></td>
+                <td>{formatDate(item.fechaInicio)}</td>
+                <td>{formatDate(item.fechaFin)}</td>
+                <td><CultivoChip value={item.estadoCultivo} estado={item.estadoCultivo} /></td>
+              </tr>
+            ))}
+            {historial.length === 0 && (
+              <tr>
+                <td colSpan={5} style={{ textAlign: 'center' }}>Todavia no hay cultivos registrados por campaña.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function SearchableDropdown({ label, value, onChange, options, placeholder = 'Buscar...', loading = false, searchable = true, error }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const wrapperRef = useRef(null);
@@ -4415,7 +4877,7 @@ function SearchableDropdown({ label, value, onChange, options, placeholder = 'Bu
   }
 
   return (
-    <div className="field dropdown-field" ref={wrapperRef}>
+    <div className={`field dropdown-field ${error ? 'field-with-error' : ''}`} ref={wrapperRef}>
       <span>{label} <b>*</b></span>
       <button className="dropdown-button" type="button" onClick={() => setOpen((current) => !current)}>
         <span>{value || `Seleccionar ${label.toLowerCase()}`}</span>
@@ -4452,6 +4914,7 @@ function SearchableDropdown({ label, value, onChange, options, placeholder = 'Bu
           </div>
         </div>
       )}
+      <FieldError message={error} />
     </div>
   );
 }

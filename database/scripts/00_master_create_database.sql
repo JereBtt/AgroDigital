@@ -313,10 +313,15 @@ BEGIN
         LoteId INT IDENTITY(1,1) NOT NULL,
         EmpresaId INT NULL,
         Nombre NVARCHAR(100) NOT NULL,
+        NombreNormalizado AS LOWER(LTRIM(RTRIM(Nombre))) COLLATE Latin1_General_100_CI_AI PERSISTED,
         Pais NVARCHAR(100) NOT NULL,
         Provincia NVARCHAR(100) NOT NULL,
         Ciudad NVARCHAR(100) NOT NULL,
         Condicion NVARCHAR(20) NOT NULL,
+        CultivoAnterior NVARCHAR(60) NOT NULL CONSTRAINT DF_Lotes_CultivoAnterior DEFAULT (N'Sin dato'),
+        CultivoAnteriorCampania NVARCHAR(20) NOT NULL CONSTRAINT DF_Lotes_CultivoAnteriorCampania DEFAULT (N'Sin dato'),
+        CultivoActual NVARCHAR(60) NULL,
+        EstadoCultivo NVARCHAR(20) NOT NULL CONSTRAINT DF_Lotes_EstadoCultivo DEFAULT (N'Sin cultivo'),
         Hectareas DECIMAL(12,4) NOT NULL,
         SuperficieTotal DECIMAL(18,4) NOT NULL,
         Activo BIT NOT NULL CONSTRAINT DF_Lotes_Activo DEFAULT (1),
@@ -326,6 +331,7 @@ BEGIN
         CONSTRAINT PK_Lotes PRIMARY KEY CLUSTERED (LoteId),
         CONSTRAINT FK_Lotes_Empresas FOREIGN KEY (EmpresaId) REFERENCES dbo.Empresas (EmpresaId),
         CONSTRAINT CK_Lotes_Condicion CHECK (Condicion IN (N'Propio', N'Alquilado')),
+        CONSTRAINT CK_Lotes_EstadoCultivo CHECK (EstadoCultivo IN (N'Sin cultivo', N'Pendiente', N'Cultivado', N'Cosechado')),
         CONSTRAINT CK_Lotes_Hectareas CHECK (Hectareas > 0),
         CONSTRAINT CK_Lotes_SuperficieTotal CHECK (SuperficieTotal > 0)
     );
@@ -334,6 +340,43 @@ GO
 IF COL_LENGTH(N'dbo.Lotes', N'EmpresaId') IS NULL
 BEGIN
     ALTER TABLE dbo.Lotes ADD EmpresaId INT NULL;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.Lotes', N'NombreNormalizado') IS NULL
+BEGIN
+    ALTER TABLE dbo.Lotes
+    ADD NombreNormalizado AS LOWER(LTRIM(RTRIM(Nombre))) COLLATE Latin1_General_100_CI_AI PERSISTED;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.Lotes', N'CultivoAnterior') IS NULL
+BEGIN
+    ALTER TABLE dbo.Lotes ADD CultivoAnterior NVARCHAR(60) NOT NULL CONSTRAINT DF_Lotes_CultivoAnterior DEFAULT (N'Sin dato') WITH VALUES;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.Lotes', N'CultivoActual') IS NULL
+BEGIN
+    ALTER TABLE dbo.Lotes ADD CultivoActual NVARCHAR(60) NULL;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.Lotes', N'CultivoAnteriorCampania') IS NULL
+BEGIN
+    ALTER TABLE dbo.Lotes ADD CultivoAnteriorCampania NVARCHAR(20) NOT NULL CONSTRAINT DF_Lotes_CultivoAnteriorCampania DEFAULT (N'Sin dato') WITH VALUES;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.Lotes', N'EstadoCultivo') IS NULL
+BEGIN
+    ALTER TABLE dbo.Lotes ADD EstadoCultivo NVARCHAR(20) NOT NULL CONSTRAINT DF_Lotes_EstadoCultivo DEFAULT (N'Sin cultivo') WITH VALUES;
+END;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Lotes_EstadoCultivo' AND parent_object_id = OBJECT_ID(N'dbo.Lotes'))
+BEGIN
+    ALTER TABLE dbo.Lotes WITH CHECK ADD CONSTRAINT CK_Lotes_EstadoCultivo CHECK (EstadoCultivo IN (N'Sin cultivo', N'Pendiente', N'Cultivado', N'Cosechado'));
 END;
 GO
 
@@ -356,6 +399,12 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Lotes_EmpresaId_Activ
 BEGIN
     CREATE INDEX IX_Lotes_EmpresaId_Activo
     ON dbo.Lotes (EmpresaId, Activo);
+END;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Lotes_CultivoActual_EstadoCultivo' AND object_id = OBJECT_ID(N'dbo.Lotes'))
+BEGIN
+    CREATE INDEX IX_Lotes_CultivoActual_EstadoCultivo ON dbo.Lotes (CultivoActual, EstadoCultivo);
 END;
 GO
 
@@ -394,6 +443,25 @@ BEGIN
 END;
 GO
 
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_Lotes_Empresa_NombreNormalizado' AND object_id = OBJECT_ID(N'dbo.Lotes'))
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM dbo.Lotes
+        GROUP BY EmpresaId, NombreNormalizado
+        HAVING COUNT(*) > 1
+    )
+    BEGIN
+        CREATE UNIQUE INDEX UX_Lotes_Empresa_NombreNormalizado
+        ON dbo.Lotes (EmpresaId, NombreNormalizado);
+    END
+    ELSE
+    BEGIN
+        PRINT N'No se creo UX_Lotes_Empresa_NombreNormalizado porque existen lotes duplicados. Corregir nombres duplicados y volver a ejecutar.';
+    END
+END;
+GO
+
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_LoteCoordenadas_LoteId' AND object_id = OBJECT_ID(N'dbo.LoteCoordenadas'))
 BEGIN
     CREATE INDEX IX_LoteCoordenadas_LoteId
@@ -401,5 +469,146 @@ BEGIN
 END;
 GO
 
+/*
+    Modulo: Campanias
+    Una campania agrupa una o varias combinaciones Lote + Grano durante un periodo.
+    Cada combinacion mantiene su propio estado y etapa para operar procesos independientes.
+*/
+IF OBJECT_ID(N'dbo.Campanias', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.Campanias
+    (
+        CampaniaId INT IDENTITY(1,1) NOT NULL,
+        EmpresaId INT NULL,
+        Periodo NVARCHAR(9) NOT NULL,
+        Nombre NVARCHAR(120) NOT NULL,
+        FechaInicio DATE NOT NULL,
+        FechaFin DATE NOT NULL,
+        Observaciones NVARCHAR(1000) NULL,
+        FechaCreacion DATETIME2(0) NOT NULL CONSTRAINT DF_Campanias_FechaCreacion DEFAULT (SYSDATETIME()),
+        FechaModificacion DATETIME2(0) NULL,
+        CreadoPorUsuarioId INT NULL,
 
+        CONSTRAINT PK_Campanias PRIMARY KEY CLUSTERED (CampaniaId),
+        CONSTRAINT UQ_Campanias_Nombre UNIQUE (Nombre),
+        CONSTRAINT FK_Campanias_Empresas FOREIGN KEY (EmpresaId) REFERENCES dbo.Empresas (EmpresaId),
+        CONSTRAINT FK_Campanias_Usuarios FOREIGN KEY (CreadoPorUsuarioId) REFERENCES dbo.Usuarios (UsuarioId),
+        CONSTRAINT CK_Campanias_Fechas CHECK (FechaFin >= FechaInicio)
+    );
+END;
+GO
 
+IF COL_LENGTH(N'dbo.Campanias', N'FechaInicio') IS NULL
+BEGIN
+    ALTER TABLE dbo.Campanias ADD FechaInicio DATE NOT NULL CONSTRAINT DF_Campanias_FechaInicio DEFAULT (CONVERT(date, SYSDATETIME())) WITH VALUES;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.Campanias', N'Periodo') IS NULL
+BEGIN
+    ALTER TABLE dbo.Campanias ADD Periodo NVARCHAR(9) NULL;
+END;
+GO
+
+UPDATE dbo.Campanias
+SET Periodo = CONCAT(
+    CASE WHEN MONTH(FechaInicio) >= 6 THEN YEAR(FechaInicio) ELSE YEAR(FechaInicio) - 1 END,
+    N'-',
+    CASE WHEN MONTH(FechaInicio) >= 6 THEN YEAR(FechaInicio) + 1 ELSE YEAR(FechaInicio) END
+)
+WHERE Periodo IS NULL;
+GO
+
+IF EXISTS (
+    SELECT 1
+    FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.Campanias')
+      AND name = N'Periodo'
+      AND is_nullable = 1
+)
+BEGIN
+    ALTER TABLE dbo.Campanias ALTER COLUMN Periodo NVARCHAR(9) NOT NULL;
+END;
+GO
+
+IF EXISTS (
+    SELECT 1
+    FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.Campanias')
+      AND name = N'Nombre'
+      AND max_length < 240
+)
+BEGIN
+    ALTER TABLE dbo.Campanias ALTER COLUMN Nombre NVARCHAR(120) NOT NULL;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.Campanias', N'FechaFin') IS NULL
+BEGIN
+    ALTER TABLE dbo.Campanias ADD FechaFin DATE NOT NULL CONSTRAINT DF_Campanias_FechaFin DEFAULT (CONVERT(date, SYSDATETIME())) WITH VALUES;
+END;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Campanias_Fechas' AND parent_object_id = OBJECT_ID(N'dbo.Campanias'))
+BEGIN
+    ALTER TABLE dbo.Campanias WITH CHECK ADD CONSTRAINT CK_Campanias_Fechas CHECK (FechaFin >= FechaInicio);
+END;
+GO
+
+IF OBJECT_ID(N'dbo.CampaniaCombinaciones', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.CampaniaCombinaciones
+    (
+        CampaniaCombinacionId INT IDENTITY(1,1) NOT NULL,
+        CampaniaId INT NOT NULL,
+        LoteId INT NOT NULL,
+        Producto NVARCHAR(60) NOT NULL,
+        FechaInicio DATE NOT NULL,
+        FechaFin DATE NOT NULL,
+        Estado NVARCHAR(20) NOT NULL CONSTRAINT DF_CampaniaCombinaciones_Estado DEFAULT (N'Pendiente'),
+        EtapaActual NVARCHAR(40) NOT NULL CONSTRAINT DF_CampaniaCombinaciones_Etapa DEFAULT (N'Sin etapa'),
+        FechaCreacion DATETIME2(0) NOT NULL CONSTRAINT DF_CampaniaCombinaciones_FechaCreacion DEFAULT (SYSDATETIME()),
+        FechaModificacion DATETIME2(0) NULL,
+
+        CONSTRAINT PK_CampaniaCombinaciones PRIMARY KEY CLUSTERED (CampaniaCombinacionId),
+        CONSTRAINT FK_CampaniaCombinaciones_Campanias FOREIGN KEY (CampaniaId) REFERENCES dbo.Campanias (CampaniaId),
+        CONSTRAINT FK_CampaniaCombinaciones_Lotes FOREIGN KEY (LoteId) REFERENCES dbo.Lotes (LoteId),
+        CONSTRAINT CK_CampaniaCombinaciones_Fechas CHECK (FechaFin >= FechaInicio),
+        CONSTRAINT CK_CampaniaCombinaciones_Estado CHECK (Estado IN (N'Pendiente', N'En curso', N'Finalizado')),
+        CONSTRAINT CK_CampaniaCombinaciones_Etapa CHECK (EtapaActual IN (N'Sin etapa', N'Siembra', N'Cosecha', N'Destino del grano', N'Finalizada'))
+    );
+END;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Campanias_EmpresaId' AND object_id = OBJECT_ID(N'dbo.Campanias'))
+BEGIN
+    CREATE INDEX IX_Campanias_EmpresaId ON dbo.Campanias (EmpresaId);
+END;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_Campanias_Empresa_Periodo' AND object_id = OBJECT_ID(N'dbo.Campanias'))
+AND NOT EXISTS (
+    SELECT 1
+    FROM dbo.Campanias
+    WHERE EmpresaId IS NOT NULL
+    GROUP BY EmpresaId, Periodo
+    HAVING COUNT(1) > 1
+)
+BEGIN
+    CREATE UNIQUE INDEX UX_Campanias_Empresa_Periodo
+    ON dbo.Campanias (EmpresaId, Periodo)
+    WHERE EmpresaId IS NOT NULL;
+END;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_CampaniaCombinaciones_CampaniaId' AND object_id = OBJECT_ID(N'dbo.CampaniaCombinaciones'))
+BEGIN
+    CREATE INDEX IX_CampaniaCombinaciones_CampaniaId ON dbo.CampaniaCombinaciones (CampaniaId);
+END;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_CampaniaCombinaciones_LoteProducto' AND object_id = OBJECT_ID(N'dbo.CampaniaCombinaciones'))
+BEGIN
+    CREATE INDEX IX_CampaniaCombinaciones_LoteProducto ON dbo.CampaniaCombinaciones (LoteId, Producto);
+END;
+GO

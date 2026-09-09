@@ -8,6 +8,7 @@ public interface ISiembraRepository
     Task<SiembraDto?> ObtenerPorIdAsync(int siembraId);
     Task<SiembraDto> CrearAsync(CrearSiembraRequest request, int? usuarioId);
     Task<bool> ActualizarAsync(int siembraId, ActualizarSiembraRequest request);
+    Task<bool> FinalizarSiembraAsync(int siembraId, FinalizarSiembraRequest request);
 
     Task<IReadOnlyList<SiembraInsumoDto>> ObtenerInsumosAsync(int siembraId);
     Task<SiembraInsumoDto> AgregarInsumoAsync(int siembraId, CrearSiembraInsumoRequest request);

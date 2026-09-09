@@ -561,7 +561,7 @@ export default function Silos({ session, lotes }) {
     return (
       <SiloForm
         title="Registrar Silo"
-        description="Completa los datos del silo. Producto y Cantidad de grano son opcionales."
+        description="Completa los datos del silo. Grano y Cantidad de grano son opcionales."
         form={form}
         lotes={lotes}
         saving={saving}
@@ -681,7 +681,7 @@ function SilosList({ silos, loading, error, onAdd, onView, onEdit, onControl }) 
   const [query, setQuery] = useState('');
   const [tipoFilter, setTipoFilter] = useState('');
   const [ubicacionFilter, setUbicacionFilter] = useState('');
-  const [productoFilter, setProductoFilter] = useState('');
+  const [productoFilter, setGranoFilter] = useState('');
 
   function ubicacionDe(silo) {
     return silo.loteNombre ?? `${silo.pais}, ${silo.provincia}, ${silo.ciudad}`;
@@ -712,15 +712,15 @@ function SilosList({ silos, loading, error, onAdd, onView, onEdit, onControl }) 
     );
     const matchesTipo = !tipoFilter || silo.tipoSilo === tipoFilter;
     const matchesUbicacion = !ubicacionFilter || ubicacionDe(silo) === ubicacionFilter;
-    const matchesProducto = !productoFilter || silo.producto === productoFilter;
-    return matchesQuery && matchesTipo && matchesUbicacion && matchesProducto;
+    const matchesGrano = !productoFilter || silo.producto === productoFilter;
+    return matchesQuery && matchesTipo && matchesUbicacion && matchesGrano;
   }), [silos, query, tipoFilter, ubicacionFilter, productoFilter]);
 
   function clearFilters() {
     setQuery('');
     setTipoFilter('');
     setUbicacionFilter('');
-    setProductoFilter('');
+    setGranoFilter('');
   }
 
   return (
@@ -752,8 +752,8 @@ function SilosList({ silos, loading, error, onAdd, onView, onEdit, onControl }) 
           <option value="">Ubicacion</option>
           {ubicacionOptions.map((ubicacion) => <option key={ubicacion} value={ubicacion}>{ubicacion}</option>)}
         </select>
-        <select value={productoFilter} onChange={(event) => setProductoFilter(event.target.value)}>
-          <option value="">Producto</option>
+        <select value={productoFilter} onChange={(event) => setGranoFilter(event.target.value)}>
+          <option value="">Grano</option>
           {productoOptions.map((producto) => <option key={producto} value={producto}>{producto}</option>)}
         </select>
         <button className="soft-filter-button" type="button">
@@ -793,7 +793,7 @@ function SilosList({ silos, loading, error, onAdd, onView, onEdit, onControl }) 
                 <th>Nombre</th>
                 <th>Tipo</th>
                 <th>Capacidad Max</th>
-                <th>Producto</th>
+                <th>Grano</th>
                 <th>Grano almacenado</th>
                 <th>Ocupacion</th>
                 <th>Ubicacion</th>
@@ -815,9 +815,9 @@ function SilosList({ silos, loading, error, onAdd, onView, onEdit, onControl }) 
                   </td>
                   <td>{silo.loteNombre ?? `${silo.pais}, ${silo.provincia}, ${silo.ciudad}`}</td>
                   <td className="actions-cell">
-                    <button type="button" aria-label={`Ver ${silo.nombre}`} onClick={() => onView(silo)}><Eye size={18} /></button>
-                    <button type="button" aria-label={`Editar ${silo.nombre}`} onClick={() => onEdit(silo)}><Edit size={18} /></button>
-                    <button type="button" aria-label={`Control de ${silo.nombre}`} onClick={() => onControl(silo)}><ClipboardControlIcon /></button>
+                    <button className="table-action-tooltip" data-tooltip="Ver detalle" type="button" aria-label={`Ver ${silo.nombre}`} onClick={() => onView(silo)}><Eye size={18} /></button>
+                    <button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label={`Editar ${silo.nombre}`} onClick={() => onEdit(silo)}><Edit size={18} /></button>
+                    <button className="table-action-tooltip" data-tooltip="Control" type="button" aria-label={`Control de ${silo.nombre}`} onClick={() => onControl(silo)}><ClipboardControlIcon /></button>
                   </td>
                 </tr>
               ))}
@@ -909,6 +909,12 @@ function SiloForm({
 
   const provinciaOptions = ubicacionEditable ? PROVINCIAS : (form.provincia ? [form.provincia] : []);
   const ciudadOptions = ubicacionEditable ? availableZones : (form.ciudad ? [form.ciudad] : []);
+  const canRegister = Boolean(
+    String(form.nombre || '').trim()
+    && form.tipoSilo
+    && Number(form.capacidadMax) > 0
+    && (form.loteId || (String(form.pais || '').trim() && String(form.provincia || '').trim() && String(form.ciudad || '').trim()))
+  );
 
   const content = (
     <div className="create-form-card dashboard-card">
@@ -929,7 +935,7 @@ function SiloForm({
           <input type="number" min="0" value={form.capacidadMax} readOnly={readOnly} onChange={(e) => onFieldChange('capacidadMax', e.target.value)} />
         </label>
         <label className="field">
-          Producto
+          Grano
           <input value={form.producto} readOnly={readOnly} onChange={(e) => onFieldChange('producto', e.target.value)} placeholder="Opcional" />
         </label>
         {!readOnly && (
@@ -1010,7 +1016,7 @@ function SiloForm({
         <form onSubmit={onSubmit}>
           {content}
           <div className="form-actions">
-            <button className="green-button" type="submit" disabled={saving}>
+            <button className="green-button" type="submit" disabled={saving || !canRegister}>
               {saving ? 'Guardando...' : submitLabel}
             </button>
             <button className="back-button" type="button" onClick={onCancel}>Cancelar</button>
@@ -1038,7 +1044,7 @@ function SiloHistorialList({ silo, controles, error, onNuevoControl, onVer, onEd
       <div className="page-heading create-heading">
         <div>
           <h1>Historial Control Silo</h1>
-          <p>{silo.nombre} - {silo.tipoSilo} - {silo.producto || 'Sin producto'}</p>
+          <p>{silo.nombre} - {silo.tipoSilo} - {silo.producto || 'Sin grano'}</p>
         </div>
         <button className="green-button" type="button" onClick={onNuevoControl}>Nuevo Control</button>
       </div>
@@ -1070,9 +1076,9 @@ function SiloHistorialList({ silo, controles, error, onNuevoControl, onVer, onEd
                 <td>{control.cantidadInsumos > 0 ? 'Si' : 'No'}</td>
                 <td>{control.roturaBolsa === null || control.roturaBolsa === undefined ? '-' : control.roturaBolsa ? 'Si' : 'No'}</td>
                 <td className="actions-cell">
-                  <button type="button" aria-label="Ver control" onClick={() => onVer(control)}><Eye size={18} /></button>
-                  <button type="button" aria-label="Editar control" onClick={() => onEditar(control)}><Edit size={18} /></button>
-                  <button type="button" aria-label="Eliminar control" onClick={() => onEliminar(control)}><Trash2 size={18} /></button>
+                  <button className="table-action-tooltip" data-tooltip="Ver detalle" type="button" aria-label="Ver control" onClick={() => onVer(control)}><Eye size={18} /></button>
+                  <button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label="Editar control" onClick={() => onEditar(control)}><Edit size={18} /></button>
+                  <button className="table-action-tooltip" data-tooltip="Eliminar" type="button" aria-label="Eliminar control" onClick={() => onEliminar(control)}><Trash2 size={18} /></button>
                 </td>
               </tr>
             ))}
@@ -1121,7 +1127,7 @@ function SiloControlForm({
       <div className="page-heading create-heading">
         <div>
           <h1>{modoEdicion ? 'Editar Control Silo' : 'Control Silo'}</h1>
-          <p>{silo.nombre} - {silo.tipoSilo} - {silo.producto || 'Sin producto'}</p>
+          <p>{silo.nombre} - {silo.tipoSilo} - {silo.producto || 'Sin grano'}</p>
         </div>
       </div>
 
@@ -1228,7 +1234,7 @@ function SiloControlForm({
                 <td>{incidencia.tipoPlaga}</td>
                 <td>{incidencia.observaciones}</td>
                 <td className="actions-cell">
-                  <button type="button" aria-label="Eliminar incidencia" onClick={() => onEliminarIncidencia(incidencia)}>
+                  <button className="table-action-tooltip" data-tooltip="Eliminar" type="button" aria-label="Eliminar incidencia" onClick={() => onEliminarIncidencia(incidencia)}>
                     <Trash2 size={18} />
                   </button>
                 </td>
@@ -1316,7 +1322,7 @@ function SiloControlForm({
                 <td>{insumo.tipo || '-'}</td>
                 <td>{insumo.cantidadAplicada ?? '-'}</td>
                 <td className="actions-cell">
-                  <button type="button" aria-label="Eliminar insumo" onClick={() => onEliminarInsumo(insumo)}>
+                  <button className="table-action-tooltip" data-tooltip="Eliminar" type="button" aria-label="Eliminar insumo" onClick={() => onEliminarInsumo(insumo)}>
                     <Trash2 size={18} />
                   </button>
                 </td>
@@ -1350,9 +1356,9 @@ function SiloControlForm({
                   <td>{doc.cargadoPor || '-'}</td>
                   <td className="actions-cell">
                     {doc.siloDocumentoId && (
-                      <button type="button" aria-label="Descargar" onClick={() => onDescargarDocumento(doc)}><Download size={18} /></button>
+                      <button className="table-action-tooltip" data-tooltip="Descargar" type="button" aria-label="Descargar" onClick={() => onDescargarDocumento(doc)}><Download size={18} /></button>
                     )}
-                    <button type="button" aria-label="Eliminar" onClick={() => onEliminarDocumento(doc)}><Trash2 size={18} /></button>
+                    <button className="table-action-tooltip" data-tooltip="Eliminar" type="button" aria-label="Eliminar" onClick={() => onEliminarDocumento(doc)}><Trash2 size={18} /></button>
                   </td>
                 </tr>
               ))}
@@ -1382,7 +1388,7 @@ function SiloControlDetalle({ silo, control, incidencias, insumos, documentos, o
       <div className="page-heading create-heading">
         <div>
           <h1>Historial Control Silo</h1>
-          <p>{silo.nombre} - {silo.tipoSilo} - {silo.producto || 'Sin producto'}</p>
+          <p>{silo.nombre} - {silo.tipoSilo} - {silo.producto || 'Sin grano'}</p>
         </div>
       </div>
 
@@ -1485,7 +1491,7 @@ function SiloControlDetalle({ silo, control, incidencias, insumos, documentos, o
                 <td>{new Date(doc.fechaCarga).toLocaleDateString('es-AR')}</td>
                 <td>{doc.cargadoPor || '-'}</td>
                 <td className="actions-cell">
-                  <button type="button" aria-label="Descargar" onClick={() => onDescargarDocumento(doc)}><Download size={18} /></button>
+                  <button className="table-action-tooltip" data-tooltip="Descargar" type="button" aria-label="Descargar" onClick={() => onDescargarDocumento(doc)}><Download size={18} /></button>
                 </td>
               </tr>
             ))}

@@ -7,7 +7,11 @@ namespace AgroDigital.Api.Controllers;
 
 [ApiController]
 [Route("api/siembras/{siembraId:int}/seguimientos")]
-public class SeguimientosController(ISeguimientoRepository seguimientoRepository, IAuthTokenService authTokenService, IWebHostEnvironment environment) : ControllerBase
+public class SeguimientosController(
+    ISeguimientoRepository seguimientoRepository,
+    ISiembraRepository siembraRepository,
+    IAuthTokenService authTokenService,
+    IWebHostEnvironment environment) : ControllerBase
 {
     private readonly string _uploadsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "seguimientos");
 
@@ -41,6 +45,17 @@ public class SeguimientosController(ISeguimientoRepository seguimientoRepository
     public async Task<ActionResult<SiembraSeguimientoDto>> Crear(int siembraId, CrearSiembraSeguimientoRequest request)
     {
         if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+
+        var siembra = await siembraRepository.ObtenerPorIdAsync(siembraId);
+        if (siembra is null)
+        {
+            return NotFound();
+        }
+
+        if (!string.Equals(siembra.EstadoSiembra, "Finalizado", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest("Primero debes finalizar la siembra para registrar seguimientos.");
+        }
 
         if (string.IsNullOrWhiteSpace(request.Observaciones))
         {

@@ -14,6 +14,7 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
         const string sql = """
             SELECT
                 l.LoteId, l.EmpresaId, l.Nombre, l.Pais, l.Provincia, l.Ciudad, l.Condicion,
+                l.CultivoAnterior, l.CultivoAnteriorCampania, l.CultivoActual, l.EstadoCultivo,
                 l.Hectareas, l.SuperficieTotal, l.Activo, l.FechaCreacion, l.FechaModificacion,
                 c.Orden, c.Latitud, c.Longitud
             FROM dbo.Lotes AS l
@@ -46,13 +47,19 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
                 lotes.Add(loteId, lote);
             }
 
-            if (!reader.IsDBNull(12))
+            if (!reader.IsDBNull(16))
             {
-                lote.Coordenadas.Add(MapearCoordenada(reader, 12));
+                lote.Coordenadas.Add(MapearCoordenada(reader, 16));
             }
         }
 
-        return lotes.Values.ToList();
+        var resultado = lotes.Values.ToList();
+        foreach (var lote in resultado)
+        {
+            lote.HistorialCultivos = await ObtenerHistorialCultivosAsync(lote.LoteId, usuarioId, incluirTodos);
+        }
+
+        return resultado;
     }
 
     public async Task<LoteDto?> ObtenerPorIdAsync(int loteId, int usuarioId, bool incluirTodos = false)
@@ -60,6 +67,7 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
         const string sql = """
             SELECT
                 l.LoteId, l.EmpresaId, l.Nombre, l.Pais, l.Provincia, l.Ciudad, l.Condicion,
+                l.CultivoAnterior, l.CultivoAnteriorCampania, l.CultivoActual, l.EstadoCultivo,
                 l.Hectareas, l.SuperficieTotal, l.Activo, l.FechaCreacion, l.FechaModificacion,
                 c.Orden, c.Latitud, c.Longitud
             FROM dbo.Lotes AS l
@@ -90,21 +98,59 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
         while (await reader.ReadAsync())
         {
             lote ??= MapearLote(reader);
-            if (!reader.IsDBNull(12))
+            if (!reader.IsDBNull(16))
             {
-                lote.Coordenadas.Add(MapearCoordenada(reader, 12));
+                lote.Coordenadas.Add(MapearCoordenada(reader, 16));
             }
+        }
+
+        if (lote is not null)
+        {
+            lote.HistorialCultivos = await ObtenerHistorialCultivosAsync(loteId, usuarioId, incluirTodos);
         }
 
         return lote;
     }
 
+    public async Task<bool> ExisteNombreAsync(string nombre, int usuarioId, bool incluirTodos = false, int? excluirLoteId = null)
+    {
+        const string sql = """
+            SELECT CASE WHEN EXISTS (
+                SELECT 1
+                FROM dbo.Lotes AS l
+                WHERE LOWER(LTRIM(RTRIM(l.Nombre))) COLLATE Latin1_General_100_CI_AI =
+                      LOWER(LTRIM(RTRIM(@Nombre))) COLLATE Latin1_General_100_CI_AI
+                  AND (@ExcluirLoteId IS NULL OR l.LoteId <> @ExcluirLoteId)
+                  AND (
+                        @IncluirTodos = 1
+                        OR EXISTS (
+                            SELECT 1
+                            FROM dbo.UsuarioEmpresas AS ue
+                            WHERE ue.UsuarioId = @UsuarioId
+                              AND ue.EmpresaId = l.EmpresaId
+                              AND ue.Activo = 1
+                        )
+                  )
+            ) THEN 1 ELSE 0 END;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@Nombre", nombre.Trim());
+        command.Parameters.AddWithValue("@UsuarioId", usuarioId);
+        command.Parameters.AddWithValue("@IncluirTodos", incluirTodos);
+        command.Parameters.AddWithValue("@ExcluirLoteId", excluirLoteId.HasValue ? excluirLoteId.Value : (object)DBNull.Value);
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync()) == 1;
+    }
+
     public async Task<LoteDto> CrearAsync(CrearLoteRequest request, int usuarioId, bool incluirTodos = false)
     {
         const string insertLoteSql = """
-            INSERT INTO dbo.Lotes (EmpresaId, Nombre, Pais, Provincia, Ciudad, Condicion, Hectareas, SuperficieTotal)
+            INSERT INTO dbo.Lotes (EmpresaId, Nombre, Pais, Provincia, Ciudad, Condicion, CultivoAnterior, CultivoAnteriorCampania, EstadoCultivo, Hectareas, SuperficieTotal)
             OUTPUT INSERTED.LoteId
-            VALUES (@EmpresaId, @Nombre, @Pais, @Provincia, @Ciudad, @Condicion, @Hectareas, @SuperficieTotal);
+            VALUES (@EmpresaId, @Nombre, @Pais, @Provincia, @Ciudad, @Condicion, @CultivoAnterior, @CultivoAnteriorCampania, N'Cosechado', @Hectareas, @SuperficieTotal);
             """;
 
         await using var connection = new SqlConnection(_connectionString);
@@ -142,6 +188,8 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
                 Provincia = @Provincia,
                 Ciudad = @Ciudad,
                 Condicion = @Condicion,
+                CultivoAnterior = @CultivoAnterior,
+                CultivoAnteriorCampania = @CultivoAnteriorCampania,
                 Hectareas = @Hectareas,
                 SuperficieTotal = @SuperficieTotal,
                 Activo = @Activo,
@@ -285,8 +333,84 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
         command.Parameters.AddWithValue("@Provincia", request.Provincia.Trim());
         command.Parameters.AddWithValue("@Ciudad", request.Ciudad.Trim());
         command.Parameters.AddWithValue("@Condicion", request.Condicion.Trim());
+        command.Parameters.AddWithValue("@CultivoAnterior", request.CultivoAnterior.Trim());
+        command.Parameters.AddWithValue("@CultivoAnteriorCampania", request.CultivoAnteriorCampania.Trim());
         command.Parameters.AddWithValue("@Hectareas", request.Hectareas);
         command.Parameters.AddWithValue("@SuperficieTotal", request.SuperficieTotal);
+    }
+
+    private async Task<List<LoteCultivoHistorialDto>> ObtenerHistorialCultivosAsync(int loteId, int usuarioId, bool incluirTodos)
+    {
+        const string sql = """
+            SELECT COALESCE(c.CampaniaNombre, N'Sin campaña'), c.Producto,
+                   MIN(c.FechaInicio) AS FechaInicio, MAX(c.FechaFinReal) AS FechaFin,
+                   N'Cosechado', 0 AS OrdenInicial
+            FROM dbo.Cosechas AS c
+            INNER JOIN dbo.Lotes AS l ON l.LoteId = c.LoteId
+            WHERE c.LoteId = @LoteId
+              AND c.Estado = N'Finalizado'
+              AND (
+                    @IncluirTodos = 1
+                    OR EXISTS (
+                        SELECT 1
+                        FROM dbo.UsuarioEmpresas AS ue
+                        WHERE ue.UsuarioId = @UsuarioId
+                          AND ue.EmpresaId = l.EmpresaId
+                          AND ue.Activo = 1
+                    )
+              )
+            GROUP BY c.CampaniaNombre, c.Producto
+            UNION ALL
+
+            SELECT l.CultivoAnteriorCampania, l.CultivoAnterior, NULL, NULL, N'Cosechado', 1 AS OrdenInicial
+            FROM dbo.Lotes AS l
+            WHERE l.LoteId = @LoteId
+              AND NULLIF(LTRIM(RTRIM(l.CultivoAnterior)), N'') IS NOT NULL
+              AND NULLIF(LTRIM(RTRIM(l.CultivoAnteriorCampania)), N'') IS NOT NULL
+              AND LTRIM(RTRIM(l.CultivoAnterior)) <> N'Sin dato'
+              AND LTRIM(RTRIM(l.CultivoAnteriorCampania)) <> N'Sin dato'
+              AND (
+                    @IncluirTodos = 1
+                    OR EXISTS (
+                        SELECT 1
+                        FROM dbo.UsuarioEmpresas AS ue
+                        WHERE ue.UsuarioId = @UsuarioId
+                          AND ue.EmpresaId = l.EmpresaId
+                          AND ue.Activo = 1
+                    )
+              )
+            ORDER BY OrdenInicial, FechaFin DESC, FechaInicio DESC;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@LoteId", loteId);
+        command.Parameters.AddWithValue("@UsuarioId", usuarioId);
+        command.Parameters.AddWithValue("@IncluirTodos", incluirTodos);
+        await using var reader = await command.ExecuteReaderAsync();
+
+        var historial = new List<LoteCultivoHistorialDto>();
+        while (await reader.ReadAsync())
+        {
+            historial.Add(new LoteCultivoHistorialDto
+            {
+                Campania = reader.GetString(0),
+                Cultivo = reader.GetString(1),
+                FechaInicio = reader.IsDBNull(2) ? null : reader.GetDateTime(2),
+                FechaFin = reader.IsDBNull(3) ? null : reader.GetDateTime(3),
+                EstadoCultivo = reader.GetString(4) switch
+                {
+                    "Finalizado" => "Cosechado",
+                    "Cosechado" => "Cosechado",
+                    "En curso" => "Cultivado",
+                    "Cultivado" => "Cultivado",
+                    _ => "Pendiente"
+                }
+            });
+        }
+
+        return historial;
     }
 
     private static LoteDto MapearLote(SqlDataReader reader)
@@ -300,11 +424,15 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
             Provincia = reader.GetString(4),
             Ciudad = reader.GetString(5),
             Condicion = reader.GetString(6),
-            Hectareas = reader.GetDecimal(7),
-            SuperficieTotal = reader.GetDecimal(8),
-            Activo = reader.GetBoolean(9),
-            FechaCreacion = reader.GetDateTime(10),
-            FechaModificacion = reader.IsDBNull(11) ? null : reader.GetDateTime(11),
+            CultivoAnterior = reader.IsDBNull(7) ? string.Empty : reader.GetString(7),
+            CultivoAnteriorCampania = reader.IsDBNull(8) ? null : reader.GetString(8),
+            CultivoActual = reader.IsDBNull(9) ? null : reader.GetString(9),
+            EstadoCultivo = reader.IsDBNull(10) ? "Sin cultivo" : reader.GetString(10),
+            Hectareas = reader.GetDecimal(11),
+            SuperficieTotal = reader.GetDecimal(12),
+            Activo = reader.GetBoolean(13),
+            FechaCreacion = reader.GetDateTime(14),
+            FechaModificacion = reader.IsDBNull(15) ? null : reader.GetDateTime(15),
             Coordenadas = []
         };
     }

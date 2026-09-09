@@ -8,6 +8,7 @@ public class SiembraInsumoDto
     public string? Tipo { get; set; }
     public string? Variedad { get; set; }
     public decimal? CantidadAplicada { get; set; }
+    public string? UnidadMedida { get; set; }
 }
 
 public class CrearSiembraInsumoRequest
@@ -17,4 +18,5 @@ public class CrearSiembraInsumoRequest
     public string? Tipo { get; set; }
     public string? Variedad { get; set; }
     public decimal? CantidadAplicada { get; set; }
+    public string? UnidadMedida { get; set; }
 }
