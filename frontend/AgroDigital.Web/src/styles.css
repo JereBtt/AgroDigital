@@ -2533,6 +2533,28 @@ button {
   color: #6b7280;
 }
 
+.field-rule {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 2px;
+  color: #52645a;
+  font-size: calc(12px * var(--text-scale, 1));
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.field-rule svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: #18883b;
+}
+
+.field-rule strong {
+  color: #17492b;
+  font-weight: 900;
+}
+
 .field-error {
   color: #c0392b;
 }
@@ -2752,6 +2774,19 @@ button {
   color: #64748b;
   font-size: calc(13px * var(--text-scale, 1));
   font-weight: 650;
+}
+
+.siembra-upload-zone .field-rule {
+  display: flex;
+  margin-top: 7px;
+  color: #52645a;
+  font-size: calc(12px * var(--text-scale, 1));
+}
+
+.siembra-upload-zone .field-rule > span {
+  margin-top: 0;
+  color: inherit;
+  font-size: inherit;
 }
 
 .siembra-file-button {

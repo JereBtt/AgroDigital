@@ -886,6 +886,7 @@ function LoteSelectorModal({ lotes, producto, excludedLoteIds = [], sortMode, on
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
+              data-text-case="preserve"
               placeholder="Buscar por lote, zona, cultivo antecesor o rotacion..."
             />
           </label>

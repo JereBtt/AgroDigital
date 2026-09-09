@@ -10,10 +10,10 @@ public sealed record ManagerUsuarioDto(
     bool TieneRolGeneral,
     bool Activo,
     DateTime FechaAlta,
-    IReadOnlyList<ManagerUsuarioEquipoDto> Equipos
+    IReadOnlyList<ManagerUsuarioEmpresaDto> Empresas
 );
 
-public sealed record ManagerUsuarioEquipoDto(
+public sealed record ManagerUsuarioEmpresaDto(
     int EmpresaId,
     string EmpresaNombre,
     string Rol,

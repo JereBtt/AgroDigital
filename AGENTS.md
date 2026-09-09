@@ -247,6 +247,10 @@ La tesis describe el flujo operativo de campania:
 
 - La revision final de Siembras usa tarjetas amplias en dos columnas en escritorio y una en pantallas chicas, con texto de datos de 16px como base, titulos de 19px y espaciado generoso; respeta el ajuste de texto de accesibilidad.
 
+- Los campos de texto editables del frontend aplican por defecto una mayuscula inicial mediante `onChangeCapture` en `App.jsx`. No se aplica a correos, contrasenias, fechas, numeros, buscadores ni identificadores/codigos con formato propio. Las excepciones se declaran con `data-text-case`: `preserve` conserva el valor y `upper` convierte todo a mayusculas. Variedad de Semilla usa `upper` y la API tambien la persiste en mayusculas.
+
+- El formulario de registro y edicion de Siembras muestra debajo de cada campo una ayuda breve identificada como `Regla`, basada en las validaciones vigentes del frontend y la API. Los textos se centralizan en `SIEMBRA_FIELD_RULES` dentro de `Siembras.jsx` y deben actualizarse junto con cualquier cambio de obligatoriedad, rango, dependencia, calculo o condicion funcional; los errores dinamicos se mantienen separados y en rojo.
+
 - Accesibilidad cambia exclusivamente el tamaño de las fuentes (Chico 100%, Medio 112%, Grande 124%) mediante font-size. No aplicar zoom ni transform de escala al body o contenedores; imagenes, iconos, sidebar y anchos de la estructura mantienen sus dimensiones. El texto puede ocupar mas lineas y aumentar naturalmente la altura del contenido.
 
 - Antes de cambios relevantes, revisar contexto existente, `AGENTS.md` y documentos relacionados con la tarea.
@@ -280,16 +284,16 @@ La tesis describe el flujo operativo de campania:
 - La API inicial expone endpoints `GET /api/lotes`, `GET /api/lotes/{loteId}`, `POST /api/lotes` y `PUT /api/lotes/{loteId}`.
 - La API expone `POST /api/auth/login` para validar credenciales contra `dbo.Usuarios` en SQL Server. El admin inicial se seedeea desde el script madre con usuario fijo y contrasenia guardada como hash PBKDF2-SHA256 con salt, nunca en texto plano ni hardcodeada en el frontend.
 - La firma local de tokens de autenticacion debe configurarse fuera del repositorio con `dotnet user-secrets` usando la clave `Auth:SigningKey`. En produccion debe configurarse mediante variable de entorno o gestor de secretos equivalente.
-- La tabla `dbo.Usuarios` es la tabla unica para identidades del sistema: Admin, Gerente, Encargado, EmpleadoCampo y EmpleadoAdministrativo. Los permisos finos por empresa/equipo se resolveran con tablas relacionales asociadas.
+- La tabla `dbo.Usuarios` es la tabla unica para identidades del sistema: Admin, Gerente, Encargado, EmpleadoCampo y EmpleadoAdministrativo. Los permisos finos por empresa se resolveran con tablas relacionales asociadas.
 - Los datos personales ampliados del usuario deben modelarse en una tabla relacionada separada de `dbo.Usuarios`, para no mezclar identidad/login con perfil personal y datos de contacto.
 - El frontend inicial muestra una pantalla de login y un panel interno de administracion para AgroDigital. El panel admin solo solicita el nombre del responsable inicial y crea una cuenta gerente inicial persistida en SQL Server. La contrasenia temporal se muestra una unica vez al crearla o regenerarla; en base solo se almacena su hash en `dbo.Usuarios.PasswordHash`. La trazabilidad del acceso inicial queda en `dbo.AccesosGerenteIniciales`.
 - El panel admin permite editar el responsable inicial y habilitar/deshabilitar accesos gerente mediante baja logica. Si el acceso esta en `Pendiente de primer ingreso`, editar el responsable tambien regenera el usuario inicial. No se implementa eliminacion fisica de estos registros para conservar trazabilidad y permitir reactivacion.
 - Cuando un gerente ingresa por primera vez con credenciales temporales, el frontend muestra una pantalla de completar registro antes del dashboard. Al finalizar, el mismo registro de `dbo.Usuarios` se actualiza con nombre, apellido, telefono, correo, nueva contrasenia hasheada y `DebeCambiarPassword = 0`; desde ese momento el gerente ingresa con correo electronico y contrasenia definitiva.
-- El primer registro del gerente crea un `GrupoGestion` padre y una o varias `Empresas` iniciales. La relacion usuario-empresa queda en `UsuarioEmpresas`, preparada para roles discriminados por empresa/equipo.
-- El ID de grupo de gestion no lo genera el panel admin. Se genera cuando el gerente completa su primer registro y crea su grupo de gestion, momento en el que tambien debe poder cargar todos los equipos/empresas que quiera.
+- El primer registro del gerente crea un `GrupoGestion` padre y una o varias `Empresas` iniciales. La relacion usuario-empresa queda en `UsuarioEmpresas`, preparada para roles discriminados por empresa.
+- El ID de grupo de gestion no lo genera el panel admin. Se genera cuando el gerente completa su primer registro y crea su grupo de gestion, momento en el que tambien debe poder cargar todas las empresas que quiera.
 - El flujo de gestion de usuarios queda orientado a `GrupoGestion` como nivel padre del gerente, empresas asociadas al grupo, usuarios que pueden pertenecer a varias empresas y roles discriminados por empresa. Las invitaciones/OTP deben ser de un solo uso, vencer a los 7 dias y conservar historial de solicitudes descartadas/rechazadas.
 - Las empresas no deben eliminarse fisicamente; si un gerente pierde acceso o deja de operar una empresa, debe deshabilitarse para conservar trazabilidad.
-- Toda tabla operativa debe incluir `EmpresaId` para separar correctamente la informacion entre empresas/equipos.
+- Toda tabla operativa debe incluir `EmpresaId` para separar correctamente la informacion entre empresas.
 - No se implementa eliminacion fisica de lotes porque el Manual de Usuario indica que forman parte de la trazabilidad historica.
 - El frontend inicial de Lotes consume `http://localhost:5135/api/lotes` y se sirve localmente en `http://127.0.0.1:5173/`.
 - CORS de la API permite `http://localhost:5173`, `http://127.0.0.1:5173` y `http://localhost:3000` para desarrollo local.

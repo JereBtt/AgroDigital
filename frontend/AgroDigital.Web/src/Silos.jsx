@@ -741,7 +741,7 @@ function SilosList({ silos, loading, error, onAdd, onView, onEdit, onControl }) 
       <div className="filters-card">
         <label className="search-field">
           <Search size={21} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por cualquier dato del silo..." />
+          <input data-text-case="preserve" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por cualquier dato del silo..." />
         </label>
         <select value={tipoFilter} onChange={(event) => setTipoFilter(event.target.value)}>
           <option value="">Tipo</option>

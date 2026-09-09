@@ -300,7 +300,7 @@ function MovimientosList({ movimientos, loading, error, editableIds, onAdd, onVi
       <div className="filters-card">
         <label className="search-field">
           <Search size={21} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por cualquier dato del movimiento..." />
+          <input data-text-case="preserve" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por cualquier dato del movimiento..." />
         </label>
         <select value={siloFilter} onChange={(event) => setSiloFilter(event.target.value)}>
           <option value="">Silo</option>

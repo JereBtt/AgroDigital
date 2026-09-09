@@ -70,7 +70,7 @@ public sealed class AuthController : ControllerBase
             || string.IsNullOrWhiteSpace(request.Password)
             || empresas.Length == 0)
         {
-            return BadRequest("Completa tus datos personales y al menos una empresa/equipo.");
+            return BadRequest("Completa tus datos personales y al menos una empresa.");
         }
 
         if (!EsCorreoValido(request.CorreoElectronico))

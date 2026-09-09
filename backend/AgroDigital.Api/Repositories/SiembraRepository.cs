@@ -389,7 +389,7 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
         command.Parameters.AddWithValue("@Siniestro", string.IsNullOrWhiteSpace(siniestro) ? DBNull.Value : siniestro.Trim());
         command.Parameters.AddWithValue("@FechaInicio", fechaInicio);
         command.Parameters.AddWithValue("@FechaFin", fechaFin);
-        command.Parameters.AddWithValue("@VariedadSemilla", string.IsNullOrWhiteSpace(variedadSemilla) ? DBNull.Value : variedadSemilla.Trim());
+        command.Parameters.AddWithValue("@VariedadSemilla", string.IsNullOrWhiteSpace(variedadSemilla) ? DBNull.Value : variedadSemilla.Trim().ToUpperInvariant());
         command.Parameters.AddWithValue("@PMG", (object?)pmg ?? DBNull.Value);
         command.Parameters.AddWithValue("@DensidadSiembra", (object?)densidadSiembra ?? DBNull.Value);
         command.Parameters.AddWithValue("@Profundidad", (object?)profundidad ?? DBNull.Value);

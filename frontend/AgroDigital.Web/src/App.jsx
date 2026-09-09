@@ -154,6 +154,34 @@ function formatPersonName(value) {
     .toLocaleLowerCase('es-AR')
     .replace(/(^|[\s'-])([a-záéíóúñ])/g, (_, separator, letter) => `${separator}${letter.toLocaleUpperCase('es-AR')}`);
 }
+
+function formatInitialUppercase(value) {
+  if (!value) return value;
+  return value.slice(0, 1).toLocaleUpperCase('es-AR') + value.slice(1);
+}
+
+function handleTextCaseCapture(event) {
+  const target = event.target;
+  const isTextInput = target instanceof HTMLInputElement && target.type === 'text';
+  const isTextArea = target instanceof HTMLTextAreaElement;
+
+  if ((!isTextInput && !isTextArea) || target.dataset.textCase === 'preserve') return;
+
+  const formatted = target.dataset.textCase === 'upper'
+    ? target.value.toLocaleUpperCase('es-AR')
+    : formatInitialUppercase(target.value);
+
+  if (formatted === target.value) return;
+
+  const selectionStart = target.selectionStart;
+  const selectionEnd = target.selectionEnd;
+  target.value = formatted;
+
+  if (selectionStart !== null && selectionEnd !== null) {
+    target.setSelectionRange(selectionStart, selectionEnd);
+  }
+}
+
 function getPasswordRequirements(password) {
   return [
     { id: 'length', label: 'Al menos 8 caracteres', valid: password.length >= 8 },
@@ -772,7 +800,7 @@ function App() {
     setManagerTeamError('');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/manager/equipos/${empresaId}/usuarios`, {
+      const response = await fetch(`${API_BASE_URL}/api/manager/empresas/${empresaId}/usuarios`, {
         headers: authHeaders()
       });
 
@@ -781,7 +809,7 @@ function App() {
       const data = await response.json();
       setManagerTeamUsers((current) => ({ ...current, [empresaId]: data }));
     } catch (error) {
-      setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudieron cargar los usuarios del equipo.');
+      setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudieron cargar los usuarios de la empresa.');
     } finally {
       setManagerTeamUsersLoading('');
     }
@@ -1235,7 +1263,7 @@ function App() {
     setManagerTeamSaving('create');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/manager/equipos`, {
+      const response = await fetch(`${API_BASE_URL}/api/manager/empresas`, {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ nombre })
@@ -1243,13 +1271,13 @@ function App() {
 
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
-      setManagerTeamStatus(data.mensaje ?? 'Equipo creado correctamente.');
+      setManagerTeamStatus(data.mensaje ?? 'Empresa creada correctamente.');
       setManagerTeamUsers({});
       await loadManagerContext();
       await loadManagerRequests();
       await loadManagerUsers();
     } catch (error) {
-      setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudo crear el equipo.');
+      setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudo crear la empresa.');
     } finally {
       setManagerTeamSaving('');
     }
@@ -1262,7 +1290,7 @@ function App() {
     setManagerTeamSaving(`edit-${empresaId}`);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/manager/equipos/${empresaId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/manager/empresas/${empresaId}`, {
         method: 'PUT',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ nombre })
@@ -1270,13 +1298,13 @@ function App() {
 
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
-      setManagerTeamStatus(data.mensaje ?? 'Equipo actualizado correctamente.');
+      setManagerTeamStatus(data.mensaje ?? 'Empresa actualizada correctamente.');
       setManagerTeamUsers({});
       await loadManagerContext();
       await loadManagerRequests();
       await loadManagerUsers();
     } catch (error) {
-      setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudo actualizar el equipo.');
+      setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudo actualizar la empresa.');
     } finally {
       setManagerTeamSaving('');
     }
@@ -1290,21 +1318,21 @@ function App() {
     setManagerTeamSaving(`${action}-${empresa.empresaId}`);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/manager/equipos/${empresa.empresaId}/${action}`, {
+      const response = await fetch(`${API_BASE_URL}/api/manager/empresas/${empresa.empresaId}/${action}`, {
         method: 'POST',
         headers: authHeaders()
       });
 
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
-      setManagerTeamStatus(data.mensaje ?? 'Equipo actualizado correctamente.');
+      setManagerTeamStatus(data.mensaje ?? 'Empresa actualizada correctamente.');
       setManagerTeamUsers({});
       await loadManagerContext();
       await loadManagerRequests();
       await loadManagerUsers();
       await loadLotes();
     } catch (error) {
-      setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudo actualizar el equipo.');
+      setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudo actualizar la empresa.');
     } finally {
       setManagerTeamSaving('');
     }
@@ -1317,19 +1345,19 @@ function App() {
     setManagerTeamSaving(`principal-${empresaId}`);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/manager/equipos/${empresaId}/principal`, {
+      const response = await fetch(`${API_BASE_URL}/api/manager/empresas/${empresaId}/principal`, {
         method: 'POST',
         headers: authHeaders()
       });
 
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
-      setManagerTeamStatus(data.mensaje ?? 'Equipo principal actualizado.');
+      setManagerTeamStatus(data.mensaje ?? 'Empresa principal actualizada.');
       await loadManagerContext();
       await loadManagerUsers();
       await loadLotes();
     } catch (error) {
-      setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudo marcar el equipo como principal.');
+      setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudo marcar la empresa como principal.');
     } finally {
       setManagerTeamSaving('');
     }
@@ -1700,7 +1728,7 @@ function App() {
 
   if (!session) {
     return (
-      <main className={`auth-shell text-size-${textSize}`}>
+      <main className={`auth-shell text-size-${textSize}`} onChangeCapture={handleTextCaseCapture}>
         {authView === 'join' ? (
           <JoinTeamPage
             error={loginError}
@@ -1730,7 +1758,7 @@ function App() {
 
   if (session.type === 'manager-onboarding') {
     return (
-      <main className={`auth-shell text-size-${textSize}`}>
+      <main className={`auth-shell text-size-${textSize}`} onChangeCapture={handleTextCaseCapture}>
         {showManagerWelcome ? (
           <ManagerWelcomePage
             managerName={session.name}
@@ -1752,7 +1780,7 @@ function App() {
 
   if (session.type === 'admin') {
     return (
-      <main className={`admin-shell text-size-${textSize}`}>
+      <main className={`admin-shell text-size-${textSize}`} onChangeCapture={handleTextCaseCapture}>
         <AdminPanel
           accounts={adminAccounts}
           lastGeneratedAccount={lastGeneratedAccount}
@@ -1775,7 +1803,7 @@ function App() {
   }
 
   return (
-    <main className={`app-frame ${sidebarCollapsed ? 'sidebar-collapsed' : ''} text-size-${textSize}`}>
+    <main className={`app-frame ${sidebarCollapsed ? 'sidebar-collapsed' : ''} text-size-${textSize}`} onChangeCapture={handleTextCaseCapture}>
       <aside className="sidebar">
         <div className="sidebar-header">
           <div className="sidebar-brand">
@@ -2273,6 +2301,7 @@ function ProfilePage({ profile, session, error, status, saving, passwordSaving, 
               <div>
                 <input
                   type={showCurrentPassword ? 'text' : 'password'}
+                  data-text-case="preserve"
                   value={passwordForm.passwordActual}
                   onChange={(event) => updatePasswordField('passwordActual', event.target.value)}
                   autoComplete="current-password"
@@ -2292,6 +2321,7 @@ function ProfilePage({ profile, session, error, status, saving, passwordSaving, 
               <div>
                 <input
                   type={showNewPasswords ? 'text' : 'password'}
+                  data-text-case="preserve"
                   value={passwordForm.passwordNueva}
                   onChange={(event) => updatePasswordField('passwordNueva', event.target.value)}
                   autoComplete="new-password"
@@ -2307,6 +2337,7 @@ function ProfilePage({ profile, session, error, status, saving, passwordSaving, 
               <div>
                 <input
                   type={showNewPasswords ? 'text' : 'password'}
+                  data-text-case="preserve"
                   value={passwordForm.repetirPasswordNueva}
                   onChange={(event) => updatePasswordField('repetirPasswordNueva', event.target.value)}
                   autoComplete="new-password"
@@ -2367,7 +2398,7 @@ function LoginPage({ onLogin, error, onJoin }) {
         <div>
           <span className="auth-kicker">Gestión agrícola inteligente</span>
           <h1>Ingresá a AgroDigital</h1>
-          <p>Administrá cuentas, equipos y operaciones desde un entorno seguro y centralizado.</p>
+          <p>Administrá cuentas, empresas y operaciones desde un entorno seguro y centralizado.</p>
         </div>
         <div className="auth-hero-visual" aria-hidden="true">
           <img src={sidebarLandscapeExpanded} alt="" />
@@ -2391,6 +2422,7 @@ function LoginPage({ onLogin, error, onJoin }) {
             <User size={20} />
             <input
               type="text"
+              data-text-case="preserve"
               value={credentials.usuario}
               onChange={(event) => setCredentials((current) => ({ ...current, usuario: event.target.value }))}
               autoComplete="username"
@@ -2405,6 +2437,7 @@ function LoginPage({ onLogin, error, onJoin }) {
             <LockKeyhole size={20} />
             <input
               type={showPassword ? 'text' : 'password'}
+              data-text-case="preserve"
               value={credentials.password}
               onChange={(event) => setCredentials((current) => ({ ...current, password: event.target.value }))}
               autoComplete="current-password"
@@ -2508,7 +2541,7 @@ function JoinTeamPage({ error, status, onSubmit, onBack }) {
           </div>
           <div className="join-success-detail">
             <Users size={20} />
-            <span>El gerente va a revisar tus datos y definir tus permisos por equipo.</span>
+            <span>El gerente va a revisar tus datos y definir tus permisos por empresa.</span>
           </div>
           <button className="primary-auth-button" type="button" onClick={onBack}>
             <LogIn size={21} />
@@ -2523,7 +2556,7 @@ function JoinTeamPage({ error, status, onSubmit, onBack }) {
           </span>
           <div>
             <strong>Solicitud de acceso</strong>
-            <span>El gerente define después tus permisos por equipo.</span>
+            <span>El gerente define después tus permisos por empresa.</span>
           </div>
         </div>
 
@@ -2563,14 +2596,14 @@ function JoinTeamPage({ error, status, onSubmit, onBack }) {
             <span>Código del grupo *</span>
             <div>
               <Users size={20} />
-              <input value={form.grupoGestionCodigo} onChange={(event) => updateField('grupoGestionCodigo', event.target.value.toUpperCase())} placeholder="GG-WDUAWXZA" required />
+              <input data-text-case="upper" value={form.grupoGestionCodigo} onChange={(event) => updateField('grupoGestionCodigo', event.target.value.toUpperCase())} placeholder="GG-WDUAWXZA" required />
             </div>
           </label>
           <label className="auth-field">
             <span>Clave OTP *</span>
             <div>
               <KeyRound size={20} />
-              <input value={form.otp} onChange={(event) => updateField('otp', event.target.value.toUpperCase())} placeholder="OTP-ABCD-1234" required />
+              <input data-text-case="upper" value={form.otp} onChange={(event) => updateField('otp', event.target.value.toUpperCase())} placeholder="OTP-ABCD-1234" required />
             </div>
           </label>
         </div>
@@ -2580,7 +2613,7 @@ function JoinTeamPage({ error, status, onSubmit, onBack }) {
             <span>Contraseña *</span>
             <div>
               <LockKeyhole size={20} />
-              <input type={showPassword ? 'text' : 'password'} value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" placeholder="Mínimo 8 caracteres" required />
+              <input type={showPassword ? 'text' : 'password'} data-text-case="preserve" value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="new-password" placeholder="Mínimo 8 caracteres" required />
               <button className="password-visibility-button" type="button" onClick={() => setShowPassword((current) => !current)} aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
@@ -2590,7 +2623,7 @@ function JoinTeamPage({ error, status, onSubmit, onBack }) {
             <span>Repetir contraseña *</span>
             <div>
               <LockKeyhole size={20} />
-              <input type={showRepeatPassword ? 'text' : 'password'} value={form.repetirPassword} onChange={(event) => updateField('repetirPassword', event.target.value)} autoComplete="new-password" placeholder="Repetí la contraseña" required />
+              <input type={showRepeatPassword ? 'text' : 'password'} data-text-case="preserve" value={form.repetirPassword} onChange={(event) => updateField('repetirPassword', event.target.value)} autoComplete="new-password" placeholder="Repetí la contraseña" required />
               <button className="password-visibility-button" type="button" onClick={() => setShowRepeatPassword((current) => !current)} aria-label={showRepeatPassword ? 'Ocultar repetición de contraseña' : 'Mostrar repetición de contraseña'}>
                 {showRepeatPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
@@ -2638,7 +2671,7 @@ function ManagerWelcomePage({ managerName, onContinue, onLogout }) {
             <h1>Bienvenido a AgroDigital</h1>
             <p>
               Estás a un paso de activar tu espacio de gestión. En el próximo paso vas a confirmar tus datos,
-              definir tu contraseña definitiva y cargar tus primeros equipos o empresas.
+              definir tu contraseña definitiva y cargar tus primeras empresas.
             </p>
 
             <div className="manager-welcome-actions">
@@ -2762,7 +2795,7 @@ function ManagerRegistrationPage({ initialName, error, onSubmit, onLogout }) {
             </span>
             <div>
               <h1>Activá tu acceso a AgroDigital</h1>
-              <p>Cargá tus datos reales, definí tu contraseña y registrá tus primeros equipos o empresas.</p>
+              <p>Cargá tus datos reales, definí tu contraseña y registrá tus primeras empresas.</p>
             </div>
           </div>
 
@@ -2793,6 +2826,7 @@ function ManagerRegistrationPage({ initialName, error, onSubmit, onLogout }) {
                   <LockKeyhole size={20} />
                   <input
                     type={showPassword ? 'text' : 'password'}
+                    data-text-case="preserve"
                     value={form.password}
                     onChange={(event) => updateField('password', event.target.value)}
                     placeholder="Mínimo 8 caracteres"
@@ -2810,6 +2844,7 @@ function ManagerRegistrationPage({ initialName, error, onSubmit, onLogout }) {
                   <LockKeyhole size={20} />
                   <input
                     type={showRepeatPassword ? 'text' : 'password'}
+                    data-text-case="preserve"
                     value={form.repetirPassword}
                     onChange={(event) => updateField('repetirPassword', event.target.value)}
                     placeholder="Repetí la contraseña"
@@ -2828,7 +2863,7 @@ function ManagerRegistrationPage({ initialName, error, onSubmit, onLogout }) {
             <section className="companies-card">
               <div className="companies-title">
                 <div>
-                  <strong>Empresas o equipos iniciales</strong>
+                  <strong>Empresas iniciales</strong>
                   <span>Luego vas a poder agregar más desde el módulo Usuarios.</span>
                 </div>
                 <button type="button" onClick={addCompany}>
@@ -2840,10 +2875,10 @@ function ManagerRegistrationPage({ initialName, error, onSubmit, onLogout }) {
               <div className="companies-list">
                 {form.empresas.map((empresa, index) => (
                   <label className="admin-field company-field" key={index}>
-                    <span>Equipo {index + 1} *</span>
+                    <span>Empresa {index + 1} *</span>
                     <div>
                       <input value={empresa} onChange={(event) => updateCompany(index, event.target.value)} placeholder="Ej: Agro Los Cóndores" />
-                      <button type="button" onClick={() => removeCompany(index)} aria-label={`Quitar equipo ${index + 1}`}>
+                      <button type="button" onClick={() => removeCompany(index)} aria-label={`Quitar empresa ${index + 1}`}>
                         <Trash2 size={17} />
                       </button>
                     </div>
@@ -3048,7 +3083,7 @@ function AdminPanel({
                 Copiá la contraseña ahora: por seguridad se guarda solo su hash y no se puede recuperar al recargar.
               </p>
               <p className="credential-warning">
-                El código de grupo de gestion se generara cuando el gerente complete su registro y cargue sus equipos/empresas.
+                El código de grupo de gestion se generara cuando el gerente complete su registro y cargue sus empresas.
               </p>
             </div>
           ) : (
@@ -3423,7 +3458,7 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
       user.correoElectronico,
       user.telefono,
       formatRole(user.rolGeneral),
-      ...(user.equipos ?? []).flatMap((team) => [team.empresaNombre, formatRole(team.rol)])
+      ...(user.empresas ?? []).flatMap((empresa) => [empresa.empresaNombre, formatRole(empresa.rol)])
     ].filter(Boolean).join(' ')).includes(search);
     const matchesState = userFilters.estado === 'todos'
       || (userFilters.estado === 'habilitados' && user.activo)
@@ -3442,7 +3477,7 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
       <div className="page-heading">
         <div>
           <h1>Usuarios</h1>
-          <p>Gestioná accesos, solicitudes y equipos vinculados a tu grupo de gestión.</p>
+          <p>Gestioná accesos, solicitudes y empresas vinculadas a tu grupo de gestión.</p>
         </div>
         <button className="green-button add-lote-button" type="button" onClick={onGenerateOtp} disabled={loadingOtp || !context?.grupoGestionCodigo}>
           {loadingOtp ? <LoaderCircle className="spin-icon" size={18} /> : <KeyRound size={18} />}
@@ -3494,14 +3529,14 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
           <div className="card-heading">
             <div className="card-heading-icon"><Building2 size={18} /></div>
             <div>
-              <h2>Equipos disponibles</h2>
-              <p>Al aprobar una solicitud vas a poder asignar acceso a todos o a equipos puntuales.</p>
+              <h2>Empresas disponibles</h2>
+              <p>Al aprobar una solicitud vas a poder asignar acceso a todas o a empresas puntuales.</p>
             </div>
           </div>
           {empresas.length === 0 ? (
             <div className="users-inline-empty">
               <Building2 size={42} />
-              <strong>No hay equipos cargados.</strong>
+              <strong>No hay empresas cargadas.</strong>
               <span>Agregalos desde la gestión de usuarios para separar la operación.</span>
             </div>
           ) : (
@@ -3526,7 +3561,7 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
           <div className="card-heading-icon"><UserPlus size={18} /></div>
           <div>
             <h2>Usuarios pendientes de aprobación</h2>
-            <p>Cuando un empleado use el código y la OTP, su solicitud aparecerá acá para asignar rol por equipo.</p>
+            <p>Cuando un empleado use el código y la OTP, su solicitud aparecerá acá para asignar rol por empresa.</p>
           </div>
           <span className="points-count">{solicitudesPendientes} pendientes</span>
         </div>
@@ -3552,7 +3587,7 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
           <div className="card-heading-icon"><Users size={18} /></div>
           <div>
             <h2>Usuarios del grupo</h2>
-            <p>Usuarios aprobados o deshabilitados, con sus accesos por equipo y rol.</p>
+            <p>Usuarios aprobados o deshabilitados, con sus accesos por empresa y rol.</p>
           </div>
           <span className="points-count">{usuariosHabilitados} habilitados · {usuariosDeshabilitados} deshabilitados</span>
         </div>
@@ -3561,9 +3596,10 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
           <label className="filter-search-field">
             <Search size={18} />
             <input
+              data-text-case="preserve"
               value={userFilters.search}
               onChange={(event) => setUserFilters((current) => ({ ...current, search: event.target.value }))}
-              placeholder="Buscar por nombre, correo, equipo o rol..."
+              placeholder="Buscar por nombre, correo, empresa o rol..."
             />
           </label>
           <label className="approved-filter-field">
@@ -3632,15 +3668,15 @@ function ApprovedUserRow({ user, saving, onToggleStatus }) {
         </div>
       ) : (
         <div className="approved-user-meta approved-user-meta-empty">
-          <span className="approved-user-label">Rol por equipo</span>
+          <span className="approved-user-label">Rol por empresa</span>
         </div>
       )}
       <div className="approved-user-teams">
-        {(user.equipos ?? []).map((team) => (
-          <span className={`team-role-pill ${team.activo ? '' : 'team-role-pill-disabled'}`} key={team.empresaId}>
+        {(user.empresas ?? []).map((empresa) => (
+          <span className={`team-role-pill ${empresa.activo ? '' : 'team-role-pill-disabled'}`} key={empresa.empresaId}>
             <Building2 size={14} />
-            <strong>{team.empresaNombre}</strong>
-            <em>{formatRole(team.rol)}</em>
+            <strong>{empresa.empresaNombre}</strong>
+            <em>{formatRole(empresa.rol)}</em>
           </span>
         ))}
       </div>
@@ -3709,8 +3745,8 @@ function ManagerTeamsPage({ context, error, status, savingAction, teamUsers = {}
     <section className="content-panel manager-users-panel manager-teams-panel">
       <div className="page-heading">
         <div>
-          <h1>Equipos</h1>
-          <p>Administrá los equipos o empresas del grupo de gestión sin perder trazabilidad histórica.</p>
+          <h1>Empresas</h1>
+          <p>Administrá las empresas del grupo de gestión sin perder trazabilidad histórica.</p>
         </div>
       </div>
 
@@ -3718,9 +3754,9 @@ function ManagerTeamsPage({ context, error, status, savingAction, teamUsers = {}
       {status && <p className="auth-success">{status}</p>}
 
       <div className="summary-grid users-summary-grid">
-        <SummaryCard icon={<Building2 size={30} />} label="Equipos registrados" value={empresas.length} helper="Total dentro del grupo de gestión" />
-        <SummaryCard icon={<CheckCircle2 size={30} />} label="Equipos activos" value={activeTeams.length} helper="Disponibles para operar y asignar usuarios" />
-        <SummaryCard icon={<Building2 size={30} />} label="Equipo principal" value={principal?.nombre ?? 'Sin definir'} helper="Contexto operativo inicial del gerente" />
+        <SummaryCard icon={<Building2 size={30} />} label="Empresas registradas" value={empresas.length} helper="Total dentro del grupo de gestión" />
+        <SummaryCard icon={<CheckCircle2 size={30} />} label="Empresas activas" value={activeTeams.length} helper="Disponibles para operar y asignar usuarios" />
+        <SummaryCard icon={<Building2 size={30} />} label="Empresa principal" value={principal?.nombre ?? 'Sin definir'} helper="Contexto operativo inicial del gerente" />
       </div>
 
       <div className="manager-teams-grid">
@@ -3728,18 +3764,18 @@ function ManagerTeamsPage({ context, error, status, savingAction, teamUsers = {}
           <div className="card-heading">
             <div className="card-heading-icon"><PlusCircle size={18} /></div>
             <div>
-              <h2>Crear equipo</h2>
-              <p>Agregá una empresa/equipo para separar lotes, campañas y usuarios.</p>
+              <h2>Crear empresa</h2>
+              <p>Agregá una empresa para separar lotes, campañas y usuarios.</p>
             </div>
           </div>
           <form className="team-create-form" onSubmit={submitCreate}>
             <label className="admin-field">
-              <span>Nombre del equipo *</span>
+              <span>Nombre de la empresa *</span>
               <input value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder="Ej: Agro Los Cóndores" />
             </label>
             <button className="green-button wide" type="submit" disabled={savingAction === 'create' || !teamName.trim()}>
               {savingAction === 'create' ? <LoaderCircle className="spin-icon" size={18} /> : <PlusCircle size={18} />}
-              <span>{savingAction === 'create' ? 'Creando...' : 'Agregar equipo'}</span>
+              <span>{savingAction === 'create' ? 'Creando...' : 'Agregar empresa'}</span>
             </button>
           </form>
         </section>
@@ -3753,8 +3789,8 @@ function ManagerTeamsPage({ context, error, status, savingAction, teamUsers = {}
             </div>
           </div>
           <div className="team-guidance-list">
-            <span><CheckCircle2 size={18} /> El equipo activo puede recibir lotes y usuarios.</span>
-            <span><EyeOff size={18} /> El equipo deshabilitado queda fuera de uso operativo.</span>
+            <span><CheckCircle2 size={18} /> La empresa activa puede recibir lotes y usuarios.</span>
+            <span><EyeOff size={18} /> La empresa deshabilitada queda fuera de uso operativo.</span>
             <span><Home size={18} /> El principal define el contexto base del gerente.</span>
           </div>
         </section>
@@ -3764,8 +3800,8 @@ function ManagerTeamsPage({ context, error, status, savingAction, teamUsers = {}
         <div className="card-heading">
           <div className="card-heading-icon"><Building2 size={18} /></div>
           <div>
-            <h2>Listado de equipos</h2>
-            <p>Editá nombres, cambiá el equipo principal o deshabilitá sin borrar registros.</p>
+            <h2>Listado de empresas</h2>
+            <p>Editá nombres, cambiá la empresa principal o deshabilitá sin borrar registros.</p>
           </div>
           <span className="points-count">{disabledTeams.length} deshabilitados</span>
         </div>
@@ -3773,8 +3809,8 @@ function ManagerTeamsPage({ context, error, status, savingAction, teamUsers = {}
         {empresas.length === 0 ? (
           <div className="pending-users-empty-row teams-empty-row">
             <Building2 size={52} strokeWidth={1.8} />
-            <strong>Aún no hay equipos cargados</strong>
-            <span>Creá el primer equipo para empezar a separar la operación por empresa.</span>
+            <strong>Aún no hay empresas cargadas</strong>
+            <span>Creá la primera empresa para empezar a separar la operación.</span>
           </div>
         ) : (
           <div className="teams-table-shell">
@@ -3797,7 +3833,7 @@ function ManagerTeamsPage({ context, error, status, savingAction, teamUsers = {}
                     ) : (
                       <>
                         <strong>{empresa.nombre}</strong>
-                        <small>{empresa.esPrincipal ? 'Equipo principal del grupo' : 'Equipo asociado'}</small>
+                        <small>{empresa.esPrincipal ? 'Empresa principal del grupo' : 'Empresa asociada'}</small>
                       </>
                     )}
                   </div>
@@ -3844,7 +3880,7 @@ function TeamUsersPanel({ users, loading }) {
   if (loading) {
     return (
       <div className="team-users-panel">
-        <span className="team-users-loading"><LoaderCircle className="spin-icon" size={18} /> Cargando usuarios del equipo...</span>
+        <span className="team-users-loading"><LoaderCircle className="spin-icon" size={18} /> Cargando usuarios de la empresa...</span>
       </div>
     );
   }
@@ -3853,7 +3889,7 @@ function TeamUsersPanel({ users, loading }) {
     return (
       <div className="team-users-panel team-users-panel-empty">
         <Users size={34} />
-        <strong>Este equipo todavía no tiene usuarios vinculados</strong>
+        <strong>Esta empresa todavía no tiene usuarios vinculados</strong>
       </div>
     );
   }
@@ -3861,8 +3897,8 @@ function TeamUsersPanel({ users, loading }) {
   return (
     <div className="team-users-panel">
       {users.map((user) => {
-        const teamRole = user.equipos?.[0]?.rol ?? user.rolGeneral;
-        const accessActive = user.activo && (user.equipos?.[0]?.activo ?? true);
+        const teamRole = user.empresas?.[0]?.rol ?? user.rolGeneral;
+        const accessActive = user.activo && (user.empresas?.[0]?.activo ?? true);
         const fullName = `${user.nombre ?? ''} ${user.apellido ?? ''}`.trim() || user.correoElectronico;
 
         return (
@@ -4005,7 +4041,7 @@ function PendingUserRequestCard({ request, empresas, onApprove, onResolve }) {
           </label>
           <label className="access-scope-toggle">
             <input type="checkbox" checked={accesoATodas} onChange={(event) => setAccesoATodas(event.target.checked)} />
-            <span>Acceso a todos los equipos</span>
+            <span>Acceso a todas las empresas</span>
           </label>
         </div>
 
@@ -4196,7 +4232,7 @@ function ParentSearchSelect({ label, value, options, placeholder, onChange }) {
         <div className="parent-filter-popover">
           <label className="search-field parent-filter-search">
             <Search size={18} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Buscar ${label.toLowerCase()}...`} autoFocus />
+            <input data-text-case="preserve" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Buscar ${label.toLowerCase()}...`} autoFocus />
           </label>
           <div className="parent-filter-options">
             {filteredOptions.map((option) => (
@@ -4342,7 +4378,7 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
         </div>
         <label className="search-field">
           <Search size={21} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nombre de lote..." />
+          <input data-text-case="preserve" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nombre de lote..." />
         </label>
         <select value={conditionFilter} onChange={(event) => setConditionFilter(event.target.value)}>
           <option value="">Condicion</option>
@@ -5182,6 +5218,7 @@ function SearchableDropdown({ label, value, onChange, options, placeholder = 'Bu
           {searchable && (
             <input
               className="dropdown-search"
+              data-text-case="preserve"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={placeholder}

@@ -87,23 +87,23 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
     }
 
 
-    [HttpPost("equipos")]
-    public async Task<ActionResult> CrearEquipo([FromBody] ManagerEquipoRequest request)
+    [HttpPost("empresas")]
+    public async Task<ActionResult> CrearEmpresa([FromBody] ManagerEmpresaRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
         if (usuario.Rol != "Gerente") return StatusCode(StatusCodes.Status403Forbidden, "Solo un gerente puede realizar esta accion.");
 
-        var nombre = NormalizarNombreEquipo(request.Nombre);
-        if (string.IsNullOrWhiteSpace(nombre)) return BadRequest("Ingresa el nombre del equipo.");
+        var nombre = NormalizarNombreEmpresa(request.Nombre);
+        if (string.IsNullOrWhiteSpace(nombre)) return BadRequest("Ingresa el nombre de la empresa.");
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
         var grupoId = await ObtenerGrupoGestionIdAsync(connection, usuario.UsuarioId);
         if (grupoId is null) return NotFound("No se encontro un grupo de gestion activo para este gerente.");
 
-        if (await ExisteEquipoConNombreAsync(connection, grupoId.Value, nombre))
+        if (await ExisteEmpresaConNombreAsync(connection, grupoId.Value, nombre))
         {
-            return BadRequest("Ya existe un equipo con ese nombre en tu grupo de gestion.");
+            return BadRequest("Ya existe una empresa con ese nombre en tu grupo de gestion.");
         }
 
         await using var transaction = await connection.BeginTransactionAsync();
@@ -119,11 +119,11 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
                 insert.Parameters.AddWithValue("@GrupoGestionId", grupoId.Value);
                 insert.Parameters.AddWithValue("@Nombre", nombre);
                 var createdEmpresaId = await insert.ExecuteScalarAsync();
-                if (createdEmpresaId is null || createdEmpresaId == DBNull.Value) return StatusCode(500, "No se pudo crear el equipo.");
+                if (createdEmpresaId is null || createdEmpresaId == DBNull.Value) return StatusCode(500, "No se pudo crear la empresa.");
                 empresaId = Convert.ToInt32(createdEmpresaId);
             }
 
-            await VincularGerenteAlEquipoAsync(connection, (SqlTransaction)transaction, usuario.UsuarioId, empresaId);
+            await VincularGerenteALaEmpresaAsync(connection, (SqlTransaction)transaction, usuario.UsuarioId, empresaId);
 
             await using (var ensurePrincipal = new SqlCommand("""
                 UPDATE dbo.Usuarios
@@ -138,7 +138,7 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
             }
 
             await transaction.CommitAsync();
-            return Ok(new { mensaje = "Equipo creado correctamente." });
+            return Ok(new { mensaje = "Empresa creada correctamente." });
         }
         catch
         {
@@ -147,28 +147,28 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
         }
     }
 
-    [HttpPut("equipos/{empresaId:int}")]
-    public async Task<ActionResult> ActualizarEquipo(int empresaId, [FromBody] ManagerEquipoRequest request)
+    [HttpPut("empresas/{empresaId:int}")]
+    public async Task<ActionResult> ActualizarEmpresa(int empresaId, [FromBody] ManagerEmpresaRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
         if (usuario.Rol != "Gerente") return StatusCode(StatusCodes.Status403Forbidden, "Solo un gerente puede realizar esta accion.");
 
-        var nombre = NormalizarNombreEquipo(request.Nombre);
-        if (string.IsNullOrWhiteSpace(nombre)) return BadRequest("Ingresa el nombre del equipo.");
+        var nombre = NormalizarNombreEmpresa(request.Nombre);
+        if (string.IsNullOrWhiteSpace(nombre)) return BadRequest("Ingresa el nombre de la empresa.");
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
         var grupoId = await ObtenerGrupoGestionIdAsync(connection, usuario.UsuarioId);
         if (grupoId is null) return NotFound("No se encontro un grupo de gestion activo para este gerente.");
 
-        if (!await EquipoPerteneceAlGrupoAsync(connection, grupoId.Value, empresaId, incluirInactivos: true))
+        if (!await EmpresaPerteneceAlGrupoAsync(connection, grupoId.Value, empresaId, incluirInactivos: true))
         {
-            return NotFound("No se encontro el equipo dentro de tu grupo de gestion.");
+            return NotFound("No se encontro la empresa dentro de tu grupo de gestion.");
         }
 
-        if (await ExisteEquipoConNombreAsync(connection, grupoId.Value, nombre, empresaId))
+        if (await ExisteEmpresaConNombreAsync(connection, grupoId.Value, nombre, empresaId))
         {
-            return BadRequest("Ya existe otro equipo con ese nombre en tu grupo de gestion.");
+            return BadRequest("Ya existe otra empresa con ese nombre en tu grupo de gestion.");
         }
 
         await using var command = new SqlCommand("""
@@ -182,11 +182,11 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
         command.Parameters.AddWithValue("@GrupoGestionId", grupoId.Value);
         await command.ExecuteNonQueryAsync();
 
-        return Ok(new { mensaje = "Equipo actualizado correctamente." });
+        return Ok(new { mensaje = "Empresa actualizada correctamente." });
     }
 
-    [HttpPost("equipos/{empresaId:int}/deshabilitar")]
-    public async Task<ActionResult> DeshabilitarEquipo(int empresaId)
+    [HttpPost("empresas/{empresaId:int}/deshabilitar")]
+    public async Task<ActionResult> DeshabilitarEmpresa(int empresaId)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
         if (usuario.Rol != "Gerente") return StatusCode(StatusCodes.Status403Forbidden, "Solo un gerente puede realizar esta accion.");
@@ -196,15 +196,15 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
         var grupoId = await ObtenerGrupoGestionIdAsync(connection, usuario.UsuarioId);
         if (grupoId is null) return NotFound("No se encontro un grupo de gestion activo para este gerente.");
 
-        if (!await EquipoPerteneceAlGrupoAsync(connection, grupoId.Value, empresaId, incluirInactivos: false))
+        if (!await EmpresaPerteneceAlGrupoAsync(connection, grupoId.Value, empresaId, incluirInactivos: false))
         {
-            return NotFound("No se encontro un equipo activo dentro de tu grupo de gestion.");
+            return NotFound("No se encontro una empresa activa dentro de tu grupo de gestion.");
         }
 
-        var equiposActivos = await ContarEquiposActivosAsync(connection, grupoId.Value);
-        if (equiposActivos <= 1)
+        var empresasActivas = await ContarEmpresasActivasAsync(connection, grupoId.Value);
+        if (empresasActivas <= 1)
         {
-            return BadRequest("No podes deshabilitar el ultimo equipo activo del grupo de gestion.");
+            return BadRequest("No podes deshabilitar la ultima empresa activa del grupo de gestion.");
         }
 
         await using var transaction = await connection.BeginTransactionAsync();
@@ -244,7 +244,7 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
             }
 
             await transaction.CommitAsync();
-            return Ok(new { mensaje = "Equipo deshabilitado correctamente." });
+            return Ok(new { mensaje = "Empresa deshabilitada correctamente." });
         }
         catch
         {
@@ -253,8 +253,8 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
         }
     }
 
-    [HttpPost("equipos/{empresaId:int}/habilitar")]
-    public async Task<ActionResult> HabilitarEquipo(int empresaId)
+    [HttpPost("empresas/{empresaId:int}/habilitar")]
+    public async Task<ActionResult> HabilitarEmpresa(int empresaId)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
         if (usuario.Rol != "Gerente") return StatusCode(StatusCodes.Status403Forbidden, "Solo un gerente puede realizar esta accion.");
@@ -264,9 +264,9 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
         var grupoId = await ObtenerGrupoGestionIdAsync(connection, usuario.UsuarioId);
         if (grupoId is null) return NotFound("No se encontro un grupo de gestion activo para este gerente.");
 
-        if (!await EquipoPerteneceAlGrupoAsync(connection, grupoId.Value, empresaId, incluirInactivos: true))
+        if (!await EmpresaPerteneceAlGrupoAsync(connection, grupoId.Value, empresaId, incluirInactivos: true))
         {
-            return NotFound("No se encontro el equipo dentro de tu grupo de gestion.");
+            return NotFound("No se encontro la empresa dentro de tu grupo de gestion.");
         }
 
         await using var command = new SqlCommand("""
@@ -279,11 +279,11 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
         command.Parameters.AddWithValue("@GrupoGestionId", grupoId.Value);
         await command.ExecuteNonQueryAsync();
 
-        return Ok(new { mensaje = "Equipo habilitado correctamente." });
+        return Ok(new { mensaje = "Empresa habilitada correctamente." });
     }
 
-    [HttpPost("equipos/{empresaId:int}/principal")]
-    public async Task<ActionResult> MarcarEquipoPrincipal(int empresaId)
+    [HttpPost("empresas/{empresaId:int}/principal")]
+    public async Task<ActionResult> MarcarEmpresaPrincipal(int empresaId)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
         if (usuario.Rol != "Gerente") return StatusCode(StatusCodes.Status403Forbidden, "Solo un gerente puede realizar esta accion.");
@@ -293,9 +293,9 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
         var grupoId = await ObtenerGrupoGestionIdAsync(connection, usuario.UsuarioId);
         if (grupoId is null) return NotFound("No se encontro un grupo de gestion activo para este gerente.");
 
-        if (!await EquipoPerteneceAlGrupoAsync(connection, grupoId.Value, empresaId, incluirInactivos: false))
+        if (!await EmpresaPerteneceAlGrupoAsync(connection, grupoId.Value, empresaId, incluirInactivos: false))
         {
-            return BadRequest("Solo podes marcar como principal un equipo activo de tu grupo de gestion.");
+            return BadRequest("Solo podes marcar como principal una empresa activa de tu grupo de gestion.");
         }
 
         await using var command = new SqlCommand("""
@@ -308,7 +308,7 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
         command.Parameters.AddWithValue("@UsuarioId", usuario.UsuarioId);
         await command.ExecuteNonQueryAsync();
 
-        return Ok(new { mensaje = "Equipo principal actualizado." });
+        return Ok(new { mensaje = "Empresa principal actualizada." });
     }
 
     [HttpGet("solicitudes")]
@@ -375,7 +375,7 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
                 COALESCE(s.FechaResolucion, u.FechaCreacion) AS FechaAlta,
                 e.EmpresaId,
                 e.Nombre AS EmpresaNombre,
-                ue.Rol AS RolEquipo,
+                ue.Rol AS RolEmpresa,
                 ue.Activo AS AccesoActivo
             FROM dbo.UsuarioEmpresas AS ue
             INNER JOIN dbo.Empresas AS e ON e.EmpresaId = ue.EmpresaId
@@ -402,8 +402,8 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
         return Ok(await LeerUsuariosAsync(reader));
     }
 
-    [HttpGet("equipos/{empresaId:int}/usuarios")]
-    public async Task<ActionResult<IReadOnlyList<ManagerUsuarioDto>>> ObtenerUsuariosPorEquipo(int empresaId)
+    [HttpGet("empresas/{empresaId:int}/usuarios")]
+    public async Task<ActionResult<IReadOnlyList<ManagerUsuarioDto>>> ObtenerUsuariosPorEmpresa(int empresaId)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
         if (usuario.Rol != "Gerente") return StatusCode(StatusCodes.Status403Forbidden, "Solo un gerente puede realizar esta accion.");
@@ -413,9 +413,9 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
         var grupoId = await ObtenerGrupoGestionIdAsync(connection, usuario.UsuarioId);
         if (grupoId is null) return NotFound("No se encontro un grupo de gestion activo para este gerente.");
 
-        if (!await EquipoPerteneceAlGrupoAsync(connection, grupoId.Value, empresaId, incluirInactivos: true))
+        if (!await EmpresaPerteneceAlGrupoAsync(connection, grupoId.Value, empresaId, incluirInactivos: true))
         {
-            return NotFound("No se encontro el equipo dentro de tu grupo de gestion.");
+            return NotFound("No se encontro la empresa dentro de tu grupo de gestion.");
         }
 
         const string sql = """
@@ -430,7 +430,7 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
                 COALESCE(s.FechaResolucion, u.FechaCreacion) AS FechaAlta,
                 e.EmpresaId,
                 e.Nombre AS EmpresaNombre,
-                ue.Rol AS RolEquipo,
+                ue.Rol AS RolEmpresa,
                 ue.Activo AS AccesoActivo
             FROM dbo.UsuarioEmpresas AS ue
             INNER JOIN dbo.Empresas AS e ON e.EmpresaId = ue.EmpresaId
@@ -592,7 +592,7 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
                 .Where(item => RolesPermitidos.Contains(item.Rol))
                 .ToArray();
 
-        if (empresas.Count == 0) return BadRequest("Selecciona al menos una empresa/equipo para aprobar el acceso.");
+        if (empresas.Count == 0) return BadRequest("Selecciona al menos una empresa para aprobar el acceso.");
 
         if (!await EmpresasPertenecenAlGrupoAsync(connection, grupoId.Value, empresas.Select(item => item.EmpresaId).Distinct().ToArray()))
         {
@@ -690,12 +690,12 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
     }
 
 
-    private static string NormalizarNombreEquipo(string nombre)
+    private static string NormalizarNombreEmpresa(string nombre)
     {
         return string.Join(' ', (nombre ?? string.Empty).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries));
     }
 
-    private static async Task<bool> ExisteEquipoConNombreAsync(SqlConnection connection, int grupoGestionId, string nombre, int? excluirEmpresaId = null)
+    private static async Task<bool> ExisteEmpresaConNombreAsync(SqlConnection connection, int grupoGestionId, string nombre, int? excluirEmpresaId = null)
     {
         await using var command = new SqlCommand("""
             SELECT COUNT(1)
@@ -711,7 +711,7 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
         return count > 0;
     }
 
-    private static async Task<bool> EquipoPerteneceAlGrupoAsync(SqlConnection connection, int grupoGestionId, int empresaId, bool incluirInactivos)
+    private static async Task<bool> EmpresaPerteneceAlGrupoAsync(SqlConnection connection, int grupoGestionId, int empresaId, bool incluirInactivos)
     {
         await using var command = new SqlCommand($"""
             SELECT COUNT(1)
@@ -726,7 +726,7 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
         return count > 0;
     }
 
-    private static async Task<int> ContarEquiposActivosAsync(SqlConnection connection, int grupoGestionId)
+    private static async Task<int> ContarEmpresasActivasAsync(SqlConnection connection, int grupoGestionId)
     {
         await using var command = new SqlCommand("""
             SELECT COUNT(1)
@@ -737,7 +737,7 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
         return Convert.ToInt32(await command.ExecuteScalarAsync() ?? 0);
     }
 
-    private static async Task VincularGerenteAlEquipoAsync(SqlConnection connection, SqlTransaction transaction, int usuarioId, int empresaId)
+    private static async Task VincularGerenteALaEmpresaAsync(SqlConnection connection, SqlTransaction transaction, int usuarioId, int empresaId)
     {
         await using var command = new SqlCommand("""
             IF EXISTS (SELECT 1 FROM dbo.UsuarioEmpresas WHERE UsuarioId = @UsuarioId AND EmpresaId = @EmpresaId)
@@ -907,7 +907,7 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
                 usuarios.Add(usuarioId, usuario);
             }
 
-            usuario.Equipos.Add(new ManagerUsuarioEquipoDto(
+            usuario.Empresas.Add(new ManagerUsuarioEmpresaDto(
                 reader.GetInt32(8),
                 reader.GetString(9),
                 reader.GetString(10),
@@ -923,10 +923,10 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
                 usuario.Telefono,
                 usuario.CorreoElectronico,
                 usuario.RolGeneral,
-                usuario.Equipos.Count > 0 && usuario.Equipos.All(equipo => equipo.Rol == usuario.RolGeneral),
+                usuario.Empresas.Count > 0 && usuario.Empresas.All(empresa => empresa.Rol == usuario.RolGeneral),
                 usuario.Activo,
                 usuario.FechaAlta,
-                usuario.Equipos
+                usuario.Empresas
             ))
             .ToArray();
     }
@@ -942,7 +942,7 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
         DateTime FechaAlta
     )
     {
-        public List<ManagerUsuarioEquipoDto> Equipos { get; } = [];
+        public List<ManagerUsuarioEmpresaDto> Empresas { get; } = [];
     }
 }
 

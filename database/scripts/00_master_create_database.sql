@@ -27,7 +27,7 @@ GO
 
     Se usa una tabla unica para todas las identidades del sistema:
     administradores internos de AgroDigital, gerentes, encargados y empleados.
-    Los permisos finos por empresa/equipo se resolveran con tablas relacionales
+    Los permisos finos por empresa se resolveran con tablas relacionales
     asociadas en siguientes iteraciones. La contrasenia se guarda hasheada, nunca
     en texto plano.
 */
@@ -141,7 +141,7 @@ GO
     Fuente funcional: Registro inicial del gerente.
 
     Representa el panel/grupo padre de gestion de un gerente. Desde este grupo
-    se administran una o varias empresas/equipos y sus usuarios asociados.
+    se administran una o varias empresas y sus usuarios asociados.
 */
 IF OBJECT_ID(N'dbo.GruposGestion', N'U') IS NULL
 BEGIN
@@ -164,7 +164,7 @@ GO
 
 /*
     Tabla: Empresas
-    Fuente funcional: Empresas/equipos iniciales del gerente.
+    Fuente funcional: Empresas iniciales del gerente.
 
     Cada empresa pertenece a un grupo de gestion. No se elimina fisicamente;
     se deshabilita para conservar trazabilidad.
@@ -195,7 +195,7 @@ GO
 
 /*
     Tabla: UsuarioEmpresas
-    Fuente funcional: Roles discriminados por empresa/equipo.
+    Fuente funcional: Roles discriminados por empresa.
 
     Permite que un usuario pertenezca a varias empresas con roles distintos.
 */

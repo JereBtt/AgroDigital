@@ -771,7 +771,7 @@ function CosechasList({ cosechas, lotes, parentFilters, selectedEmpresaName, sel
       <div className="filters-card">
         <label className="search-field">
           <Search size={21} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por cualquier dato de la cosecha..." />
+          <input data-text-case="preserve" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por cualquier dato de la cosecha..." />
         </label>
         <select value={productoFilter} onChange={(event) => setProductoFilter(event.target.value)}>
           <option value="">Grano</option>

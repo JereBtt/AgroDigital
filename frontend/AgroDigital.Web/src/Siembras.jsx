@@ -58,6 +58,44 @@ const TIPOS_INSUMO = [
   'Nematicidas', 'Raticidas', 'Bactericidas', 'Molusquicidas'
 ];
 
+const SIEMBRA_FIELD_RULES = {
+  tipoRegistro: 'Es obligatorio elegir Siembra o Resiembra. Solo puede existir una siembra y una resiembra por lote y periodo de campaña.',
+  nombre: 'Es de solo lectura y se genera al guardar con el formato SIEM - 0001.',
+  loteSiembra: 'Solo aparecen lotes planificados en la campaña que todavía no tienen una siembra en este periodo.',
+  loteResiembra: 'Solo aparecen lotes con siembra y seguimiento originales finalizados y sin otra resiembra en el periodo.',
+  siembraOriginal: 'Se completa automáticamente con la siembra finalizada del lote seleccionado.',
+  hectareasLote: 'Es de solo lectura y toma la superficie registrada para el lote dentro de la campaña.',
+  cultivoAfectado: 'Es informativo y muestra el cultivo registrado en la siembra original.',
+  cultivoSiembra: 'Es obligatorio y se completa con el cultivo planificado para el lote en la campaña.',
+  cultivoResiembra: 'Es obligatorio. En resiembra parcial conserva el cultivo original; en resiembra total puede cambiarse.',
+  tipoResiembra: 'Es obligatorio. Parcial conserva el cultivo original; Total permite seleccionar otro cultivo.',
+  siniestro: 'Es obligatorio y debe elegirse de la lista de causas admitidas.',
+  fechaInicioSiembra: (minima, maxima) => `Es obligatoria y debe estar entre ${minima} y ${maxima}.`,
+  fechaInicioResiembra: (minima, maxima) => `Debe estar entre el fin real de la siembra original (${minima}) y cuatro meses después, sin superar el fin de campaña (${maxima}).`,
+  fechaFin: (maxima, esResiembra) => `Es obligatoria, no puede ser anterior al inicio ni posterior al ${maxima}${esResiembra ? ', fin del año de campaña' : ''}.`,
+  seguimiento: 'Es de solo lectura y refleja el estado del seguimiento asociado.',
+  variedadSemilla: 'Es obligatoria, no puede quedar vacía y se guarda en mayúsculas.',
+  pmg: 'Es obligatorio y debe ser mayor que cero. No admite valores negativos.',
+  densidad: 'Es obligatoria y debe ser mayor que cero. Se usa para calcular la cantidad de semillas.',
+  profundidad: 'Es obligatoria y debe ser mayor que cero. No admite valores negativos.',
+  hectareasCultivables: 'Es obligatoria y debe ser mayor que cero. Se completa desde el lote y puede ajustarse.',
+  urea: 'Es opcional. Si se carga, debe ser igual o mayor que cero y representa kg aplicados por hectárea.',
+  cantidadSemillas: 'Es obligatoria y mayor que cero. Se calcula como Densidad × Hectáreas cultivables, pero puede editarse.',
+  responsable: 'Es obligatorio seleccionar un usuario disponible de la empresa.',
+  fechaMuestreo: (minima, maxima) => `Es opcional. Si se carga, debe estar entre ${minima} y el inicio de siembra (${maxima}).`,
+  fechaAnalisis: 'Es opcional. No puede ser anterior al muestreo ni posterior al inicio de siembra.',
+  cantidadMuestras: 'Es opcional y solo admite números enteros iguales o mayores que cero.',
+  cultivoAntecesor: 'Es de solo lectura y toma el último cultivo con cosecha finalizada del historial del lote.',
+  observaciones: 'Es opcional y permite registrar aclaraciones sobre el muestreo o el análisis de suelo.',
+  pulverizacion: 'En resiembra, No es la opción predeterminada. Si elegís Sí, debés agregar al menos un agroquímico a la tabla para continuar.',
+  fechaAplicacion: (minima) => `Es obligatoria. Debe estar entre ${minima} y la fecha de inicio de siembra.`,
+  marcaAgroquimico: 'Es obligatoria y no puede quedar vacía.',
+  tipoAgroquimico: 'Es obligatorio y debe elegirse de la lista de tipos admitidos.',
+  variedadAgroquimico: 'Es obligatoria y no puede quedar vacía.',
+  cantidadAgroquimico: 'La cantidad debe ser mayor que cero y la unidad debe ser Litros o Kg.',
+  documentacion: 'La documentación es opcional. Los formatos sugeridos son PDF, JPG, PNG y XLSX.'
+};
+
 let tempIdSeq = 0;
 function nextTempId() {
   tempIdSeq += 1;
@@ -1249,7 +1287,7 @@ function SiembrasList({ siembras, parentFilters, selectedEmpresaName, selectedCa
       <div className="filters-card">
         <label className="search-field">
           <Search size={21} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por cualquier dato de la siembra..." />
+          <input data-text-case="preserve" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por cualquier dato de la siembra..." />
         </label>
         <select value={productoFilter} onChange={(event) => setProductoFilter(event.target.value)}>
           <option value="">Grano</option>
@@ -1812,10 +1850,12 @@ function SiembraForm({
                   Registrar resiembra
                 </button>
               </div>
+              <FieldRule>{SIEMBRA_FIELD_RULES.tipoRegistro}</FieldRule>
             </label>
             <label className="field">
               Nombre
               <input readOnly value={modoEdicion ? nombre : ''} placeholder="Se asigna automaticamente al guardar" />
+              <FieldRule>{SIEMBRA_FIELD_RULES.nombre}</FieldRule>
             </label>
             <label className="field">
               Lote <b>*</b>
@@ -1826,10 +1866,10 @@ function SiembraForm({
                 ))}
               </select>
               {esResiembra && !campaniaNormalizada && <span className="field-hint">Primero indica la campaña para ver lotes ya sembrados.</span>}
-              {esResiembra && <span className="field-hint">Se permite una sola resiembra por lote y periodo de campaña, con siembra y seguimiento originales finalizados.</span>}
+              {esResiembra && <FieldRule>{SIEMBRA_FIELD_RULES.loteResiembra}</FieldRule>}
               {esResiembra && campaniaNormalizada && lotesDisponibles.length === 0 && <span className="field-error">No hay lotes disponibles: deben tener siembra y seguimiento finalizados y no contar con otra resiembra en este periodo.</span>}
               {esResiembra && lotesYaResembrados.has(String(form.loteId)) && <span className="field-error">Este lote ya tiene una resiembra registrada en este periodo.</span>}
-              {!esResiembra && <span className="field-hint">Solo se muestran lotes sin siembra registrada en este periodo de campaña. Para repetir la labor, utiliza Registrar resiembra.</span>}
+              {!esResiembra && <FieldRule>{SIEMBRA_FIELD_RULES.loteSiembra}</FieldRule>}
               {!esResiembra && lotesYaSembrados.has(String(form.loteId)) && <span className="field-error">Este lote ya tiene una siembra en este periodo. Selecciona otro lote o registra una resiembra.</span>}
               {!esResiembra && selectedCampaniaCombinaciones.length === 0 && <span className="field-error">La campaña seleccionada no tiene lotes planificados para sembrar.</span>}
             </label>
@@ -1837,18 +1877,19 @@ function SiembraForm({
 <label className="field">
                   Siembra original
                   <input readOnly value={siembraOriginalSeleccionada?.nombre || 'Se completa al elegir el lote'} />
+                  <FieldRule>{SIEMBRA_FIELD_RULES.siembraOriginal}</FieldRule>
                 </label>
 )}
             <label className="field">
               Hectareas del lote
               <input type="number" step="0.01" readOnly value={form.cantidadHectareasLote || ''} placeholder="Se completa al elegir el lote" />
-              <span className="field-hint">Superficie registrada para el lote dentro de la campaña.</span>
+              <FieldRule>{SIEMBRA_FIELD_RULES.hectareasLote}</FieldRule>
             </label>
             {esResiembra && (
               <label className="field">
                 Cultivo afectado
                 <input readOnly value={siembraOriginalSeleccionada?.producto || ''} placeholder="Se completa al elegir el lote" />
-                <span className="field-hint">Cultivo registrado en la siembra original de este lote.</span>
+                <FieldRule>{SIEMBRA_FIELD_RULES.cultivoAfectado}</FieldRule>
               </label>
             )}
             <label className="field">
@@ -1861,7 +1902,7 @@ function SiembraForm({
                   </button>
                 )}
               </div>
-              {granoBloqueado && <span className="field-hint">En resiembra parcial se conserva el grano original.</span>}
+              <FieldRule>{esResiembra ? SIEMBRA_FIELD_RULES.cultivoResiembra : SIEMBRA_FIELD_RULES.cultivoSiembra}</FieldRule>
             </label>
             {esResiembra && (
               <>
@@ -1872,6 +1913,7 @@ function SiembraForm({
                     <option value="Parcial">Parcial</option>
                     <option value="Total">Total</option>
                   </select>
+                  <FieldRule>{SIEMBRA_FIELD_RULES.tipoResiembra}</FieldRule>
                 </label>
                 <label className="field">
                   Siniestro <b>*</b>
@@ -1881,6 +1923,7 @@ function SiembraForm({
                       <option key={siniestro} value={siniestro}>{siniestro}</option>
                     ))}
                   </select>
+                  <FieldRule>{SIEMBRA_FIELD_RULES.siniestro}</FieldRule>
                 </label>
                 
               </>
@@ -1896,6 +1939,9 @@ function SiembraForm({
                 value={form.fechaInicio}
                 onChange={(e) => onFieldChange('fechaInicio', e.target.value)}
               />
+              <FieldRule>{esResiembra
+                ? SIEMBRA_FIELD_RULES.fechaInicioResiembra(formatDateInputLabel(fechaInicioMinima), formatDateInputLabel(fechaInicioMaxima))
+                : SIEMBRA_FIELD_RULES.fechaInicioSiembra(formatDateInputLabel(fechaInicioMinima), formatDateInputLabel(fechaInicioMaxima))}</FieldRule>
               {fechaInicioFueraDeRangoOperativo && (
                 <span className="field-error">
                   La fecha de inicio debe estar entre {formatDateInputLabel(fechaInicioMinima)} y {formatDateInputLabel(fechaInicioMaxima)}.
@@ -1912,6 +1958,7 @@ function SiembraForm({
                 value={form.fechaFin}
                 onChange={(e) => onFieldChange('fechaFin', e.target.value)}
               />
+              <FieldRule>{SIEMBRA_FIELD_RULES.fechaFin(formatDateInputLabel(fechaFinMaxima), esResiembra)}</FieldRule>
               {form.fechaInicio && form.fechaFin && form.fechaFin < form.fechaInicio && (
                 <span className="field-error">La fecha de fin no puede ser anterior a la fecha de inicio.</span>
               )}
@@ -1925,6 +1972,7 @@ function SiembraForm({
               <label className="field">
                 Seguimiento
                 <input readOnly value={estado} />
+                <FieldRule>{SIEMBRA_FIELD_RULES.seguimiento}</FieldRule>
               </label>
             )}
           </div>
@@ -1950,33 +1998,38 @@ function SiembraForm({
             <div className="siembra-wizard-grid">
               <label className="field">
                 Variedad de Semilla <b>*</b>
-                <input value={form.variedadSemilla} onChange={(e) => onFieldChange('variedadSemilla', e.target.value)} placeholder="Seleccionar variedad" />
+                <input data-text-case="upper" value={form.variedadSemilla} onChange={(e) => onFieldChange('variedadSemilla', e.target.value)} placeholder="Seleccionar variedad" />
+                <FieldRule>{SIEMBRA_FIELD_RULES.variedadSemilla}</FieldRule>
               </label>
               <label className="field">
                 PMG (g) <b>*</b>
                 <input type="number" min="0" step="0.01" value={form.pmg} onChange={(e) => onFieldChange('pmg', e.target.value)} placeholder="Ej. 180" />
+                <FieldRule>{SIEMBRA_FIELD_RULES.pmg}</FieldRule>
               </label>
               <label className="field">
                 Densidad de Siembra (semillas/ha) <b>*</b>
                 <input type="number" min="0" step="0.01" value={form.densidadSiembra} onChange={(e) => onFieldChange('densidadSiembra', e.target.value)} placeholder="Ej. 300000" />
+                <FieldRule>{SIEMBRA_FIELD_RULES.densidad}</FieldRule>
               </label>
               <label className="field">
                 Profundidad (cm) <b>*</b>
                 <input type="number" min="0" step="0.01" value={form.profundidad} onChange={(e) => onFieldChange('profundidad', e.target.value)} placeholder="Ej. 3,5" />
+                <FieldRule>{SIEMBRA_FIELD_RULES.profundidad}</FieldRule>
               </label>
               <label className="field">
                 Hectareas cultivables <b>*</b>
                 <input type="number" min="0" step="0.01" value={form.cantidadHectareasTrabajadas} onChange={(e) => onFieldChange('cantidadHectareasTrabajadas', e.target.value)} placeholder="Ej. 52,3" />
+                <FieldRule>{SIEMBRA_FIELD_RULES.hectareasCultivables}</FieldRule>
               </label>
               <label className="field">
                 Urea (kg/ha)
                 <input type="number" min="0" step="0.01" value={form.ureaKgHa} onChange={(e) => onFieldChange('ureaKgHa', e.target.value)} placeholder="Opcional" />
-                <span className="field-hint">Cantidad aplicada por hectarea.</span>
+                <FieldRule>{SIEMBRA_FIELD_RULES.urea}</FieldRule>
               </label>
               <label className="field">
                 Cantidad de Semillas <b>*</b>
                 <input type="number" min="0" step="0.01" value={form.cantidadSemillas} onChange={(e) => onFieldChange('cantidadSemillas', e.target.value)} placeholder="Se calcula automaticamente" />
-                <span className="field-hint">Se calcula sola (Densidad x Hectareas), editable.</span>
+                <FieldRule>{SIEMBRA_FIELD_RULES.cantidadSemillas}</FieldRule>
               </label>
               <label className="field">
                 Responsable a Cargo <b>*</b>
@@ -1987,6 +2040,7 @@ function SiembraForm({
                     return <option key={usuario.usuarioId} value={nombreCompleto}>{nombreCompleto}</option>;
                   })}
                 </select>
+                <FieldRule>{SIEMBRA_FIELD_RULES.responsable}</FieldRule>
               </label>
             </div>
           </div>
@@ -2003,25 +2057,30 @@ function SiembraForm({
               <label className="field">
                 Fecha de Muestreo
                 <input type="date" min={fechaPreSiembraMinima} max={fechaPreSiembraMaxima} value={form.fechaMuestreo} onChange={(e) => onFieldChange('fechaMuestreo', e.target.value)} />
+                <FieldRule>{SIEMBRA_FIELD_RULES.fechaMuestreo(formatDateInputLabel(fechaPreSiembraMinima), formatDateInputLabel(fechaPreSiembraMaxima))}</FieldRule>
                 {fechaMuestreoFueraDeRangoOperativo && <span className="field-error">La fecha de muestreo debe estar entre {formatDateInputLabel(fechaPreSiembraMinima)} y el inicio de siembra ({formatDateInputLabel(fechaPreSiembraMaxima)}).</span>}
               </label>
               <label className="field">
                 Fecha de Analisis
                 <input type="date" min={form.fechaMuestreo && form.fechaMuestreo > fechaPreSiembraMinima ? form.fechaMuestreo : fechaPreSiembraMinima} max={fechaPreSiembraMaxima} value={form.fechaAnalisis} onChange={(e) => onFieldChange('fechaAnalisis', e.target.value)} />
+                <FieldRule>{SIEMBRA_FIELD_RULES.fechaAnalisis}</FieldRule>
                 {fechaAnalisisAnteriorAMuestreo && <span className="field-error">La fecha de analisis no puede ser anterior a la fecha de muestreo.</span>}
                 {fechaAnalisisFueraDeRangoOperativo && <span className="field-error">La fecha de analisis debe estar entre {formatDateInputLabel(fechaPreSiembraMinima)} y el inicio de siembra ({formatDateInputLabel(fechaPreSiembraMaxima)}).</span>}
               </label>
               <label className="field">
                 Cantidad de Muestras
                 <input type="number" min="0" step="1" value={form.cantidadMuestras} onChange={(e) => { if (e.target.value === '' || (Number.isInteger(Number(e.target.value)) && Number(e.target.value) >= 0)) onFieldChange('cantidadMuestras', e.target.value); }} />
+                <FieldRule>{SIEMBRA_FIELD_RULES.cantidadMuestras}</FieldRule>
               </label>
               <label className="field">
                 Cultivo antecesor
                 <input readOnly value={form.productoAntecesor} placeholder="Sin historial" />
+                <FieldRule>{SIEMBRA_FIELD_RULES.cultivoAntecesor}</FieldRule>
               </label>
               <label className="field siembra-wide-field">
                 Observaciones
                 <input value={form.observacionesPreSiembra} onChange={(e) => onFieldChange('observacionesPreSiembra', e.target.value)} placeholder="Observaciones adicionales del analisis de suelo..." />
+                <FieldRule>{SIEMBRA_FIELD_RULES.observaciones}</FieldRule>
               </label>
             </div>
           </div>
@@ -2041,6 +2100,7 @@ function SiembraForm({
                     </label>
                   ))}
                 </div>
+                <FieldRule>{SIEMBRA_FIELD_RULES.pulverizacion}</FieldRule>
                 {pulverizoResiembra === 'si' && insumos.length === 0 && (
                   <p className="field-error" role="status">Agrega al menos un registro a la tabla de agroquimicos para continuar.</p>
                 )}
@@ -2059,11 +2119,13 @@ function SiembraForm({
                 <label className="field">
                   Fecha de aplicacion <b>*</b>
                   <input type="date" required min={OPERATION_DATE_MIN} max={form.fechaInicio || OPERATION_DATE_MAX} value={insumoForm.fechaAplicacion} onChange={(e) => onInsumoFieldChange('fechaAplicacion', e.target.value)} />
+                  <FieldRule>{SIEMBRA_FIELD_RULES.fechaAplicacion(formatDateInputLabel(OPERATION_DATE_MIN))}</FieldRule>
                   {fechaAplicacionPosteriorASiembra && <span className="field-error">La fecha de aplicacion no puede ser posterior a la fecha de inicio de la siembra.</span>}
                 </label>
                 <label className="field">
                   Marca <b>*</b>
                   <input value={insumoForm.marca} onChange={(e) => onInsumoFieldChange('marca', e.target.value)} placeholder="Ej. Bayer, Syngenta" />
+                  <FieldRule>{SIEMBRA_FIELD_RULES.marcaAgroquimico}</FieldRule>
                 </label>
                 <label className="field">
                   Tipo <b>*</b>
@@ -2073,10 +2135,12 @@ function SiembraForm({
                       <option key={tipo} value={tipo}>{tipo}</option>
                     ))}
                   </select>
+                  <FieldRule>{SIEMBRA_FIELD_RULES.tipoAgroquimico}</FieldRule>
                 </label>
                 <label className="field">
                   Variedad <b>*</b>
                   <input required value={insumoForm.variedad} onChange={(e) => onInsumoFieldChange('variedad', e.target.value)} placeholder="Ej. Roundup, 2,4-D" />
+                  <FieldRule>{SIEMBRA_FIELD_RULES.variedadAgroquimico}</FieldRule>
                 </label>
                 <label className="field">
                   Cantidad Aplicada <b>*</b>
@@ -2088,6 +2152,7 @@ function SiembraForm({
                       <option value="Kg">Kg</option>
                     </select>
                   </div>
+                  <FieldRule>{SIEMBRA_FIELD_RULES.cantidadAgroquimico}</FieldRule>
                 </label>
                 <div className="siembra-insumo-action">
                   <button className="green-button" type="submit"><PlusCircle size={18} /> Agregar agroquimico</button>
@@ -2109,6 +2174,7 @@ function SiembraForm({
             <div>
               <strong>Arrastra archivos aqui o selecciona desde tu equipo</strong>
               <span>Formatos sugeridos: PDF, JPG, PNG, XLSX.</span>
+              <FieldRule>{SIEMBRA_FIELD_RULES.documentacion}</FieldRule>
             </div>
             <label className="siembra-file-button">
               <FileText size={16} />
@@ -2273,6 +2339,15 @@ function SectionTitle({ icon: Icon, title, description }) {
         <p>{description}</p>
       </div>
     </div>
+  );
+}
+
+function FieldRule({ children }) {
+  return (
+    <span className="field-rule">
+      <Info size={14} aria-hidden="true" />
+      <span><strong>Regla:</strong> {children}</span>
+    </span>
   );
 }
 
