@@ -7,7 +7,11 @@ namespace AgroDigital.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class SilosController(ISiloRepository siloRepository, IAuthTokenService authTokenService, IWebHostEnvironment environment) : ControllerBase
+public class SilosController(
+    ISiloRepository siloRepository,
+    IAlmacenamientoRepository almacenamientoRepository,
+    IAuthTokenService authTokenService,
+    IWebHostEnvironment environment) : ControllerBase
 {
     private readonly string _uploadsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "silos");
 
@@ -60,6 +64,21 @@ public class SilosController(ISiloRepository siloRepository, IAuthTokenService a
         }
 
         var silo = await siloRepository.CrearAsync(request, usuario.UsuarioId);
+
+        // ALM-04: si el silo se dio de alta con stock inicial, genera el
+        // Ingreso automatico en Almacenamiento (visible desde Consultar
+        // Almacenamientos aunque no se haya cargado desde esa pantalla).
+        if (request.CantidadGranoAlmacenado is > 0)
+        {
+            await almacenamientoRepository.RegistrarMovimientoAutomaticoAsync(
+                silo.SiloId,
+                tipoMovimiento: "Ingreso",
+                cantidad: request.CantidadGranoAlmacenado.Value,
+                origen: "AltaSilo",
+                observaciones: "Ingreso automatico por alta de silo con stock inicial.",
+                usuario.UsuarioId);
+        }
+
         return CreatedAtAction(nameof(ObtenerPorId), new { siloId = silo.SiloId }, silo);
     }
 

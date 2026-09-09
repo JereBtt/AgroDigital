@@ -10,6 +10,7 @@ import Silos from './Silos';
 import Campanias from './Campanias';
 import Siembras from './Siembras';
 import Cosechas from './Cosechas';
+import Almacenamiento from './Almacenamiento';
 import {
   BarChart3,
   Ban,
@@ -250,6 +251,89 @@ function hasLoteFormChanges(lote, form, areaHa, areaM2) {
   return JSON.stringify(originalValue) !== JSON.stringify(currentValue);
 }
 
+function escapePdfText(value) {
+  return String(value ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)')
+    .replace(/[\r\n]+/g, ' ');
+}
+
+function createLotesReportPdf(lotes) {
+  const lines = lotes.map((lote) => {
+    const hectareas = `${formatHectares(lote.hectareas)} ha`;
+    return `${lote.nombre} | ${lote.pais} | ${lote.provincia} | ${lote.ciudad} | ${lote.condicion} | ${hectareas}`;
+  });
+  const pageLineGroups = [];
+
+  for (let index = 0; index < lines.length; index += 29) {
+    pageLineGroups.push(lines.slice(index, index + 29));
+  }
+
+  const pageContents = pageLineGroups.map((pageLines, index) => {
+    const title = index === 0 ? 'AgroDigital - Reporte de Lotes' : 'AgroDigital - Reporte de Lotes (continuacion)';
+    const contentLines = [
+      'BT',
+      '/F1 18 Tf',
+      '50 792 Td',
+      `(${escapePdfText(title)}) Tj`,
+      '/F1 10 Tf',
+      '0 -24 Td',
+      `(Generado el ${escapePdfText(new Date().toLocaleDateString('es-AR'))} - ${lotes.length} lote${lotes.length === 1 ? '' : 's'} seleccionado${lotes.length === 1 ? '' : 's'}) Tj`,
+      '0 -26 Td',
+      '/F1 9 Tf',
+      '(Nombre | Pais | Provincia | Zona | Condicion | Hectareas) Tj'
+    ];
+
+    pageLines.forEach((line) => {
+      contentLines.push('0 -19 Td', `(${escapePdfText(line)}) Tj`);
+    });
+
+    contentLines.push('ET');
+    return contentLines.join('\n');
+  });
+
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    `<< /Type /Pages /Kids [${pageContents.map((_, index) => `${4 + index * 2} 0 R`).join(' ')}] /Count ${pageContents.length} >>`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+  ];
+
+  pageContents.forEach((content, index) => {
+    const pageObject = 4 + index * 2;
+    const contentObject = pageObject + 1;
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentObject} 0 R >>`);
+    objects.push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  });
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+  return new Blob([new Uint8Array([...pdf].map((character) => character.charCodeAt(0) & 0xff))], { type: 'application/pdf' });
+}
+
+function downloadLotesReport(lotes) {
+  const fileUrl = URL.createObjectURL(createLotesReportPdf(lotes));
+  const link = document.createElement('a');
+  link.href = fileUrl;
+  link.download = `reporte-lotes-${new Date().toISOString().slice(0, 10)}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(fileUrl);
+}
+
 function moveArrayItem(items, fromIndex, toIndex) {
   if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= items.length || toIndex >= items.length) {
     return items;
@@ -452,6 +536,8 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loteStatusSaving, setLoteStatusSaving] = useState('');
+  const [lotePendingDisable, setLotePendingDisable] = useState(null);
+  const [lotePendingEnable, setLotePendingEnable] = useState(null);
   const [status, setStatus] = useState('Conectando...');
   const [form, setForm] = useState(emptyForm);
   const [loteFieldErrors, setLoteFieldErrors] = useState({});
@@ -1091,7 +1177,7 @@ function App() {
   }
 
   async function handleToggleLoteStatus(lote) {
-    if (!session?.token || !lote) return;
+    if (!session?.token || !lote) return false;
 
     const action = lote.activo ? 'deshabilitar' : 'habilitar';
     setLoteStatusSaving(`${action}-${lote.loteId}`);
@@ -1107,10 +1193,37 @@ function App() {
 
       await loadLotes();
       setStatus(lote.activo ? 'Lote deshabilitado correctamente' : 'Lote habilitado correctamente');
+      return true;
     } catch (error) {
       setStatus(`No se pudo actualizar el lote: ${error.message.replace(/^"|"$/g, '')}`);
+      return false;
     } finally {
       setLoteStatusSaving('');
+    }
+  }
+
+  function requestToggleLoteStatus(lote) {
+    if (lote?.activo) {
+      setLotePendingDisable(lote);
+      return;
+    }
+
+    setLotePendingEnable(lote);
+  }
+
+  async function confirmDisableLote() {
+    if (!lotePendingDisable) return;
+
+    if (await handleToggleLoteStatus(lotePendingDisable)) {
+      setLotePendingDisable(null);
+    }
+  }
+
+  async function confirmEnableLote() {
+    if (!lotePendingEnable) return;
+
+    if (await handleToggleLoteStatus(lotePendingEnable)) {
+      setLotePendingEnable(null);
     }
   }
 
@@ -1489,8 +1602,10 @@ function App() {
           : { ...updatedAccount, passwordTemporal: current.passwordTemporal ?? null };
       });
       setAdminError('');
+      return true;
     } catch (error) {
       setAdminError(error.message.replace(/^"|"$/g, '') || `No se pudo ${isDisabled ? 'habilitar' : 'deshabilitar'} el acceso.`);
+      return false;
     }
   }
 
@@ -1703,7 +1818,7 @@ function App() {
             <Warehouse size={23} />
             <span>Silos</span>
           </button>
-          <button className="nav-item" type="button">
+          <button className={`nav-item ${activeModule === 'almacenamiento' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('almacenamiento'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
             <Home size={23} />
             <span>Almacenamiento</span>
           </button>
@@ -1738,7 +1853,7 @@ function App() {
               <Home size={17} />
             </button>
             <button className="breadcrumb-link" type="button" onClick={activeModule === 'lotes' ? goToList : undefined}>
-                          {activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Empresas' : activeModule === 'campanias' ? 'Campañas' : activeModule === 'silos' ? 'Silos' : activeModule === 'siembras' ? 'Siembras' : activeModule === 'cosechas' ? 'Cosechas' : 'Lotes'}
+                          {activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Empresas' : activeModule === 'campanias' ? 'Campañas' : activeModule === 'silos' ? 'Silos' : activeModule === 'siembras' ? 'Siembras' : activeModule === 'cosechas' ? 'Cosechas' : activeModule === 'almacenamiento' ? 'Almacenamiento' : 'Lotes'}
             </button>
             {false && activeModule === 'users' && (
               <>
@@ -1864,6 +1979,8 @@ function App() {
             selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
             selectedCampaniaName={selectedParentCampania?.campaniaNombre || ''}
           />
+        ) : activeModule === 'almacenamiento' ? (
+          <Almacenamiento session={session} />
         ) : view === 'list' ? (
           <LotesList
             lotes={parentFilteredLotes}
@@ -1872,7 +1989,7 @@ function App() {
             onAdd={startCreate}
             onView={(lote) => openLote(lote, 'detail')}
             onEdit={(lote) => openLote(lote, 'edit')}
-            onToggleStatus={handleToggleLoteStatus}
+            onToggleStatus={requestToggleLoteStatus}
             statusSaving={loteStatusSaving}
           />
         ) : view === 'create' ? (
@@ -1913,6 +2030,22 @@ function App() {
       </section>
 
       {floatingWidgets}
+      {lotePendingDisable && (
+        <DisableLoteConfirmation
+          lote={lotePendingDisable}
+          saving={loteStatusSaving === `deshabilitar-${lotePendingDisable.loteId}`}
+          onCancel={() => setLotePendingDisable(null)}
+          onConfirm={confirmDisableLote}
+        />
+      )}
+      {lotePendingEnable && (
+        <EnableLoteConfirmation
+          lote={lotePendingEnable}
+          saving={loteStatusSaving === `habilitar-${lotePendingEnable.loteId}`}
+          onCancel={() => setLotePendingEnable(null)}
+          onConfirm={confirmEnableLote}
+        />
+      )}
     </main>
   );
 }
@@ -2789,6 +2922,8 @@ function AdminPanel({
   const [accountForm, setAccountForm] = useState({ responsable: '' });
   const [editingAccountId, setEditingAccountId] = useState(null);
   const [editingResponsible, setEditingResponsible] = useState('');
+  const [pendingAccountStatus, setPendingAccountStatus] = useState(null);
+  const [updatingAccountStatus, setUpdatingAccountStatus] = useState(false);
 
   function submitAccount(event) {
     event.preventDefault();
@@ -2814,6 +2949,15 @@ function AdminPanel({
 
     onUpdateResponsible(accountId, responsable);
     cancelResponsibleEdit();
+  }
+
+  async function confirmAccountStatus() {
+    if (!pendingAccountStatus || updatingAccountStatus) return;
+
+    setUpdatingAccountStatus(true);
+    const updated = await onToggleAccountStatus(pendingAccountStatus);
+    setUpdatingAccountStatus(false);
+    if (updated) setPendingAccountStatus(null);
   }
 
   const pendingAccounts = accounts.filter((account) => account.estado === 'Pendiente de primer ingreso').length;
@@ -3006,7 +3150,7 @@ function AdminPanel({
                         <button
                           className={`admin-action-button ${account.estado === 'Deshabilitado' ? 'admin-action-button-enable' : 'admin-action-button-danger'}`}
                           type="button"
-                          onClick={() => onToggleAccountStatus(account)}
+                          onClick={() => setPendingAccountStatus(account)}
                         >
                           {account.estado === 'Deshabilitado' ? <CheckCircle2 size={15} /> : <LockKeyhole size={15} />}
                           {account.estado === 'Deshabilitado' ? 'Habilitar' : 'Deshabilitar'}
@@ -3020,7 +3164,44 @@ function AdminPanel({
           </div>
         )}
       </section>
+      {pendingAccountStatus && (
+        <AdminAccountStatusConfirmation
+          account={pendingAccountStatus}
+          saving={updatingAccountStatus}
+          onCancel={() => setPendingAccountStatus(null)}
+          onConfirm={confirmAccountStatus}
+        />
+      )}
     </section>
+  );
+}
+
+function AdminAccountStatusConfirmation({ account, saving, onCancel, onConfirm }) {
+  const enabling = account.estado === 'Deshabilitado';
+  const action = enabling ? 'habilitar' : 'deshabilitar';
+
+  return createPortal(
+    <div className="confirmation-modal-backdrop" role="presentation">
+      <section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="admin-account-status-title" aria-describedby="admin-account-status-description">
+        <span className={`confirmation-modal-icon ${enabling ? 'confirmation-modal-icon-success' : ''}`} aria-hidden="true">
+          {enabling ? <CheckCircle2 size={28} /> : <Ban size={28} />}
+        </span>
+        <div>
+          <h2 id="admin-account-status-title">¿{enabling ? 'Habilitar' : 'Deshabilitar'} cuenta?</h2>
+          <p id="admin-account-status-description">
+            {enabling ? <>Vas a habilitar la cuenta de <strong>{account.responsable}</strong>. El responsable podrá volver a ingresar al sistema.</> : <>Vas a deshabilitar la cuenta de <strong>{account.responsable}</strong>. Se bloqueará su acceso, pero se conservará su historial.</>}
+          </p>
+        </div>
+        <div className="confirmation-modal-actions">
+          <button className="confirmation-cancel-button" type="button" onClick={onCancel} disabled={saving}>Cancelar</button>
+          <button className={enabling ? 'confirmation-success-button' : 'confirmation-danger-button'} type="button" onClick={onConfirm} disabled={saving} autoFocus>
+            {saving ? <LoaderCircle className="spin" size={18} /> : enabling ? <CheckCircle2 size={18} /> : <Ban size={18} />}
+            {saving ? `${enabling ? 'Habilitando' : 'Deshabilitando'}...` : `Sí, ${action}`}
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body
   );
 }
 
@@ -3913,6 +4094,72 @@ function OtpSecretCredential({ value, copied, onCopy }) {
     </div>
   );
 }
+function DisableLoteConfirmation({ lote, saving, onCancel, onConfirm }) {
+  return createPortal(
+    <div className="confirmation-modal-backdrop" role="presentation">
+      <section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="disable-lote-title" aria-describedby="disable-lote-description">
+        <span className="confirmation-modal-icon" aria-hidden="true"><Ban size={28} /></span>
+        <div>
+          <h2 id="disable-lote-title">¿Deshabilitar lote?</h2>
+          <p id="disable-lote-description">Vas a deshabilitar <strong>{lote.nombre}</strong>. El lote dejará de estar disponible para nuevas operaciones, pero se conservará su historial.</p>
+        </div>
+        <div className="confirmation-modal-actions">
+          <button className="confirmation-cancel-button" type="button" onClick={onCancel} disabled={saving}>Cancelar</button>
+          <button className="confirmation-danger-button" type="button" onClick={onConfirm} disabled={saving} autoFocus>
+            {saving ? <LoaderCircle className="spin" size={18} /> : <Ban size={18} />}
+            {saving ? 'Deshabilitando...' : 'Sí, deshabilitar'}
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+function EnableLoteConfirmation({ lote, saving, onCancel, onConfirm }) {
+  return createPortal(
+    <div className="confirmation-modal-backdrop" role="presentation">
+      <section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="enable-lote-title" aria-describedby="enable-lote-description">
+        <span className="confirmation-modal-icon confirmation-modal-icon-success" aria-hidden="true"><CheckCircle2 size={28} /></span>
+        <div>
+          <h2 id="enable-lote-title">¿Habilitar lote?</h2>
+          <p id="enable-lote-description">Vas a habilitar <strong>{lote.nombre}</strong>. El lote volverá a estar disponible para registrar nuevas operaciones.</p>
+        </div>
+        <div className="confirmation-modal-actions">
+          <button className="confirmation-cancel-button" type="button" onClick={onCancel} disabled={saving}>Cancelar</button>
+          <button className="confirmation-success-button" type="button" onClick={onConfirm} disabled={saving} autoFocus>
+            {saving ? <LoaderCircle className="spin" size={18} /> : <CheckCircle2 size={18} />}
+            {saving ? 'Habilitando...' : 'Sí, habilitar'}
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+function ExportLotesConfirmation({ lotes, onCancel, onConfirm }) {
+  return createPortal(
+    <div className="confirmation-modal-backdrop" role="presentation">
+      <section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="export-lotes-title" aria-describedby="export-lotes-description">
+        <span className="confirmation-modal-icon confirmation-modal-icon-success" aria-hidden="true"><FileText size={28} /></span>
+        <div>
+          <h2 id="export-lotes-title">¿Exportar lotes a PDF?</h2>
+          <p id="export-lotes-description">Se generará un reporte con los datos de {lotes.length} lote{lotes.length === 1 ? '' : 's'} seleccionado{lotes.length === 1 ? '' : 's'}.</p>
+        </div>
+        <div className="confirmation-modal-actions">
+          <button className="confirmation-cancel-button" type="button" onClick={onCancel}>Cancelar</button>
+          <button className="confirmation-success-button" type="button" onClick={onConfirm} autoFocus>
+            <FileText size={18} />
+            Exportar PDF
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
 function ParentFiltersBar({ children }) {
   return <div className="parent-filters-bar">{children}</div>;
 }
@@ -3983,6 +4230,8 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [dateFromFilter, setDateFromFilter] = useState('');
   const [dateToFilter, setDateToFilter] = useState('');
+  const [selectedLoteIds, setSelectedLoteIds] = useState([]);
+  const [exportConfirmationOpen, setExportConfirmationOpen] = useState(false);
 
   const provinceOptions = useMemo(() => [...new Set(lotes.map((lote) => lote.provincia).filter(Boolean))], [lotes]);
   const zoneOptions = useMemo(() => [...new Set(lotes.map((lote) => lote.ciudad).filter(Boolean))], [lotes]);
@@ -4012,6 +4261,30 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
       .filter((lote) => lote.condicion === 'Alquilado')
       .reduce((sum, lote) => sum + Number(lote.hectareas ?? 0), 0)
   }), [filteredLotes]);
+  const selectedLotes = useMemo(() => lotes.filter((lote) => selectedLoteIds.includes(lote.loteId)), [lotes, selectedLoteIds]);
+  const allVisibleSelected = filteredLotes.length > 0 && filteredLotes.every((lote) => selectedLoteIds.includes(lote.loteId));
+
+  useEffect(() => {
+    setSelectedLoteIds((current) => current.filter((loteId) => lotes.some((lote) => lote.loteId === loteId)));
+  }, [lotes]);
+
+  function toggleLoteSelection(loteId) {
+    setSelectedLoteIds((current) => current.includes(loteId)
+      ? current.filter((selectedId) => selectedId !== loteId)
+      : [...current, loteId]);
+  }
+
+  function toggleVisibleLotesSelection() {
+    const visibleIds = filteredLotes.map((lote) => lote.loteId);
+    setSelectedLoteIds((current) => allVisibleSelected
+      ? current.filter((loteId) => !visibleIds.includes(loteId))
+      : [...new Set([...current, ...visibleIds])]);
+  }
+
+  function confirmExport() {
+    downloadLotesReport(selectedLotes);
+    setExportConfirmationOpen(false);
+  }
 
   function clearFilters() {
     setQuery('');
@@ -4030,10 +4303,16 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
           <h1>Lotes</h1>
           <p>Gestiona y consulta todos los lotes de tu operacion.</p>
         </div>
-        <button className="green-button add-lote-button" type="button" onClick={onAdd}>
-          <PlusCircle size={18} />
-          <span>Registrar lote</span>
-        </button>
+        <div className="lotes-heading-actions">
+          <button className="export-lotes-button" type="button" disabled={selectedLotes.length === 0} onClick={() => setExportConfirmationOpen(true)}>
+            <FileText size={18} />
+            <span>Exportar PDF{selectedLotes.length > 0 ? ` (${selectedLotes.length})` : ''}</span>
+          </button>
+          <button className="green-button add-lote-button" type="button" onClick={onAdd}>
+            <PlusCircle size={18} />
+            <span>Registrar lote</span>
+          </button>
+        </div>
       </div>
       {parentFilters}
 
@@ -4131,6 +4410,9 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
             <table className="lotes-table">
               <thead>
                 <tr>
+                  <th className="check-cell">
+                    <input type="checkbox" checked={allVisibleSelected} onChange={toggleVisibleLotesSelection} aria-label="Seleccionar todos los lotes visibles" />
+                  </th>
                   <th></th>
                   <th>Nombre</th>
                   <th>Pais</th>
@@ -4146,6 +4428,9 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
               <tbody>
                 {filteredLotes.map((lote) => (
                   <tr key={lote.loteId}>
+                    <td className="check-cell">
+                      <input type="checkbox" checked={selectedLoteIds.includes(lote.loteId)} onChange={() => toggleLoteSelection(lote.loteId)} aria-label={`Seleccionar ${lote.nombre}`} />
+                    </td>
                     <td className="lote-icon-cell">
                       <span className="lote-row-icon"><Leaf size={22} /></span>
                     </td>
@@ -4163,6 +4448,7 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
                     <td><CultivoChip value={lote.estadoCultivo || 'Sin cultivo'} estado={lote.estadoCultivo} /></td>
                     <td>{Number(lote.hectareas).toLocaleString('es-AR', { maximumFractionDigits: 2 })} ha</td>
                     <td className="actions-cell">
+                      <div className="actions-cell-content">
                       <button className="table-action-tooltip" data-tooltip="Ver detalle" type="button" aria-label={`Ver ${lote.nombre}`} onClick={() => onView(lote)}><Eye size={18} /></button>
                       <button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label={`Editar ${lote.nombre}`} onClick={() => onEdit(lote)}><Edit size={18} /></button>
                       <button
@@ -4178,6 +4464,7 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
                           : lote.activo ? <Ban size={18} /> : <CheckCircle2 size={18} />}
                         <span>{lote.activo ? 'Deshabilitar' : 'Habilitar'}</span>
                       </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -4198,6 +4485,13 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
             </div>
           </div>
         </>
+      )}
+      {exportConfirmationOpen && (
+        <ExportLotesConfirmation
+          lotes={selectedLotes}
+          onCancel={() => setExportConfirmationOpen(false)}
+          onConfirm={confirmExport}
+        />
       )}
     </section>
   );

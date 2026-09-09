@@ -10,6 +10,10 @@
     dbo.SiembraDocumentos: archivos adjuntos a la siembra (mismo patron que
     dbo.SiloDocumentos: el archivo se guarda en disco, aca solo se registra la ruta).
 */
+
+use AgroDigital
+go
+
 IF OBJECT_ID(N'dbo.SiembraInsumos', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.SiembraInsumos

@@ -97,7 +97,7 @@ No utilizar, modificar, actualizar, eliminar ni tomar `JERESERVER` como instanci
 
 ## Arquitectura actual del sistema
 
-Arquitectura pendiente de implementacion en el repositorio. La orientacion definida es:
+Arquitectura implementada parcialmente en el repositorio:
 
 - Backend en C# con ASP.NET / ASP.NET Core.
 - Frontend en React.
@@ -121,6 +121,8 @@ Estructura inicial definida:
 - `database/`: scripts SQL, documentacion y recursos de base de datos.
 - `database/scripts/00_master_create_database.sql`: script madre de creacion completa de la base de datos.
 - `database/scripts/09_cosechas.sql`: script incremental del modulo Cosechas y documentos adjuntos.
+- `database/scripts/09_almacenamiento.sql` y `10_almacenamiento_campania_cosecha.sql`: estructura de Almacenamiento y referencias textuales. Comparten prefijos numericos con scripts de otros modulos; identificarlos por nombre completo y respetar sus dependencias.
+- `frontend/AgroDigital.Web/src/Almacenamiento.jsx`: consulta, registro y edicion de movimientos de almacenamiento.
 - `docs/`: documentacion tecnica y funcional versionada que corresponda.
 
 Actualizar esta seccion cuando se creen carpetas, proyectos, scripts o convenciones reales.
@@ -261,6 +263,10 @@ La tesis describe el flujo operativo de campania:
 - Ejecutar script madre de base de datos: abrir y ejecutar `C:\Users\Jere\Desktop\AgroDigital\database\scripts\00_master_create_database.sql` en SSMS contra la instancia SQL Server configurada localmente, o usar `sqlcmd`.
 
 ## Decisiones tecnicas vigentes
+
+- Almacenamiento esta integrado al menu y a la API; genera el ingreso inicial de grano al crear un silo. El script madre incluye su estructura y las bases existentes se actualizan con los dos incrementales de almacenamiento, sin ejecutar scripts de reasignacion de empresas.
+- Pendiente de integracion estructural: Almacenamiento conserva Campania/Cosecha como texto libre y no posee EmpresaId ni aislamiento por empresa. Esto no reemplaza la regla objetivo de EmpresaId en tablas operativas; requiere una migracion especifica antes de considerarlo integrado al flujo multiempresa de Campanias/Cosechas.
+- Lotes permite exportar los registros seleccionados a PDF y confirmar la habilitacion/deshabilitacion mediante modal. Se conservan los filtros y campos de cultivo locales.
 
 - SQL Server objetivo: SQL Server 2019 Developer Edition configurado localmente por cada integrante.
 - No usar `JERESERVER` para AgroDigital salvo indicacion expresa.

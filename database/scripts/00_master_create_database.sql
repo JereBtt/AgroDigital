@@ -612,3 +612,61 @@ BEGIN
     CREATE INDEX IX_CampaniaCombinaciones_LoteProducto ON dbo.CampaniaCombinaciones (LoteId, Producto);
 END;
 GO
+
+-- Almacenamiento: estructura integrada desde los scripts incrementales.
+
+USE AgroDigital;
+GO
+
+IF OBJECT_ID(N'dbo.Almacenamientos', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.Almacenamientos
+    (
+        AlmacenamientoId INT IDENTITY(1,1) NOT NULL,
+        SiloId INT NOT NULL,
+        Fecha DATE NOT NULL CONSTRAINT DF_Almacenamientos_Fecha DEFAULT (CAST(SYSDATETIME() AS DATE)),
+        TipoMovimiento NVARCHAR(20) NOT NULL,
+        Cantidad DECIMAL(18,4) NOT NULL,
+        StockAnterior DECIMAL(18,4) NOT NULL,
+        StockResultante DECIMAL(18,4) NOT NULL,
+        Origen NVARCHAR(20) NOT NULL CONSTRAINT DF_Almacenamientos_Origen DEFAULT (N'Manual'),
+        Observaciones NVARCHAR(500) NULL,
+        CreadoPorUsuarioId INT NULL,
+        FechaCreacion DATETIME2(0) NOT NULL CONSTRAINT DF_Almacenamientos_FechaCreacion DEFAULT (SYSDATETIME()),
+        FechaModificacion DATETIME2(0) NULL,
+
+        CONSTRAINT PK_Almacenamientos PRIMARY KEY CLUSTERED (AlmacenamientoId),
+        CONSTRAINT FK_Almacenamientos_Silos FOREIGN KEY (SiloId) REFERENCES dbo.Silos (SiloId),
+        CONSTRAINT FK_Almacenamientos_Usuarios FOREIGN KEY (CreadoPorUsuarioId) REFERENCES dbo.Usuarios (UsuarioId),
+        CONSTRAINT CK_Almacenamientos_TipoMovimiento CHECK (TipoMovimiento IN (N'Ingreso', N'Egreso')),
+        CONSTRAINT CK_Almacenamientos_Origen CHECK (Origen IN (N'Manual', N'AltaSilo', N'Distribucion')),
+        CONSTRAINT CK_Almacenamientos_Cantidad CHECK (Cantidad > 0),
+        CONSTRAINT CK_Almacenamientos_StockAnterior CHECK (StockAnterior >= 0),
+        CONSTRAINT CK_Almacenamientos_StockResultante CHECK (StockResultante >= 0)
+    );
+END;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Almacenamientos_SiloId_Fecha' AND object_id = OBJECT_ID(N'dbo.Almacenamientos'))
+BEGIN
+    CREATE INDEX IX_Almacenamientos_SiloId_Fecha
+    ON dbo.Almacenamientos (SiloId, Fecha);
+END;
+GO
+
+USE AgroDigital;
+GO
+
+IF COL_LENGTH(N'dbo.Almacenamientos', N'Campania') IS NULL
+BEGIN
+    ALTER TABLE dbo.Almacenamientos
+    ADD Campania NVARCHAR(60) NULL;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.Almacenamientos', N'Cosecha') IS NULL
+BEGIN
+    ALTER TABLE dbo.Almacenamientos
+    ADD Cosecha NVARCHAR(60) NULL;
+END;
+GO
