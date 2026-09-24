@@ -34,8 +34,30 @@ public class LotesController(ILoteRepository loteRepository, IAuthTokenService a
             return Conflict("Ya existe un lote registrado con ese nombre. Revisa mayusculas, minusculas o espacios.");
         }
 
-        var lote = await loteRepository.CrearAsync(request, usuario.UsuarioId, usuario.Rol == "Admin");
-        return CreatedAtAction(nameof(ObtenerPorId), new { loteId = lote.LoteId }, lote);
+        try
+        {
+            var lote = await loteRepository.CrearAsync(request, usuario.UsuarioId, usuario.Rol == "Admin");
+            return CreatedAtAction(nameof(ObtenerPorId), new { loteId = lote.LoteId }, lote);
+        }
+        catch (LoteSuperpuestoException exception)
+        {
+            return Conflict(exception.Message);
+        }
+    }
+
+    [HttpPost("validar-registro")]
+    public async Task<IActionResult> ValidarRegistro(CrearLoteRequest request, [FromQuery] int? excluirLoteId = null)
+    {
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        if (await loteRepository.ExisteNombreAsync(request.Nombre, usuario.UsuarioId, usuario.Rol == "Admin", excluirLoteId))
+        {
+            return Conflict("Ya existe un lote registrado con ese nombre. Revisa mayusculas, minusculas o espacios.");
+        }
+
+        var loteSuperpuesto = await loteRepository.ObtenerSuperposicionAsync(request.Coordenadas, usuario.UsuarioId, usuario.Rol == "Admin", excluirLoteId);
+        return loteSuperpuesto is null
+            ? NoContent()
+            : Conflict(LoteSuperpuestoException.CrearMensaje(loteSuperpuesto));
     }
 
     [HttpPut("{loteId:int}")]
@@ -47,8 +69,15 @@ public class LotesController(ILoteRepository loteRepository, IAuthTokenService a
             return Conflict("Ya existe otro lote registrado con ese nombre. Revisa mayusculas, minusculas o espacios.");
         }
 
-        var actualizado = await loteRepository.ActualizarAsync(loteId, request, usuario.UsuarioId, usuario.Rol == "Admin");
-        return actualizado ? NoContent() : NotFound();
+        try
+        {
+            var actualizado = await loteRepository.ActualizarAsync(loteId, request, usuario.UsuarioId, usuario.Rol == "Admin");
+            return actualizado ? NoContent() : NotFound();
+        }
+        catch (LoteSuperpuestoException exception)
+        {
+            return Conflict(exception.Message);
+        }
     }
 
     [HttpPost("{loteId:int}/deshabilitar")]

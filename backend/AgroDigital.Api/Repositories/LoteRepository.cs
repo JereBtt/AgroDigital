@@ -1,5 +1,6 @@
 using AgroDigital.Api.Dtos;
 using Microsoft.Data.SqlClient;
+using System.Globalization;
 
 namespace AgroDigital.Api.Repositories;
 
@@ -145,12 +146,26 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
         return Convert.ToInt32(await command.ExecuteScalarAsync()) == 1;
     }
 
+    public async Task<LoteSuperpuestoInfo?> ObtenerSuperposicionAsync(IEnumerable<LoteCoordenadaDto> coordenadas, int usuarioId, bool incluirTodos = false, int? excluirLoteId = null)
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var empresaId = excluirLoteId.HasValue
+            ? await ObtenerEmpresaDelLoteAsync(connection, null, excluirLoteId.Value, usuarioId, incluirTodos)
+            : await ObtenerEmpresaPrincipalAsync(connection, null, usuarioId, incluirTodos);
+
+        return empresaId is null
+            ? null
+            : await BuscarLoteSuperpuestoAsync(connection, null, empresaId.Value, coordenadas, excluirLoteId);
+    }
+
     public async Task<LoteDto> CrearAsync(CrearLoteRequest request, int usuarioId, bool incluirTodos = false)
     {
         const string insertLoteSql = """
-            INSERT INTO dbo.Lotes (EmpresaId, Nombre, Pais, Provincia, Ciudad, Condicion, CultivoAnterior, CultivoAnteriorCampania, EstadoCultivo, Hectareas, SuperficieTotal)
+            INSERT INTO dbo.Lotes (EmpresaId, Nombre, Pais, Provincia, Ciudad, Condicion, CultivoAnterior, CultivoAnteriorCampania, EstadoCultivo, Hectareas, SuperficieTotal, Activo)
             OUTPUT INSERTED.LoteId
-            VALUES (@EmpresaId, @Nombre, @Pais, @Provincia, @Ciudad, @Condicion, @CultivoAnterior, @CultivoAnteriorCampania, N'Cosechado', @Hectareas, @SuperficieTotal);
+            VALUES (@EmpresaId, @Nombre, @Pais, @Provincia, @Ciudad, @Condicion, @CultivoAnterior, @CultivoAnteriorCampania, N'Cosechado', @Hectareas, @SuperficieTotal, @Activo);
             """;
 
         await using var connection = new SqlConnection(_connectionString);
@@ -160,8 +175,15 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
         try
         {
             var empresaId = await ObtenerEmpresaPrincipalAsync(connection, (SqlTransaction)transaction, usuarioId, incluirTodos);
+            var loteSuperpuesto = await BuscarLoteSuperpuestoAsync(connection, (SqlTransaction)transaction, empresaId, request.Coordenadas);
+            if (loteSuperpuesto is not null)
+            {
+                throw CrearExcepcionLoteSuperpuesto(loteSuperpuesto);
+            }
+
             await using var command = new SqlCommand(insertLoteSql, connection, (SqlTransaction)transaction);
             command.Parameters.AddWithValue("@EmpresaId", empresaId);
+            command.Parameters.AddWithValue("@Activo", !request.RegistrarDeshabilitado);
             AgregarParametrosLote(command, request);
 
             var loteId = (int)(await command.ExecuteScalarAsync()
@@ -214,6 +236,19 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
 
         try
         {
+            var empresaId = await ObtenerEmpresaDelLoteAsync(connection, (SqlTransaction)transaction, loteId, usuarioId, incluirTodos);
+            if (empresaId is null)
+            {
+                await transaction.RollbackAsync();
+                return false;
+            }
+
+            var loteSuperpuesto = await BuscarLoteSuperpuestoAsync(connection, (SqlTransaction)transaction, empresaId.Value, request.Coordenadas, loteId);
+            if (loteSuperpuesto is not null)
+            {
+                throw CrearExcepcionLoteSuperpuesto(loteSuperpuesto);
+            }
+
             await using var command = new SqlCommand(updateLoteSql, connection, (SqlTransaction)transaction);
             command.Parameters.AddWithValue("@LoteId", loteId);
             command.Parameters.AddWithValue("@UsuarioId", usuarioId);
@@ -270,7 +305,7 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
         return await command.ExecuteNonQueryAsync() > 0;
     }
 
-    private static async Task<int> ObtenerEmpresaPrincipalAsync(SqlConnection connection, SqlTransaction transaction, int usuarioId, bool incluirTodos)
+    private static async Task<int> ObtenerEmpresaPrincipalAsync(SqlConnection connection, SqlTransaction? transaction, int usuarioId, bool incluirTodos)
     {
         var sql = incluirTodos
             ? "SELECT TOP (1) EmpresaId FROM dbo.Empresas WHERE Activo = 1 ORDER BY EmpresaId;"
@@ -296,6 +331,111 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
 
         return Convert.ToInt32(result);
     }
+
+    private static async Task<int?> ObtenerEmpresaDelLoteAsync(SqlConnection connection, SqlTransaction? transaction, int loteId, int usuarioId, bool incluirTodos)
+    {
+        const string sql = """
+            SELECT l.EmpresaId
+            FROM dbo.Lotes AS l
+            WHERE l.LoteId = @LoteId
+              AND (
+                    @IncluirTodos = 1
+                    OR EXISTS (
+                        SELECT 1
+                        FROM dbo.UsuarioEmpresas AS ue
+                        WHERE ue.UsuarioId = @UsuarioId
+                          AND ue.EmpresaId = l.EmpresaId
+                          AND ue.Activo = 1
+                    )
+              );
+            """;
+
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@LoteId", loteId);
+        command.Parameters.AddWithValue("@UsuarioId", usuarioId);
+        command.Parameters.AddWithValue("@IncluirTodos", incluirTodos);
+        var result = await command.ExecuteScalarAsync();
+        return result is null or DBNull ? null : Convert.ToInt32(result);
+    }
+
+    private static async Task<LoteSuperpuestoInfo?> BuscarLoteSuperpuestoAsync(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        int empresaId,
+        IEnumerable<LoteCoordenadaDto> coordenadas,
+        int? excluirLoteId = null)
+    {
+        const string sql = """
+            DECLARE @Nuevo geometry = geometry::STGeomFromText(@Poligono, 4326).MakeValid();
+            DECLARE @AreaNuevo float = @Nuevo.STArea();
+
+            ;WITH PoligonosExistentes AS (
+                SELECT l.LoteId,
+                       l.Nombre,
+                       geometry::STGeomFromText(N'POLYGON((' + puntos.Puntos + N',' + primero.Punto + N'))', 4326).MakeValid() AS Geometria
+                FROM dbo.Lotes AS l
+                CROSS APPLY (
+                    SELECT STRING_AGG(CONVERT(nvarchar(max), CONCAT(CONVERT(varchar(50), lc.Longitud), N' ', CONVERT(varchar(50), lc.Latitud))), N',')
+                           WITHIN GROUP (ORDER BY lc.Orden) AS Puntos
+                    FROM dbo.LoteCoordenadas AS lc
+                    WHERE lc.LoteId = l.LoteId
+                ) AS puntos
+                CROSS APPLY (
+                    SELECT TOP (1) CONCAT(CONVERT(varchar(50), lc.Longitud), N' ', CONVERT(varchar(50), lc.Latitud)) AS Punto
+                    FROM dbo.LoteCoordenadas AS lc
+                    WHERE lc.LoteId = l.LoteId
+                    ORDER BY lc.Orden
+                ) AS primero
+                WHERE l.EmpresaId = @EmpresaId
+                  AND (@ExcluirLoteId IS NULL OR l.LoteId <> @ExcluirLoteId)
+                  AND puntos.Puntos IS NOT NULL
+                  AND (SELECT COUNT(*) FROM dbo.LoteCoordenadas AS lc WHERE lc.LoteId = l.LoteId) >= 3
+            ), Superposiciones AS (
+                SELECT LoteId,
+                       Nombre,
+                       Geometria.STArea() AS AreaExistente,
+                       Geometria.STIntersection(@Nuevo).STArea() AS AreaComun
+                FROM PoligonosExistentes
+                WHERE Geometria.STIntersects(@Nuevo) = 1
+            )
+            SELECT TOP (1) LoteId, Nombre
+            FROM Superposiciones
+            WHERE @AreaNuevo > 0
+              AND AreaExistente > 0
+              AND AreaComun / AreaExistente >= 0.90
+              AND AreaComun / @AreaNuevo >= 0.90
+            ORDER BY AreaComun DESC, LoteId;
+            """;
+
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@EmpresaId", empresaId);
+        command.Parameters.AddWithValue("@ExcluirLoteId", excluirLoteId.HasValue ? excluirLoteId.Value : (object)DBNull.Value);
+        command.Parameters.AddWithValue("@Poligono", CrearPoligonoWkt(coordenadas));
+        await using var reader = await command.ExecuteReaderAsync();
+
+        return await reader.ReadAsync()
+            ? new LoteSuperpuestoInfo(reader.GetInt32(0), reader.GetString(1))
+            : null;
+    }
+
+    private static string CrearPoligonoWkt(IEnumerable<LoteCoordenadaDto> coordenadas)
+    {
+        var puntos = coordenadas
+            .OrderBy(coordenada => coordenada.Orden)
+            .Select(coordenada => string.Create(CultureInfo.InvariantCulture, $"{coordenada.Longitud} {coordenada.Latitud}"))
+            .ToList();
+
+        if (puntos.Count < 3)
+        {
+            throw new InvalidOperationException("Un lote debe tener al menos tres coordenadas para comparar su poligono.");
+        }
+
+        puntos.Add(puntos[0]);
+        return $"POLYGON(({string.Join(',', puntos)}))";
+    }
+
+    private static LoteSuperpuestoException CrearExcepcionLoteSuperpuesto(LoteSuperpuestoInfo loteSuperpuesto) =>
+        new(LoteSuperpuestoException.CrearMensaje(loteSuperpuesto));
 
     private static async Task ReemplazarCoordenadasAsync(
         SqlConnection connection,
@@ -446,4 +586,12 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
             Longitud = reader.GetDecimal(startIndex + 2)
         };
     }
+}
+
+public sealed record LoteSuperpuestoInfo(int LoteId, string Nombre);
+
+public sealed class LoteSuperpuestoException(string message) : Exception(message)
+{
+    public static string CrearMensaje(LoteSuperpuestoInfo loteSuperpuesto) =>
+        $"El poligono se superpone en al menos un 90 % con el lote '{loteSuperpuesto.Nombre}'. Revisa los puntos marcados o edita el lote existente.";
 }

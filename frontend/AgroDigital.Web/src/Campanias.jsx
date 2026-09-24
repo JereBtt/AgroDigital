@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
   BarChart3,
@@ -96,15 +97,28 @@ function getLatestCultivoFromHistory(lote) {
   return latest || lote?.cultivoActual || lote?.cultivoAnterior || '';
 }
 
-export default function Campanias({ session, lotes, parentFilters, selectedEmpresaId, onLotesChanged, onCampaniasChanged, onRegisterSiembra }) {
+function campaignFormSignature(form) {
+  return JSON.stringify({
+    fechaInicio: form.fechaInicio || '',
+    fechaFin: form.fechaFin || '',
+    observaciones: (form.observaciones || '').trim(),
+    combinaciones: form.combinaciones
+      .map((item) => ({ loteId: Number(item.loteId), producto: item.producto, fechaInicio: item.fechaInicio, fechaFin: item.fechaFin }))
+      .sort((left, right) => `${left.loteId}-${left.producto}`.localeCompare(`${right.loteId}-${right.producto}`, 'es'))
+  });
+}
+
+export default function Campanias({ session, lotes, parentFilters, selectedEmpresaId, onLotesChanged, onCampaniasChanged, onRegisterSiembra, requestedEditCampaniaId, onCampaignEditRequestHandled }) {
   const [view, setView] = useState('list');
   const [campanias, setCampanias] = useState([]);
   const [selectedCampania, setSelectedCampania] = useState(null);
   const [form, setForm] = useState({ fechaInicio: '', fechaFin: '', observaciones: '', combinaciones: [] });
+  const [initialForm, setInitialForm] = useState(null);
   const [comboForm, setComboForm] = useState(emptyCombo);
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [loteSelectorSortMode, setLoteSelectorSortMode] = useState('all');
   const [missingLots, setMissingLots] = useState([]);
+  const [missingLotsAction, setMissingLotsAction] = useState('save');
   const [periodConflict, setPeriodConflict] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -137,10 +151,12 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
     setView('list');
     setSelectedCampania(null);
     setForm({ fechaInicio: '', fechaFin: '', observaciones: '', combinaciones: [] });
+    setInitialForm(null);
     setComboForm(emptyCombo);
     setSelectorOpen(false);
     setLoteSelectorSortMode('all');
     setMissingLots([]);
+    setMissingLotsAction('save');
     setPeriodConflict('');
     setError('');
     setPeriodConflict('');
@@ -150,6 +166,7 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
   function startCreate() {
     setSelectedCampania(null);
     setForm({ fechaInicio: '', fechaFin: '', observaciones: '', combinaciones: [] });
+    setInitialForm(null);
     setComboForm(emptyCombo);
     setLoteSelectorSortMode('all');
     setError('');
@@ -163,7 +180,7 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
       if (!response.ok) throw new Error(await response.text());
       const campania = await response.json();
       setSelectedCampania(campania);
-      setForm({
+      const nextForm = {
         fechaInicio: toDateInput(campania.fechaInicio),
         fechaFin: toDateInput(campania.fechaFin),
         observaciones: campania.observaciones || '',
@@ -180,13 +197,24 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
           estado: item.estado,
           etapaActual: item.etapaActual
         }))
-      });
+      };
+      setForm(nextForm);
+      setInitialForm(nextForm);
       setComboForm(emptyCombo);
       setView(nextView);
     } catch (err) {
       setError(`No se pudo abrir la campania: ${err.message}`);
     }
   }
+
+  useEffect(() => {
+    if (!requestedEditCampaniaId) return;
+
+    openCampania(Number(requestedEditCampaniaId), 'edit')
+      .finally(() => onCampaignEditRequestHandled?.());
+    // La solicitud viene desde el registro de Lotes y debe abrir esta campaña una sola vez.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedEditCampaniaId]);
 
   function updateGrain(value) {
     setComboForm({ grainMode: value, producto: value === 'Otro' ? '' : value });
@@ -257,6 +285,7 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
       const missing = getMissingEnabledLots();
       if (missing.length > 0) {
         setMissingLots(missing);
+        setMissingLotsAction('save');
         return;
       }
     }
@@ -325,6 +354,43 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
     }
   }
 
+  async function disableMissingLotsAndExit() {
+    setSaving(true);
+    setError('');
+    try {
+      await Promise.all(missingLots.map(async (lote) => {
+        const response = await fetch(`${API_BASE_URL}/api/lotes/${lote.loteId}/deshabilitar`, {
+          method: 'POST',
+          headers: authHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+      }));
+      await onLotesChanged?.();
+      setMissingLots([]);
+      goToList();
+    } catch (err) {
+      setError(`No se pudieron deshabilitar los lotes pendientes: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleBack() {
+    if (view !== 'edit') {
+      goToList();
+      return;
+    }
+
+    const missing = getMissingEnabledLots();
+    if (missing.length === 0) {
+      goToList();
+      return;
+    }
+
+    setMissingLots(missing);
+    setMissingLotsAction('exit');
+  }
+
   if (view === 'create' || view === 'edit') {
     return (
       <>
@@ -335,13 +401,14 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
           comboForm={comboForm}
           saving={saving}
           error={error}
+          hasChanges={campaignFormSignature(form) !== campaignFormSignature(initialForm ?? form)}
           onFormChange={(field, value) => setForm((current) => ({ ...current, [field]: value }))}
           onGrainChange={updateGrain}
           onCustomGrainChange={updateCustomGrain}
           onOpenLoteSelector={openLoteSelector}
           onRemoveCombo={removeCombo}
           onSave={handleSave}
-          onBack={goToList}
+          onBack={handleBack}
         />
         {selectorOpen && (
           <LoteSelectorModal
@@ -358,8 +425,9 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
           <MissingLotsModal
             lots={missingLots}
             saving={saving}
+            action={missingLotsAction}
             onContinueLoading={() => setMissingLots([])}
-            onDisableAndSave={disableMissingLotsAndSave}
+            onDisableAndSave={missingLotsAction === 'exit' ? disableMissingLotsAndExit : disableMissingLotsAndSave}
           />
         )}
         {periodConflict && (
@@ -691,7 +759,7 @@ function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFil
   );
 }
 
-function CampaniaForm({ mode, campania, form, comboForm, saving, error, onFormChange, onGrainChange, onCustomGrainChange, onOpenLoteSelector, onRemoveCombo, onSave, onBack }) {
+function CampaniaForm({ mode, campania, form, comboForm, saving, error, hasChanges, onFormChange, onGrainChange, onCustomGrainChange, onOpenLoteSelector, onRemoveCombo, onSave, onBack }) {
   const readonlyName = mode === 'edit' ? campania?.nombre : '';
   const selectedGrainMode = comboForm.grainMode || (commonGrains.includes(comboForm.producto) ? comboForm.producto : comboForm.producto ? 'Otro' : '');
   const campaignDateLimits = getCampaignDateLimits();
@@ -768,7 +836,7 @@ function CampaniaForm({ mode, campania, form, comboForm, saving, error, onFormCh
       <CombinacionesTable combinaciones={form.combinaciones} editable onRemove={onRemoveCombo} />
 
       <div className="form-actions">
-        <button className="green-button" type="button" disabled={saving || !canRegister} onClick={onSave}>
+        <button className="green-button" type="button" disabled={saving || !canRegister || (mode === 'edit' && !hasChanges)} onClick={onSave}>
           <Save size={17} />
           {saving ? 'Guardando...' : mode === 'edit' ? 'Guardar cambios' : 'Registrar'}
         </button>
@@ -862,7 +930,7 @@ function LoteSelectorModal({ lotes, producto, excludedLoteIds = [], sortMode, on
     );
   }
 
-  return (
+  return createPortal(
     <div className="modal-backdrop">
       <section className="campaign-lote-modal dashboard-card">
         <div className="modal-heading">
@@ -951,19 +1019,19 @@ function LoteSelectorModal({ lotes, producto, excludedLoteIds = [], sortMode, on
         </div>
       </section>
     </div>
-  );
+  , document.body);
 }
 
-function MissingLotsModal({ lots, saving, onContinueLoading, onDisableAndSave }) {
+function MissingLotsModal({ lots, saving, action, onContinueLoading, onDisableAndSave }) {
   const totalHectareas = lots.reduce((sum, lote) => sum + Number(lote.hectareas || 0), 0);
 
-  return (
+  return createPortal(
     <div className="modal-backdrop">
       <section className="campaign-lote-modal campaign-missing-modal dashboard-card">
         <div className="modal-heading">
           <div>
             <h2>Lotes habilitados sin grano asociado</h2>
-            <p>Todos los lotes habilitados deben quedar dentro de la campaña antes de guardar.</p>
+            <p>Todos los lotes habilitados deben quedar dentro de la campaña antes de {action === 'exit' ? 'salir' : 'guardar'}.</p>
           </div>
         </div>
 
@@ -991,16 +1059,16 @@ function MissingLotsModal({ lots, saving, onContinueLoading, onDisableAndSave })
           </button>
           <button className="danger-soft-button campaign-disable-save-button" type="button" disabled={saving} onClick={onDisableAndSave}>
             {saving ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}
-            <span>Deshabilitar y guardar</span>
+            <span>{action === 'exit' ? 'Deshabilitar y salir' : 'Deshabilitar y guardar'}</span>
           </button>
         </div>
       </section>
     </div>
-  );
+  , document.body);
 }
 
 function CampaignPeriodConflictModal({ message, onClose }) {
-  return (
+  return createPortal(
     <div className="modal-backdrop">
       <section className="campaign-lote-modal campaign-period-modal dashboard-card" role="dialog" aria-modal="true" aria-labelledby="campaign-period-conflict-title">
         <div className="modal-heading">
@@ -1024,7 +1092,7 @@ function CampaignPeriodConflictModal({ message, onClose }) {
         </div>
       </section>
     </div>
-  );
+  , document.body);
 }
 
 function CampaniaDetalle({ campania, onBack, onEdit, onRegisterSiembra }) {

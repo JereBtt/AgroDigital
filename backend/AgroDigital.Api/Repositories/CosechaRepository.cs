@@ -135,6 +135,17 @@ public class CosechaRepository(IConfiguration configuration) : ICosechaRepositor
             INNER JOIN dbo.Cosechas AS c ON c.LoteId = l.LoteId
             WHERE c.CosechaId = @CosechaId
               AND c.Estado = N'Finalizado';
+
+            UPDATE cc
+            SET Estado = N'Finalizado',
+                EtapaActual = N'Finalizada'
+            FROM dbo.CampaniaCombinaciones AS cc
+            INNER JOIN dbo.Campanias AS ca ON ca.CampaniaId = cc.CampaniaId
+            INNER JOIN dbo.Cosechas AS c ON c.LoteId = cc.LoteId
+                AND c.CampaniaNombre = ca.Nombre
+                AND c.Producto = cc.Producto
+            WHERE c.CosechaId = @CosechaId
+              AND c.Estado = N'Finalizado';
             """;
 
         await using var connection = new SqlConnection(_connectionString);

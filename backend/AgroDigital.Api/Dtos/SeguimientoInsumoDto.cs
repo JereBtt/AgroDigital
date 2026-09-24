@@ -8,6 +8,7 @@ public class SeguimientoInsumoDto
     public string? Tipo { get; set; }
     public string? Variedad { get; set; }
     public decimal? CantidadAplicada { get; set; }
+    public string? UnidadMedida { get; set; }
 }
 
 public class CrearSeguimientoInsumoRequest
@@ -17,6 +18,7 @@ public class CrearSeguimientoInsumoRequest
     public string? Tipo { get; set; }
     public string? Variedad { get; set; }
     public decimal? CantidadAplicada { get; set; }
+    public string? UnidadMedida { get; set; }
 }
 
 public class SeguimientoDocumentoDto

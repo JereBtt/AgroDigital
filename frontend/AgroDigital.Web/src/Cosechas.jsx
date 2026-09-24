@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -623,7 +624,7 @@ export default function Cosechas({ session, lotes, parentFilters, selectedEmpres
 }
 
 function ConfirmTiradaFinalizadaModal({ cosecha, onCancel, onContinue }) {
-  return (
+  return createPortal(
     <div className="modal-backdrop cosecha-warning-modal-backdrop" role="presentation">
       <section className="cosecha-warning-modal" role="dialog" aria-modal="true" aria-labelledby="tirada-finalizada-title">
         <div className="login-card-header">
@@ -646,7 +647,7 @@ function ConfirmTiradaFinalizadaModal({ cosecha, onCancel, onContinue }) {
         </div>
       </section>
     </div>
-  );
+  , document.body);
 }
 
 function CosechasList({ cosechas, lotes, parentFilters, selectedEmpresaName, selectedCampaniaName, loading, error, onAdd, onEdit, onView, onFinalize, onTirada }) {

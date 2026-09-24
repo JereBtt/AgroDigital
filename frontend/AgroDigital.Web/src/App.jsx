@@ -12,6 +12,7 @@ import Siembras from './Siembras';
 import Cosechas from './Cosechas';
 import Almacenamiento from './Almacenamiento';
 import {
+  AlertTriangle,
   BarChart3,
   Ban,
   Bell,
@@ -566,6 +567,9 @@ function App() {
   const [loteStatusSaving, setLoteStatusSaving] = useState('');
   const [lotePendingDisable, setLotePendingDisable] = useState(null);
   const [lotePendingEnable, setLotePendingEnable] = useState(null);
+  const [loteActiveCampaignPrompt, setLoteActiveCampaignPrompt] = useState(null);
+  const [loteOverlapConflict, setLoteOverlapConflict] = useState('');
+  const [campaignEditRequestId, setCampaignEditRequestId] = useState('');
   const [status, setStatus] = useState('Conectando...');
   const [form, setForm] = useState(emptyForm);
   const [loteFieldErrors, setLoteFieldErrors] = useState({});
@@ -575,6 +579,7 @@ function App() {
   const [textSize, setTextSize] = useState('small');
   const [availableZones, setAvailableZones] = useState(ARGENTINA_ZONES[emptyForm.provincia] ?? []);
   const [zonesLoading, setZonesLoading] = useState(false);
+  const [zoneMapTarget, setZoneMapTarget] = useState(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
   const [profileError, setProfileError] = useState('');
@@ -614,6 +619,41 @@ function App() {
     () => parentCampanias.filter((campania) => String(campania.campaniaId) === String(selectedParentCampaniaId)),
     [parentCampanias, selectedParentCampaniaId]
   );
+  const empresaDestinoNuevoLoteId = useMemo(() => (
+    empresasDisponibles.find((empresa) => empresa.esPrincipal)?.empresaId
+      ?? empresasDisponibles[0]?.empresaId
+      ?? ''
+  ), [empresasDisponibles]);
+  const activeCampaignsByEmpresa = useMemo(() => {
+    const campaigns = new Map();
+
+    parentCampanias
+      .forEach((item) => {
+        if (!item?.campaniaId) return;
+        const current = campaigns.get(item.campaniaId) ?? {
+          campaniaId: item.campaniaId,
+          empresaId: item.empresaId,
+          nombre: item.campaniaNombre,
+          fechaInicio: item.fechaInicio,
+          combinaciones: []
+        };
+        current.combinaciones.push(item);
+        campaigns.set(item.campaniaId, current);
+      });
+
+    return [...campaigns.values()]
+      .filter((campania) => campania.combinaciones.some((item) => item.estado !== 'Finalizado'))
+      .reduce((result, campania) => {
+        const existing = result.get(String(campania.empresaId));
+        if (!existing || new Date(campania.fechaInicio) > new Date(existing.fechaInicio)) {
+          result.set(String(campania.empresaId), campania);
+        }
+        return result;
+      }, new Map());
+  }, [parentCampanias]);
+  const activeCampaignForNewLote = useMemo(() => (
+    activeCampaignsByEmpresa.get(String(empresaDestinoNuevoLoteId)) ?? null
+  ), [activeCampaignsByEmpresa, empresaDestinoNuevoLoteId]);
   const parentFilteredLotes = useMemo(() => (
     selectedParentEmpresaId
       ? lotes.filter((lote) => String(lote.empresaId) === String(selectedParentEmpresaId))
@@ -1062,6 +1102,55 @@ function App() {
     };
   }, [form.provincia]);
 
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadZoneMapTarget() {
+      if (!form.provincia || !form.ciudad) {
+        setZoneMapTarget(null);
+        return;
+      }
+
+      try {
+        const params = new URLSearchParams({
+          provincia: form.provincia,
+          nombre: form.ciudad,
+          campos: 'nombre,centroide',
+          max: '10'
+        });
+        const response = await fetch(`${GEOREF_API_BASE_URL}/localidades?${params.toString()}`);
+        if (!response.ok) throw new Error(`Georef ${response.status}`);
+
+        const data = await response.json();
+        const locality = (data.localidades ?? []).find((item) =>
+          normalizeSearchText(item.nombre ?? '') === normalizeSearchText(form.ciudad)
+        ) ?? data.localidades?.[0];
+        const latitude = Number(locality?.centroide?.lat);
+        const longitude = Number(locality?.centroide?.lon);
+
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+          throw new Error('La localidad no tiene centroide');
+        }
+
+        if (!ignore) {
+          setZoneMapTarget({
+            latitude,
+            longitude,
+            label: `${form.ciudad}, ${form.provincia}`
+          });
+        }
+      } catch {
+        if (!ignore) setZoneMapTarget(null);
+      }
+    }
+
+    loadZoneMapTarget();
+
+    return () => {
+      ignore = true;
+    };
+  }, [form.ciudad, form.provincia]);
+
   function updateField(field, value) {
     setLoteFieldErrors((current) => {
       if (!current[field]) return current;
@@ -1118,18 +1207,79 @@ function App() {
     setView(nextView);
   }
 
+  function validarFormularioLote() {
+    const errores = {};
+
+    if (!form.nombre.trim()) errores.nombre = 'Ingresa el nombre del lote.';
+    if (!form.pais.trim()) errores.pais = 'Selecciona el pais.';
+    if (!form.provincia.trim()) errores.provincia = 'Selecciona la provincia.';
+    if (!form.ciudad.trim()) errores.ciudad = 'Selecciona la zona.';
+    if (!form.condicion.trim()) errores.condicion = 'Selecciona la condicion del lote.';
+    if (!form.cultivoAnterior.trim()) errores.cultivoAnterior = 'Selecciona el cultivo anterior.';
+    if (!form.cultivoAnteriorCampania.trim()) errores.cultivoAnteriorCampania = 'Selecciona la campaña del cultivo anterior.';
+
+    if (form.coordenadas.length < 3) {
+      errores.coordenadas = 'Marca al menos tres puntos para definir el lote.';
+    } else if (!form.cerrado) {
+      errores.coordenadas = 'Cerra el poligono del lote antes de registrar.';
+    } else if (!Number.isFinite(Number(areaHa)) || !Number.isFinite(Number(areaM2)) || Number(areaHa) <= 0 || Number(areaM2) <= 0) {
+      errores.coordenadas = 'El poligono debe tener una superficie mayor a cero.';
+    }
+
+    setLoteFieldErrors(errores);
+    return Object.keys(errores).length === 0;
+  }
+
+  async function validarRestriccionesRemotasLote(excluirLoteId = null) {
+    const query = excluirLoteId ? `?excluirLoteId=${excluirLoteId}` : '';
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/lotes/validar-registro${query}`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(lotePayloadFromForm(form, areaHa, areaM2))
+      });
+
+      if (response.ok) return true;
+
+      const message = (await response.text()).replace(/^"|"$/g, '');
+      if (message.toLowerCase().includes('se superpone')) {
+        setLoteOverlapConflict(message);
+      } else if (message.toLowerCase().includes('ya existe') && message.toLowerCase().includes('lote')) {
+        setLoteFieldErrors({ nombre: message });
+      } else {
+        setStatus(`No se pudo validar el lote: ${message}`);
+      }
+      return false;
+    } catch (error) {
+      setStatus(`No se pudo validar el lote: ${error.message}`);
+      return false;
+    }
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
 
-    if (form.coordenadas.length < 3 || !form.cerrado) {
-      setLoteFieldErrors({ coordenadas: 'Cerra el poligono del lote antes de registrar.' });
+    if (!validarFormularioLote()) return;
+    if (!await validarRestriccionesRemotasLote()) return;
+
+    if (activeCampaignForNewLote) {
+      setLoteActiveCampaignPrompt(activeCampaignForNewLote);
       return;
     }
+
+    await saveNewLote();
+  }
+
+  async function saveNewLote({ disableAfterRegister = false, editCampaignId = null } = {}) {
 
     setSaving(true);
     setLoteFieldErrors({});
     setStatus('Guardando lote...');
-    const payload = lotePayloadFromForm(form, areaHa, areaM2);
+    const payload = {
+      ...lotePayloadFromForm(form, areaHa, areaM2),
+      registrarDeshabilitado: disableAfterRegister
+    };
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/lotes`, {
@@ -1139,14 +1289,33 @@ function App() {
       });
 
       if (!response.ok) throw new Error(await response.text());
+      await response.json();
 
       setForm(emptyForm);
-      goToList();
       await loadLotes();
-      setStatus('Lote registrado correctamente');
+      setLoteActiveCampaignPrompt(null);
+
+      if (editCampaignId) {
+        setSelectedLote(null);
+        setLoteFieldErrors({});
+        setSelectedParentEmpresaId(String(loteActiveCampaignPrompt?.empresaId ?? empresaDestinoNuevoLoteId));
+        setCampaignEditRequestId(String(editCampaignId));
+        setActiveModule('campanias');
+        setProfileMenuOpen(false);
+        setIsMapExpanded(false);
+        setStatus('Lote registrado. Agregalo a la campaña activa o deshabilitalo antes de salir.');
+        return;
+      }
+
+      goToList();
+      setStatus(disableAfterRegister ? 'Lote registrado y deshabilitado correctamente.' : 'Lote registrado correctamente');
     } catch (error) {
       const message = error.message.replace(/^"|"$/g, '');
-      if (message.toLowerCase().includes('ya existe') && message.toLowerCase().includes('lote')) {
+      if (message.toLowerCase().includes('se superpone')) {
+        setLoteActiveCampaignPrompt(null);
+        setLoteOverlapConflict(message);
+        setStatus('API conectada');
+      } else if (message.toLowerCase().includes('ya existe') && message.toLowerCase().includes('lote')) {
         setLoteFieldErrors({ nombre: message });
         setStatus('API conectada');
       } else {
@@ -1165,10 +1334,8 @@ function App() {
       return;
     }
 
-    if (form.coordenadas.length < 3 || !form.cerrado) {
-      setLoteFieldErrors({ coordenadas: 'Cerra el poligono del lote antes de guardar.' });
-      return;
-    }
+    if (!validarFormularioLote()) return;
+    if (!await validarRestriccionesRemotasLote(selectedLote.loteId)) return;
 
     if (!hasLoteFormChanges(selectedLote, form, areaHa, areaM2)) {
       setStatus('No hay cambios para guardar.');
@@ -1193,7 +1360,10 @@ function App() {
       setStatus('Lote actualizado correctamente');
     } catch (error) {
       const message = error.message.replace(/^"|"$/g, '');
-      if (message.toLowerCase().includes('ya existe') && message.toLowerCase().includes('lote')) {
+      if (message.toLowerCase().includes('se superpone')) {
+        setLoteOverlapConflict(message);
+        setStatus('API conectada');
+      } else if (message.toLowerCase().includes('ya existe') && message.toLowerCase().includes('lote')) {
         setLoteFieldErrors({ nombre: message });
         setStatus('API conectada');
       } else {
@@ -1236,7 +1406,10 @@ function App() {
       return;
     }
 
-    setLotePendingEnable(lote);
+    setLotePendingEnable({
+      lote,
+      campaign: activeCampaignsByEmpresa.get(String(lote.empresaId)) ?? null
+    });
   }
 
   async function confirmDisableLote() {
@@ -1250,8 +1423,22 @@ function App() {
   async function confirmEnableLote() {
     if (!lotePendingEnable) return;
 
-    if (await handleToggleLoteStatus(lotePendingEnable)) {
+    if (await handleToggleLoteStatus(lotePendingEnable.lote)) {
       setLotePendingEnable(null);
+    }
+  }
+
+  async function enableLoteAndAddToCampaign() {
+    if (!lotePendingEnable?.campaign) return;
+
+    const { lote, campaign } = lotePendingEnable;
+    if (await handleToggleLoteStatus(lote)) {
+      setLotePendingEnable(null);
+      setSelectedParentEmpresaId(String(campaign.empresaId));
+      setCampaignEditRequestId(String(campaign.campaniaId));
+      setActiveModule('campanias');
+      setProfileMenuOpen(false);
+      setStatus('Lote habilitado. Agregalo a la campaña activa antes de salir.');
     }
   }
 
@@ -1980,6 +2167,8 @@ function App() {
             selectedEmpresaId={selectedParentEmpresaId}
             onLotesChanged={loadLotes}
             onCampaniasChanged={loadParentCampanias}
+            requestedEditCampaniaId={campaignEditRequestId}
+            onCampaignEditRequestHandled={() => setCampaignEditRequestId('')}
             onRegisterSiembra={(campaniaId) => {
               setSelectedParentCampaniaId(String(campaniaId));
               setActiveModule('siembras');
@@ -2029,6 +2218,7 @@ function App() {
             fieldErrors={loteFieldErrors}
             zones={availableZones}
             zonesLoading={zonesLoading}
+            zoneMapTarget={zoneMapTarget}
             onCancel={goToList}
             onSubmit={handleSubmit}
             onFieldChange={updateField}
@@ -2046,6 +2236,7 @@ function App() {
             fieldErrors={loteFieldErrors}
             zones={availableZones}
             zonesLoading={zonesLoading}
+            zoneMapTarget={zoneMapTarget}
             onBack={goToList}
             onEdit={() => setView('edit')}
             onSubmit={handleUpdate}
@@ -2067,11 +2258,36 @@ function App() {
         />
       )}
       {lotePendingEnable && (
-        <EnableLoteConfirmation
-          lote={lotePendingEnable}
-          saving={loteStatusSaving === `habilitar-${lotePendingEnable.loteId}`}
-          onCancel={() => setLotePendingEnable(null)}
-          onConfirm={confirmEnableLote}
+        lotePendingEnable.campaign ? (
+          <EnableLoteWithActiveCampaignConfirmation
+            lote={lotePendingEnable.lote}
+            campaign={lotePendingEnable.campaign}
+            saving={loteStatusSaving === `habilitar-${lotePendingEnable.lote.loteId}`}
+            onCancel={() => setLotePendingEnable(null)}
+            onAddToCampaign={enableLoteAndAddToCampaign}
+          />
+        ) : (
+          <EnableLoteConfirmation
+            lote={lotePendingEnable.lote}
+            saving={loteStatusSaving === `habilitar-${lotePendingEnable.lote.loteId}`}
+            onCancel={() => setLotePendingEnable(null)}
+            onConfirm={confirmEnableLote}
+          />
+        )
+      )}
+      {loteActiveCampaignPrompt && (
+        <ActiveCampaignLoteModal
+          campaign={loteActiveCampaignPrompt}
+          saving={saving}
+          onCancel={() => setLoteActiveCampaignPrompt(null)}
+          onRegisterAndDisable={() => saveNewLote({ disableAfterRegister: true })}
+          onAddToCampaign={() => saveNewLote({ editCampaignId: loteActiveCampaignPrompt.campaniaId })}
+        />
+      )}
+      {loteOverlapConflict && (
+        <LoteOverlapConflictModal
+          message={loteOverlapConflict}
+          onClose={() => setLoteOverlapConflict('')}
         />
       )}
     </main>
@@ -4174,6 +4390,74 @@ function EnableLoteConfirmation({ lote, saving, onCancel, onConfirm }) {
   );
 }
 
+function EnableLoteWithActiveCampaignConfirmation({ lote, campaign, saving, onCancel, onAddToCampaign }) {
+  return createPortal(
+    <div className="confirmation-modal-backdrop" role="presentation">
+      <section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="enable-lote-campaign-title" aria-describedby="enable-lote-campaign-description">
+        <span className="confirmation-modal-icon" aria-hidden="true"><CalendarDays size={28} /></span>
+        <div>
+          <h2 id="enable-lote-campaign-title">Hay una campaña activa</h2>
+          <p id="enable-lote-campaign-description">Para habilitar <strong>{lote.nombre}</strong>, primero tenés que incorporarlo a la campaña <strong>{campaign.nombre}</strong>. Así el lote no queda disponible fuera de la campaña en curso.</p>
+        </div>
+        <div className="confirmation-modal-actions">
+          <button className="confirmation-cancel-button" type="button" onClick={onCancel} disabled={saving}>Cancelar</button>
+          <button className="confirmation-success-button" type="button" onClick={onAddToCampaign} disabled={saving} autoFocus>
+            {saving ? <LoaderCircle className="spin" size={18} /> : <PlusCircle size={18} />}
+            {saving ? 'Habilitando...' : 'Agregar a la campaña'}
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+function LoteOverlapConflictModal({ message, onClose }) {
+  return createPortal(
+    <div className="confirmation-modal-backdrop" role="presentation">
+      <section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="lote-overlap-title" aria-describedby="lote-overlap-description">
+        <span className="confirmation-modal-icon confirmation-modal-icon-danger" aria-hidden="true"><AlertTriangle size={28} /></span>
+        <div>
+          <h2 id="lote-overlap-title">El lote ya está registrado</h2>
+          <p id="lote-overlap-description">{message}</p>
+        </div>
+        <div className="confirmation-modal-actions">
+          <button className="confirmation-success-button" type="button" onClick={onClose} autoFocus>
+            Entendido
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+function ActiveCampaignLoteModal({ campaign, saving, onCancel, onRegisterAndDisable, onAddToCampaign }) {
+  return createPortal(
+    <div className="confirmation-modal-backdrop" role="presentation">
+      <section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="active-campaign-lote-title" aria-describedby="active-campaign-lote-description">
+        <span className="confirmation-modal-icon" aria-hidden="true"><CalendarDays size={28} /></span>
+        <div>
+          <h2 id="active-campaign-lote-title">Hay una campaña activa</h2>
+          <p id="active-campaign-lote-description">La campaña <strong>{campaign.nombre}</strong> todavía tiene lotes sin cosecha finalizada. Todo lote nuevo debe agregarse a esa campaña o quedar deshabilitado hasta incorporarlo más adelante.</p>
+        </div>
+        <div className="confirmation-modal-actions confirmation-modal-actions-wrap">
+          <button className="confirmation-cancel-button" type="button" onClick={onCancel} disabled={saving}>Cancelar</button>
+          <button className="confirmation-danger-button" type="button" onClick={onRegisterAndDisable} disabled={saving}>
+            {saving ? <LoaderCircle className="spin" size={18} /> : <Ban size={18} />}
+            {saving ? 'Registrando...' : 'Registrar y deshabilitar'}
+          </button>
+          <button className="confirmation-success-button" type="button" onClick={onAddToCampaign} disabled={saving} autoFocus>
+            {saving ? <LoaderCircle className="spin" size={18} /> : <PlusCircle size={18} />}
+            {saving ? 'Registrando...' : 'Añadir a la campaña'}
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
 function ExportLotesConfirmation({ lotes, onCancel, onConfirm }) {
   return createPortal(
     <div className="confirmation-modal-backdrop" role="presentation">
@@ -4574,6 +4858,7 @@ function LoteCreate({
   fieldErrors = {},
   zones,
   zonesLoading,
+  zoneMapTarget,
   onCancel,
   onSubmit,
   onFieldChange,
@@ -4663,6 +4948,7 @@ function LoteCreate({
               areaM2={areaM2}
               onChange={onCoordinatesChange}
               onExpandedChange={onMapExpandedChange}
+              mapTarget={zoneMapTarget}
             />
 
             <div className="area-grid">
@@ -4755,6 +5041,7 @@ function LoteDetailEdit({
   fieldErrors = {},
   zones,
   zonesLoading,
+  zoneMapTarget,
   onBack,
   onEdit,
   onSubmit,
@@ -4878,6 +5165,7 @@ function LoteDetailEdit({
               onChange={onCoordinatesChange}
               onExpandedChange={onMapExpandedChange}
               readOnly={isDetail}
+              mapTarget={isDetail ? null : zoneMapTarget}
             />
 
             <div className="area-grid">
@@ -5250,7 +5538,7 @@ function SearchableDropdown({ label, value, onChange, options, placeholder = 'Bu
   );
 }
 
-function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange, readOnly = false }) {
+function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange, readOnly = false, mapTarget = null }) {
   const [expanded, setExpanded] = useState(false);
   const [addingPoints, setAddingPoints] = useState(false);
   const [mapNode, setMapNode] = useState(null);
@@ -5264,7 +5552,29 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
   const initialFitDoneRef = useRef(false);
   const selectedBaseLayerRef = useRef('hibrido');
   const mapViewRef = useRef(null);
+  const mapTargetRef = useRef(mapTarget);
+  const lastMapTargetRef = useRef('');
   const coordinateDrag = useCoordinateDrag({ disabled: readOnly, onMove: movePoint });
+
+  function focusMapOnTarget(animate = true) {
+    const target = mapTargetRef.current;
+    if (!mapRef.current || !target) return;
+
+    const targetKey = `${target.latitude}:${target.longitude}`;
+    if (lastMapTargetRef.current === targetKey) return;
+
+    lastMapTargetRef.current = targetKey;
+    mapRef.current.invalidateSize();
+    mapRef.current.flyTo([target.latitude, target.longitude], 14, {
+      animate,
+      duration: animate ? 0.7 : 0
+    });
+  }
+
+  useEffect(() => {
+    mapTargetRef.current = mapTarget;
+    focusMapOnTarget();
+  }, [mapTarget]);
 
   useEffect(() => {
     pointsRef.current = points;
@@ -5403,6 +5713,7 @@ function PolygonMap({ points, closed, areaHa, areaM2, onChange, onExpandedChange
 
     mapRef.current = map;
     renderLayers();
+    focusMapOnTarget(false);
     setTimeout(() => {
       map.invalidateSize();
       fitInitialBounds();

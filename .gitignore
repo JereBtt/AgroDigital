@@ -22,3 +22,5 @@ build/
 # Logs
 *.log
 
+# Archivos cargados por usuarios en desarrollo
+backend/AgroDigital.Api/App_Data/

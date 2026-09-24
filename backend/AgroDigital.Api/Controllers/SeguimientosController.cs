@@ -10,12 +10,22 @@ namespace AgroDigital.Api.Controllers;
 public class SeguimientosController(
     ISeguimientoRepository seguimientoRepository,
     ISiembraRepository siembraRepository,
+    ILoteRepository loteRepository,
     IAuthTokenService authTokenService,
     IWebHostEnvironment environment) : ControllerBase
 {
     private readonly string _uploadsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "seguimientos");
 
     private static readonly string[] IncidenciasValidas = ["Plaga", "Maleza", "Enfermedad", "Ninguna"];
+    private static readonly string[] TiposRegistroValidos = ["Siniestro", "Posemergente"];
+    private static readonly string[] SiniestrosValidos =
+    [
+        "Granizo", "Sequia / Estres hidrico", "Helada tardia", "Anegamiento / Inundacion",
+        "Plagas de implantacion", "Fitotoxicidad por agroquimicos", "Encostramiento del suelo",
+        "Falla de germinacion", "Incendio"
+    ];
+    private static readonly string[] AlcancesValidos = ["Parcial", "Total"];
+    private static readonly string[] UnidadesInsumoValidas = ["Litros", "Kg"];
 
     private static readonly string[] TiposInsumoValidos =
     [
@@ -44,7 +54,7 @@ public class SeguimientosController(
     [HttpPost]
     public async Task<ActionResult<SiembraSeguimientoDto>> Crear(int siembraId, CrearSiembraSeguimientoRequest request)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
 
         var siembra = await siembraRepository.ObtenerPorIdAsync(siembraId);
         if (siembra is null)
@@ -57,15 +67,10 @@ public class SeguimientosController(
             return BadRequest("Primero debes finalizar la siembra para registrar seguimientos.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.Observaciones))
-        {
-            return BadRequest("Las Observaciones son obligatorias.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.Incidencia) && !IncidenciasValidas.Contains(request.Incidencia))
-        {
-            return BadRequest("Incidencia invalida.");
-        }
+        var lote = await loteRepository.ObtenerPorIdAsync(siembra.LoteId, usuario.UsuarioId, usuario.Rol == "Admin");
+        if (lote is null) return NotFound();
+        var validationError = ValidarRegistro(request, siembra.FechaInicio, lote.Coordenadas);
+        if (validationError is not null) return BadRequest(validationError);
 
         var seguimiento = await seguimientoRepository.CrearAsync(siembraId, request);
         return seguimiento is null ? NotFound() : Ok(seguimiento);
@@ -74,17 +79,15 @@ public class SeguimientosController(
     [HttpPut("{seguimientoId:int}")]
     public async Task<IActionResult> Actualizar(int siembraId, int seguimientoId, ActualizarSiembraSeguimientoRequest request)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
 
-        if (string.IsNullOrWhiteSpace(request.Observaciones))
-        {
-            return BadRequest("Las Observaciones son obligatorias.");
-        }
+        var siembra = await siembraRepository.ObtenerPorIdAsync(siembraId);
+        if (siembra is null) return NotFound();
 
-        if (!string.IsNullOrWhiteSpace(request.Incidencia) && !IncidenciasValidas.Contains(request.Incidencia))
-        {
-            return BadRequest("Incidencia invalida.");
-        }
+        var lote = await loteRepository.ObtenerPorIdAsync(siembra.LoteId, usuario.UsuarioId, usuario.Rol == "Admin");
+        if (lote is null) return NotFound();
+        var validationError = ValidarRegistro(request, siembra.FechaInicio, lote.Coordenadas);
+        if (validationError is not null) return BadRequest(validationError);
 
         var actualizado = await seguimientoRepository.ActualizarAsync(siembraId, seguimientoId, request);
         return actualizado ? NoContent() : NotFound();
@@ -135,10 +138,12 @@ public class SeguimientosController(
     {
         if (!TryGetAuthenticatedUser(out _, out var error)) return error;
 
-        if (!string.IsNullOrWhiteSpace(request.Tipo) && !TiposInsumoValidos.Contains(request.Tipo))
+        if (!TiposInsumoValidos.Contains(request.Tipo ?? string.Empty))
         {
             return BadRequest("Tipo de insumo invalido.");
         }
+        if (string.IsNullOrWhiteSpace(request.Marca) || string.IsNullOrWhiteSpace(request.Variedad) || request.CantidadAplicada is null || request.CantidadAplicada <= 0 || !UnidadesInsumoValidas.Contains(request.UnidadMedida ?? string.Empty))
+            return BadRequest("Completá marca, droga, cantidad mayor que cero y unidad Litros o Kg.");
 
         var insumo = await seguimientoRepository.AgregarInsumoAsync(seguimientoId, request);
         return Ok(insumo);
@@ -234,5 +239,79 @@ public class SeguimientosController(
         usuario = authenticatedUser;
         error = Ok();
         return true;
+    }
+
+    private static string? ValidarRegistro(CrearSiembraSeguimientoRequest request, DateTime fechaInicioSiembra, IReadOnlyList<LoteCoordenadaDto> coordenadasLote)
+    {
+        if (!TiposRegistroValidos.Contains(request.TipoRegistro))
+            return "Tipo de seguimiento invalido.";
+
+        if (request.Fecha is null)
+            return "La fecha del seguimiento es obligatoria.";
+
+        if (request.Latitud is null || request.Longitud is null)
+            return "Debes marcar el punto del seguimiento en el mapa.";
+
+        if (!PuntoDentroDelPoligono(request.Latitud.Value, request.Longitud.Value, coordenadasLote))
+            return "El punto del seguimiento debe ubicarse dentro del polígono del lote.";
+
+        var fecha = request.Fecha.Value.Date;
+        if (fecha <= fechaInicioSiembra.Date || fecha > fechaInicioSiembra.Date.AddMonths(6))
+            return $"La fecha debe ser posterior a la siembra y no superar los seis meses desde {fechaInicioSiembra:dd/MM/yyyy}.";
+
+        if (string.IsNullOrWhiteSpace(request.Observaciones))
+            return "Las observaciones son obligatorias.";
+
+        if (!AlcancesValidos.Contains(request.Alcance ?? string.Empty))
+            return "El alcance debe ser Parcial o Total.";
+
+        if (request.TipoRegistro == "Siniestro")
+        {
+            if (!SiniestrosValidos.Contains(request.Siniestro ?? string.Empty))
+                return "Siniestro invalido.";
+            if (!string.IsNullOrWhiteSpace(request.Incidencia))
+                return "Un siniestro no puede registrar un motivo de aplicacion.";
+            return null;
+        }
+
+        if (!IncidenciasValidas.Where(valor => valor != "Ninguna").Contains(request.Incidencia ?? string.Empty))
+            return "Motivo de aplicacion invalido.";
+
+        if (request.AplicacionAgroquimicos != true)
+            return "El posemergente requiere registrar agroquimicos.";
+
+        return null;
+    }
+
+    private static string? ValidarRegistro(ActualizarSiembraSeguimientoRequest request, DateTime fechaInicioSiembra, IReadOnlyList<LoteCoordenadaDto> coordenadasLote) =>
+        ValidarRegistro(new CrearSiembraSeguimientoRequest
+        {
+            Fecha = request.Fecha,
+            Longitud = request.Longitud,
+            Latitud = request.Latitud,
+            TipoRegistro = request.TipoRegistro,
+            Siniestro = request.Siniestro,
+            Alcance = request.Alcance,
+            Incidencia = request.Incidencia,
+            PerdidaEconomica = request.PerdidaEconomica,
+            AplicacionAgroquimicos = request.AplicacionAgroquimicos,
+            Observaciones = request.Observaciones
+        }, fechaInicioSiembra, coordenadasLote);
+
+    private static bool PuntoDentroDelPoligono(decimal latitud, decimal longitud, IReadOnlyList<LoteCoordenadaDto> coordenadas)
+    {
+        var vertices = coordenadas.OrderBy(coordenada => coordenada.Orden).ToList();
+        if (vertices.Count < 3) return false;
+
+        var dentro = false;
+        for (int indice = 0, anterior = vertices.Count - 1; indice < vertices.Count; anterior = indice++)
+        {
+            var actual = vertices[indice];
+            var previo = vertices[anterior];
+            var intersecta = ((actual.Latitud > latitud) != (previo.Latitud > latitud))
+                && (longitud < ((previo.Longitud - actual.Longitud) * (latitud - actual.Latitud) / (previo.Latitud - actual.Latitud)) + actual.Longitud);
+            if (intersecta) dentro = !dentro;
+        }
+        return dentro;
     }
 }

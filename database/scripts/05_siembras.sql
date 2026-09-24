@@ -38,6 +38,8 @@ BEGIN
         JustificacionDesvioFin NVARCHAR(1000) NULL,
         HectareasHora DECIMAL(18,4) NULL,
         VariedadSemilla NVARCHAR(100) NULL,
+        CicloCultivo NVARCHAR(20) NULL,
+        TipoImplantacion NVARCHAR(20) NULL,
         PMG DECIMAL(10,2) NULL,
         DensidadSiembra DECIMAL(10,2) NULL,
         Profundidad DECIMAL(10,2) NULL,
@@ -64,6 +66,8 @@ BEGIN
         CONSTRAINT CK_Siembras_EstadoSiembra CHECK (EstadoSiembra IN (N'En curso', N'Finalizado')),
         CONSTRAINT CK_Siembras_TipoRegistro CHECK (TipoRegistro IN (N'Siembra', N'Resiembra')),
         CONSTRAINT CK_Siembras_TipoResiembra CHECK (TipoResiembra IS NULL OR TipoResiembra IN (N'Total', N'Parcial')),
+        CONSTRAINT CK_Siembras_CicloCultivo CHECK (CicloCultivo IS NULL OR CicloCultivo IN (N'Corto', N'Largo')),
+        CONSTRAINT CK_Siembras_TipoImplantacion CHECK (TipoImplantacion IS NULL OR TipoImplantacion IN (N'Primera', N'Segunda', N'Temprano', N'Tardío')),
         CONSTRAINT CK_Siembras_HectareasHora CHECK (HectareasHora IS NULL OR HectareasHora >= 0)
     );
 END;
@@ -90,6 +94,18 @@ GO
 IF COL_LENGTH(N'dbo.Siembras', N'UreaKgHa') IS NULL
 BEGIN
     ALTER TABLE dbo.Siembras ADD UreaKgHa DECIMAL(18,4) NULL;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.Siembras', N'CicloCultivo') IS NULL
+BEGIN
+    ALTER TABLE dbo.Siembras ADD CicloCultivo NVARCHAR(20) NULL;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.Siembras', N'TipoImplantacion') IS NULL
+BEGIN
+    ALTER TABLE dbo.Siembras ADD TipoImplantacion NVARCHAR(20) NULL;
 END;
 GO
 
@@ -157,6 +173,20 @@ IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Siembras_He
 BEGIN
     ALTER TABLE dbo.Siembras
     ADD CONSTRAINT CK_Siembras_HectareasHora CHECK (HectareasHora IS NULL OR HectareasHora >= 0);
+END;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Siembras_CicloCultivo' AND parent_object_id = OBJECT_ID(N'dbo.Siembras'))
+BEGIN
+    ALTER TABLE dbo.Siembras
+    ADD CONSTRAINT CK_Siembras_CicloCultivo CHECK (CicloCultivo IS NULL OR CicloCultivo IN (N'Corto', N'Largo'));
+END;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Siembras_TipoImplantacion' AND parent_object_id = OBJECT_ID(N'dbo.Siembras'))
+BEGIN
+    ALTER TABLE dbo.Siembras
+    ADD CONSTRAINT CK_Siembras_TipoImplantacion CHECK (TipoImplantacion IS NULL OR TipoImplantacion IN (N'Primera', N'Segunda', N'Temprano', N'Tardío'));
 END;
 GO
 

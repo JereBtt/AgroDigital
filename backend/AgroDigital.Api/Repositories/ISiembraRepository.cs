@@ -6,6 +6,7 @@ public interface ISiembraRepository
 {
     Task<IReadOnlyList<SiembraDto>> ObtenerTodosAsync();
     Task<SiembraDto?> ObtenerPorIdAsync(int siembraId);
+    Task<SiembraDto?> ObtenerUltimaDelLoteEnCampaniaAsync(int loteId, string? campaniaNombre);
     Task<SiembraDto> CrearAsync(CrearSiembraRequest request, int? usuarioId);
     Task<bool> ActualizarAsync(int siembraId, ActualizarSiembraRequest request);
     Task<bool> FinalizarSiembraAsync(int siembraId, FinalizarSiembraRequest request);

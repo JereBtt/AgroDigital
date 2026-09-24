@@ -253,6 +253,7 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
                 """;
 
             await using var command = new SqlCommand(updateSql, connection, (SqlTransaction)transaction);
+            var estadosOriginales = await ObtenerEstadosCombinacionesAsync(connection, (SqlTransaction)transaction, campaniaId);
             command.Parameters.AddWithValue("@CampaniaId", campaniaId);
             command.Parameters.AddWithValue("@Periodo", periodo);
             command.Parameters.AddWithValue("@Nombre", nombre);
@@ -261,7 +262,7 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
             command.Parameters.AddWithValue("@Observaciones", string.IsNullOrWhiteSpace(request.Observaciones) ? DBNull.Value : request.Observaciones.Trim());
             await command.ExecuteNonQueryAsync();
 
-            await InsertarCombinacionesAsync(connection, (SqlTransaction)transaction, campaniaId, request.Combinaciones, usuarioId, incluirTodos);
+            await InsertarCombinacionesAsync(connection, (SqlTransaction)transaction, campaniaId, request.Combinaciones, usuarioId, incluirTodos, estadosOriginales);
             await transaction.CommitAsync();
             return true;
         }
@@ -340,11 +341,29 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
         return result is null or DBNull ? null : (int)result;
     }
 
-    private static async Task InsertarCombinacionesAsync(SqlConnection connection, SqlTransaction transaction, int campaniaId, IEnumerable<CrearCampaniaCombinacionRequest> combinaciones, int usuarioId, bool incluirTodos)
+    private static async Task<Dictionary<string, (string Estado, string Etapa)>> ObtenerEstadosCombinacionesAsync(SqlConnection connection, SqlTransaction transaction, int campaniaId)
+    {
+        const string sql = "SELECT LoteId, Producto, Estado, EtapaActual FROM dbo.CampaniaCombinaciones WHERE CampaniaId = @CampaniaId;";
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@CampaniaId", campaniaId);
+        await using var reader = await command.ExecuteReaderAsync();
+
+        var estados = new Dictionary<string, (string Estado, string Etapa)>(StringComparer.OrdinalIgnoreCase);
+        while (await reader.ReadAsync())
+        {
+            estados[CrearClaveCombinacion(reader.GetInt32(0), reader.GetString(1))] = (reader.GetString(2), reader.GetString(3));
+        }
+
+        return estados;
+    }
+
+    private static string CrearClaveCombinacion(int loteId, string producto) => $"{loteId}|{producto.Trim()}";
+
+    private static async Task InsertarCombinacionesAsync(SqlConnection connection, SqlTransaction transaction, int campaniaId, IEnumerable<CrearCampaniaCombinacionRequest> combinaciones, int usuarioId, bool incluirTodos, IReadOnlyDictionary<string, (string Estado, string Etapa)>? estadosOriginales = null)
     {
         const string insertSql = """
-            INSERT INTO dbo.CampaniaCombinaciones (CampaniaId, LoteId, Producto, FechaInicio, FechaFin)
-            SELECT @CampaniaId, l.LoteId, @Producto, @FechaInicio, @FechaFin
+            INSERT INTO dbo.CampaniaCombinaciones (CampaniaId, LoteId, Producto, FechaInicio, FechaFin, Estado, EtapaActual)
+            SELECT @CampaniaId, l.LoteId, @Producto, @FechaInicio, @FechaFin, @Estado, @EtapaActual
             FROM dbo.Lotes AS l
             WHERE l.LoteId = @LoteId
               AND (
@@ -361,12 +380,18 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
 
         foreach (var item in combinaciones)
         {
+            var producto = item.Producto.Trim();
+            var estado = estadosOriginales is not null && estadosOriginales.TryGetValue(CrearClaveCombinacion(item.LoteId, producto), out var estadoOriginal)
+                ? estadoOriginal
+                : ("Pendiente", "Sin etapa");
             await using var command = new SqlCommand(insertSql, connection, transaction);
             command.Parameters.AddWithValue("@CampaniaId", campaniaId);
             command.Parameters.AddWithValue("@LoteId", item.LoteId);
-            command.Parameters.AddWithValue("@Producto", item.Producto.Trim());
+            command.Parameters.AddWithValue("@Producto", producto);
             command.Parameters.AddWithValue("@FechaInicio", item.FechaInicio);
             command.Parameters.AddWithValue("@FechaFin", item.FechaFin);
+            command.Parameters.AddWithValue("@Estado", estado.Item1);
+            command.Parameters.AddWithValue("@EtapaActual", estado.Item2);
             command.Parameters.AddWithValue("@UsuarioId", usuarioId);
             command.Parameters.AddWithValue("@IncluirTodos", incluirTodos);
 
@@ -385,7 +410,7 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
 
             await using var updateLoteCommand = new SqlCommand(updateLoteSql, connection, transaction);
             updateLoteCommand.Parameters.AddWithValue("@LoteId", item.LoteId);
-            updateLoteCommand.Parameters.AddWithValue("@Producto", item.Producto.Trim());
+            updateLoteCommand.Parameters.AddWithValue("@Producto", producto);
             await updateLoteCommand.ExecuteNonQueryAsync();
         }
     }

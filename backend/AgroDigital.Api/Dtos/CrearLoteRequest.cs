@@ -40,4 +40,8 @@ public class CrearLoteRequest
 
     [MinLength(3, ErrorMessage = "Un lote debe tener al menos tres coordenadas para formar un poligono.")]
     public List<LoteCoordenadaDto> Coordenadas { get; set; } = [];
+
+    // Se usa exclusivamente al confirmar desde el aviso de una campaña activa.
+    // Evita crear por un instante un lote habilitado sin asociación a la campaña.
+    public bool RegistrarDeshabilitado { get; set; }
 }

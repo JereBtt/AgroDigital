@@ -20,6 +20,8 @@ public class SiembraDto
     public string? JustificacionDesvioFin { get; set; }
     public decimal? HectareasHora { get; set; }
     public string? VariedadSemilla { get; set; }
+    public string? CicloCultivo { get; set; }
+    public string? TipoImplantacion { get; set; }
     public decimal? PMG { get; set; }
     public decimal? DensidadSiembra { get; set; }
     public decimal? Profundidad { get; set; }
@@ -49,6 +51,8 @@ public class CrearSiembraRequest
     public DateTime FechaInicio { get; set; }
     public DateTime FechaFin { get; set; }
     public string? VariedadSemilla { get; set; }
+    public string? CicloCultivo { get; set; }
+    public string? TipoImplantacion { get; set; }
     public decimal? PMG { get; set; }
     public decimal? DensidadSiembra { get; set; }
     public decimal? Profundidad { get; set; }

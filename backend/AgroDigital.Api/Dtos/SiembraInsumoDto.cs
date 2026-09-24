@@ -4,6 +4,7 @@ public class SiembraInsumoDto
 {
     public int SiembraInsumoId { get; set; }
     public DateOnly? FechaAplicacion { get; set; }
+    public string? MotivoAplicacion { get; set; }
     public string? Marca { get; set; }
     public string? Tipo { get; set; }
     public string? Variedad { get; set; }
@@ -14,6 +15,7 @@ public class SiembraInsumoDto
 public class CrearSiembraInsumoRequest
 {
     public DateOnly? FechaAplicacion { get; set; }
+    public string? MotivoAplicacion { get; set; }
     public string? Marca { get; set; }
     public string? Tipo { get; set; }
     public string? Variedad { get; set; }

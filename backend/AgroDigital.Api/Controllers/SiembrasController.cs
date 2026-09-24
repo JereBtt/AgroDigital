@@ -2,6 +2,8 @@ using AgroDigital.Api.Dtos;
 using AgroDigital.Api.Repositories;
 using AgroDigital.Api.Services;
 using Microsoft.AspNetCore.Mvc;
+using System.Globalization;
+using System.Text;
 
 namespace AgroDigital.Api.Controllers;
 
@@ -29,7 +31,8 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
         "Plagas de implantacion",
         "Fitotoxicidad por agroquimicos",
         "Encostramiento del suelo",
-        "Falla de germinacion"
+        "Falla de germinacion",
+        "Incendio"
     ];
 
     [HttpGet]
@@ -53,6 +56,7 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
 
+        NormalizarDetalleAgronomico(request);
         var validation = ValidarSiembra(request);
         if (validation is not null) return validation;
 
@@ -60,21 +64,8 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
         if (lote is null) return NotFound("Lote no disponible.");
         if (request.TipoRegistro == "Resiembra")
         {
-            var original = await siembraRepository.ObtenerPorIdAsync(request.SiembraOriginalId!.Value);
-            if (original is null || original.TipoRegistro == "Resiembra" || original.EstadoSiembra != "Finalizado" || original.Estado != "Finalizado"
-                || original.LoteId != request.LoteId
-                || !string.Equals(original.CampaniaNombre?.Trim(), request.CampaniaNombre?.Trim(), StringComparison.OrdinalIgnoreCase))
-                return BadRequest("La resiembra requiere una siembra original y su seguimiento finalizados, del mismo lote y campaña.");
-            if (original.FechaFinReal is null)
-                return BadRequest("La siembra original debe tener fecha real de finalizacion.");
-            var finOriginal = original.FechaFinReal.Value.Date;
-            if (request.FechaInicio.Date < finOriginal || request.FechaInicio.Date > finOriginal.AddMonths(4))
-                return BadRequest($"La resiembra debe iniciar entre {finOriginal:dd/MM/yyyy} y {finOriginal.AddMonths(4):dd/MM/yyyy}.");
-            var periodo = System.Text.RegularExpressions.Regex.Match(original.CampaniaNombre ?? "", @"^\d{4}-(\d{4})(?:\s|$)");
-            var finCampania = periodo.Success && int.TryParse(periodo.Groups[1].Value, out var anioFin) && anioFin > 0
-                ? new DateTime(anioFin, 12, 31) : FechaOperacionMaxima;
-            if (request.FechaFin.Date > finCampania)
-                return BadRequest($"La fecha tentativa de fin no puede superar el {finCampania:dd/MM/yyyy}, fin del año de campaña.");
+            var resiembraValidation = await ValidarResiembraNuevaAsync(request);
+            if (resiembraValidation is not null) return resiembraValidation;
         }
         request.ProductoAntecesor = lote.HistorialCultivos.FirstOrDefault()?.Cultivo;
         try
@@ -93,6 +84,7 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
 
+        NormalizarDetalleAgronomico(request);
         var validation = ValidarSiembra(request);
         if (validation is not null) return validation;
 
@@ -100,17 +92,17 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
         if (lote is null) return NotFound("Lote no disponible.");
         if (request.TipoRegistro == "Resiembra")
         {
-            var original = await siembraRepository.ObtenerPorIdAsync(request.SiembraOriginalId!.Value);
-            if (original is null || original.TipoRegistro == "Resiembra" || original.EstadoSiembra != "Finalizado" || original.Estado != "Finalizado"
-                || original.LoteId != request.LoteId
-                || !string.Equals(original.CampaniaNombre?.Trim(), request.CampaniaNombre?.Trim(), StringComparison.OrdinalIgnoreCase))
-                return BadRequest("La resiembra requiere una siembra original y su seguimiento finalizados, del mismo lote y campaña.");
-            if (original.FechaFinReal is null)
-                return BadRequest("La siembra original debe tener fecha real de finalizacion.");
-            var finOriginal = original.FechaFinReal.Value.Date;
+            var anterior = await siembraRepository.ObtenerPorIdAsync(request.SiembraOriginalId!.Value);
+            if (anterior is null || anterior.EstadoSiembra != "Finalizado" || anterior.Estado != "Finalizado"
+                || anterior.LoteId != request.LoteId
+                || !string.Equals(anterior.CampaniaNombre?.Trim(), request.CampaniaNombre?.Trim(), StringComparison.OrdinalIgnoreCase))
+                return BadRequest("La resiembra requiere que la siembra anterior y su seguimiento estén finalizados, dentro del mismo lote y campaña.");
+            if (anterior.FechaFinReal is null)
+                return BadRequest("La siembra anterior debe tener fecha real de finalizacion.");
+            var finOriginal = anterior.FechaFinReal.Value.Date;
             if (request.FechaInicio.Date < finOriginal || request.FechaInicio.Date > finOriginal.AddMonths(4))
                 return BadRequest($"La resiembra debe iniciar entre {finOriginal:dd/MM/yyyy} y {finOriginal.AddMonths(4):dd/MM/yyyy}.");
-            var periodo = System.Text.RegularExpressions.Regex.Match(original.CampaniaNombre ?? "", @"^\d{4}-(\d{4})(?:\s|$)");
+            var periodo = System.Text.RegularExpressions.Regex.Match(anterior.CampaniaNombre ?? "", @"^\d{4}-(\d{4})(?:\s|$)");
             var finCampania = periodo.Success && int.TryParse(periodo.Groups[1].Value, out var anioFin) && anioFin > 0
                 ? new DateTime(anioFin, 12, 31) : FechaOperacionMaxima;
             if (request.FechaFin.Date > finCampania)
@@ -131,7 +123,7 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
     [HttpPost("{siembraId:int}/finalizar")]
     public async Task<IActionResult> FinalizarSiembra(int siembraId, FinalizarSiembraRequest request)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
 
         var siembra = await siembraRepository.ObtenerPorIdAsync(siembraId);
         if (siembra is null) return NotFound();
@@ -154,13 +146,22 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
     [HttpPost("{siembraId:int}/insumos")]
     public async Task<ActionResult<SiembraInsumoDto>> AgregarInsumo(int siembraId, CrearSiembraInsumoRequest request)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
 
         var validation = ValidarInsumo(request);
         if (validation is not null) return validation;
 
         var siembra = await siembraRepository.ObtenerPorIdAsync(siembraId);
         if (siembra is null) return NotFound();
+        var lote = await loteRepository.ObtenerPorIdAsync(siembra.LoteId, usuario.UsuarioId, usuario.Rol == "Admin");
+        var fechaUltimaCosecha = lote?.HistorialCultivos
+            .Where(historial => historial.FechaFin is not null)
+            .Select(historial => (DateTime?)historial.FechaFin!.Value.Date)
+            .Max();
+        if (fechaUltimaCosecha is not null && request.FechaAplicacion!.Value.ToDateTime(TimeOnly.MinValue).Date < fechaUltimaCosecha.Value)
+        {
+            return BadRequest($"La Fecha de aplicación no puede ser anterior a la última cosecha finalizada del lote ({fechaUltimaCosecha:dd/MM/yyyy}).");
+        }
         if (request.FechaAplicacion!.Value > DateOnly.FromDateTime(siembra.FechaInicio))
         {
             return BadRequest("La Fecha de aplicacion no puede ser posterior a la Fecha de Inicio de la siembra.");
@@ -244,10 +245,50 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
         return eliminado ? NoContent() : NotFound();
     }
 
+    private async Task<ActionResult?> ValidarResiembraNuevaAsync(CrearSiembraRequest request)
+    {
+        var anterior = await siembraRepository.ObtenerUltimaDelLoteEnCampaniaAsync(request.LoteId, request.CampaniaNombre);
+
+        if (anterior is null || anterior.SiembraId != request.SiembraOriginalId)
+            return BadRequest("La resiembra debe vincularse al último registro del lote dentro de la campaña.");
+        if (anterior.EstadoSiembra != "Finalizado" || anterior.Estado != "Finalizado")
+            return BadRequest("La última siembra o resiembra y su seguimiento deben estar finalizados antes de registrar otra resiembra.");
+        if (anterior.FechaFinReal is null)
+            return BadRequest("La última siembra o resiembra debe tener fecha real de finalización.");
+
+        var fechaFinUltimoRegistro = anterior.FechaFinReal.Value.Date;
+        var periodo = System.Text.RegularExpressions.Regex.Match(anterior.CampaniaNombre ?? "", @"^\d{4}-(\d{4})(?:\s|$)");
+        var finCampania = periodo.Success && int.TryParse(periodo.Groups[1].Value, out var anioFin) && anioFin > 0
+            ? new DateTime(anioFin, 12, 31)
+            : FechaOperacionMaxima;
+        var fechaInicioMaxima = fechaFinUltimoRegistro.AddMonths(4) < finCampania
+            ? fechaFinUltimoRegistro.AddMonths(4)
+            : finCampania;
+
+        if (request.FechaInicio.Date < fechaFinUltimoRegistro || request.FechaInicio.Date > fechaInicioMaxima)
+            return BadRequest($"La resiembra debe iniciar entre {fechaFinUltimoRegistro:dd/MM/yyyy} y {fechaInicioMaxima:dd/MM/yyyy}.");
+        if (request.FechaFin.Date > finCampania)
+            return BadRequest($"La fecha tentativa de fin no puede superar el {finCampania:dd/MM/yyyy}, fin del año de campaña.");
+
+        return null;
+    }
+
     private ActionResult? ValidarSiembra(CrearSiembraRequest request)
     {
         if (request.LoteId <= 0) return BadRequest("El Lote es obligatorio.");
         if (string.IsNullOrWhiteSpace(request.Producto)) return BadRequest("El Grano es obligatorio.");
+        var cultivo = NormalizarTexto(request.Producto);
+        if (cultivo is "soja" or "maiz")
+        {
+            if (request.CicloCultivo is not ("Corto" or "Largo"))
+                return BadRequest("Selecciona un Ciclo del cultivo válido: Corto o Largo.");
+
+            if (cultivo == "soja" && request.TipoImplantacion is not ("Primera" or "Segunda"))
+                return BadRequest("Selecciona un Tipo de soja válido: Primera o Segunda.");
+
+            if (cultivo == "maiz" && request.TipoImplantacion is not ("Temprano" or "Tardío"))
+                return BadRequest("Selecciona una Época de siembra válida: Temprano o Tardío.");
+        }
         if (request.FechaFin < request.FechaInicio) return BadRequest("La Fecha de Fin no puede ser anterior a la Fecha de Inicio.");
         var periodoCampania = System.Text.RegularExpressions.Regex.Match(request.CampaniaNombre ?? "", @"^(\d{4})-\d{4}(?:\s|$)");
         var fechaPreSiembraMinima = periodoCampania.Success && int.TryParse(periodoCampania.Groups[1].Value, out var anioCampania) && anioCampania > 0
@@ -276,14 +317,47 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
         return null;
     }
 
+    private static void NormalizarDetalleAgronomico(CrearSiembraRequest request)
+    {
+        var cultivo = NormalizarTexto(request.Producto);
+        if (cultivo is not ("soja" or "maiz"))
+        {
+            request.CicloCultivo = null;
+            request.TipoImplantacion = null;
+            return;
+        }
+
+        request.CicloCultivo = Canonicalizar(request.CicloCultivo, "Corto", "Largo");
+        request.TipoImplantacion = cultivo == "soja"
+            ? Canonicalizar(request.TipoImplantacion, "Primera", "Segunda")
+            : Canonicalizar(request.TipoImplantacion, "Temprano", "Tardío");
+    }
+
+    private static string? Canonicalizar(string? valor, params string[] permitidos)
+    {
+        if (string.IsNullOrWhiteSpace(valor)) return null;
+        return permitidos.FirstOrDefault(permitido =>
+            string.Equals(NormalizarTexto(permitido), NormalizarTexto(valor), StringComparison.Ordinal));
+    }
+
+    private static string NormalizarTexto(string? valor)
+    {
+        var normalizado = (valor ?? string.Empty).Trim().Normalize(NormalizationForm.FormD);
+        return new string(normalizado
+            .Where(caracter => CharUnicodeInfo.GetUnicodeCategory(caracter) != UnicodeCategory.NonSpacingMark)
+            .ToArray())
+            .ToLowerInvariant();
+    }
+
     private static ActionResult? ValidarInsumo(CrearSiembraInsumoRequest request)
     {
         if (request.FechaAplicacion is null) return new BadRequestObjectResult("La Fecha de aplicacion es obligatoria.");
         var fechaAplicacion = request.FechaAplicacion.Value.ToDateTime(TimeOnly.MinValue);
         if (fechaAplicacion < FechaOperacionMinima || fechaAplicacion > FechaOperacionMaxima) return new BadRequestObjectResult("La Fecha de aplicacion debe estar entre el 01/01/2026 y el 31/12/2027.");
+        if (request.MotivoAplicacion is not ("Plaga" or "Maleza" or "Enfermedad")) return new BadRequestObjectResult("Selecciona un motivo de aplicacion valido.");
         if (string.IsNullOrWhiteSpace(request.Marca)) return new BadRequestObjectResult("La Marca es obligatoria.");
         if (string.IsNullOrWhiteSpace(request.Tipo) || !TiposInsumoValidos.Contains(request.Tipo)) return new BadRequestObjectResult("Tipo de agroquimico invalido.");
-        if (string.IsNullOrWhiteSpace(request.Variedad)) return new BadRequestObjectResult("La Variedad es obligatoria.");
+        if (string.IsNullOrWhiteSpace(request.Variedad)) return new BadRequestObjectResult("La Droga es obligatoria.");
         if (request.CantidadAplicada is null or <= 0) return new BadRequestObjectResult("La Cantidad aplicada debe ser mayor a cero.");
         if (request.UnidadMedida is not ("Litros" or "Kg")) return new BadRequestObjectResult("Selecciona Litros o Kg como unidad de medida.");
         return null;

@@ -2516,6 +2516,272 @@ button {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.siembra-wizard-grid-reseeding {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 18px 16px;
+}
+
+.siembra-wizard-grid-reseeding .siembra-reseed-lote-divider {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.siembra-wizard-grid-reseeding .siembra-reseed-lote {
+  grid-column: 1 / span 4;
+  grid-row: 2;
+}
+
+.siembra-wizard-grid-reseeding .siembra-reseed-hectareas {
+  grid-column: 5 / span 4;
+  grid-row: 2;
+}
+
+.siembra-wizard-grid-reseeding .siembra-reseed-afectado {
+  grid-column: 9 / span 4;
+  grid-row: 2;
+}
+
+.siembra-wizard-grid-reseeding .siembra-reseed-data-divider {
+  grid-column: 1 / -1;
+  grid-row: 3;
+}
+
+.siembra-wizard-grid-reseeding .siembra-reseed-cultivo {
+  grid-column: 1 / span 4;
+  grid-row: 4;
+}
+
+.siembra-wizard-grid-reseeding .siembra-reseed-tipo {
+  grid-column: 5 / span 4;
+  grid-row: 4;
+}
+
+.siembra-wizard-grid-reseeding .siembra-reseed-siniestro {
+  grid-column: 9 / span 4;
+  grid-row: 4;
+}
+
+.siembra-wizard-grid-reseeding .siembra-reseed-divider {
+  grid-column: 1 / -1;
+  grid-row: 5;
+}
+
+.siembra-wizard-grid-reseeding .siembra-reseed-fecha-inicio {
+  grid-column: 1 / span 6;
+  grid-row: 6;
+}
+
+.siembra-wizard-grid-reseeding .siembra-reseed-fecha-fin {
+  grid-column: 7 / span 6;
+  grid-row: 6;
+}
+
+.siembra-group-divider {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 34px;
+  width: 100%;
+  margin: 3px 0 2px;
+}
+
+.siembra-group-divider-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 13px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #e4f6e9, #f4fbf6);
+  color: #17492b;
+  font-size: calc(13px * var(--text-scale, 1));
+  font-weight: 900;
+}
+
+.siembra-group-divider-label svg {
+  color: #18883b;
+}
+
+.siembra-group-divider-line {
+  position: relative;
+  display: block;
+  flex: 1 1 auto;
+  height: 1px;
+  background: #9acfac;
+}
+
+.siembra-group-divider-line::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #66b57a;
+  transform: translate(50%, -50%);
+}
+
+.siembra-date-divider {
+  margin-top: 8px;
+}
+
+.siembra-registration-card {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.78fr) minmax(0, 1.22fr);
+  align-items: stretch;
+  gap: 26px;
+  margin: 18px 0 14px;
+  padding: 18px 22px;
+  background: linear-gradient(100deg, #effaf2 0%, #f8fcf9 46%, #f2faf4 100%);
+}
+
+.siembra-registration-copy {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  min-width: 0;
+}
+
+.siembra-registration-copy h2 {
+  margin: 0;
+  color: #10351f;
+  font-size: calc(20px * var(--text-scale, 1));
+  font-weight: 950;
+}
+
+.siembra-registration-copy p {
+  margin: 4px 0 0;
+  color: #607065;
+  font-size: calc(12px * var(--text-scale, 1));
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.siembra-registration-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.siembra-registration-option {
+  width: 100%;
+  min-height: 76px;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #d9e8dc;
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: #143923;
+  background: rgba(255, 255, 255, 0.9);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.siembra-registration-option:hover {
+  transform: translateY(-1px);
+  border-color: #a9d9b4;
+  box-shadow: 0 8px 18px rgba(18, 103, 47, 0.1);
+}
+
+.siembra-registration-option.selected {
+  border-color: #1d9b43;
+  background: #f3fcf5;
+  box-shadow: 0 7px 18px rgba(20, 140, 57, 0.14);
+}
+
+.siembra-registration-option-icon {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: #13913a;
+  background: #e5f8e9;
+}
+
+.siembra-registration-option-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.siembra-registration-option-copy strong {
+  color: #153a23;
+  font-size: calc(14px * var(--text-scale, 1));
+  font-weight: 950;
+}
+
+.siembra-registration-option-copy small {
+  color: #68776d;
+  font-size: calc(11px * var(--text-scale, 1));
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.siembra-registration-radio {
+  width: 15px;
+  height: 15px;
+  box-sizing: border-box;
+  border: 2px solid #9cae9f;
+  border-radius: 50%;
+}
+
+.siembra-registration-option.selected .siembra-registration-radio {
+  border-color: #15933c;
+  box-shadow: inset 0 0 0 3px #f3fcf5, inset 0 0 0 8px #15933c;
+}
+
+@media (max-width: 980px) {
+  .siembra-registration-card {
+    grid-template-columns: 1fr;
+  }
+
+  .siembra-wizard-grid-reseeding {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 22px;
+  }
+
+  .siembra-wizard-grid-reseeding .siembra-reseed-lote-divider,
+  .siembra-wizard-grid-reseeding .siembra-reseed-lote,
+  .siembra-wizard-grid-reseeding .siembra-reseed-hectareas,
+  .siembra-wizard-grid-reseeding .siembra-reseed-afectado,
+  .siembra-wizard-grid-reseeding .siembra-reseed-data-divider,
+  .siembra-wizard-grid-reseeding .siembra-reseed-cultivo,
+  .siembra-wizard-grid-reseeding .siembra-reseed-tipo,
+  .siembra-wizard-grid-reseeding .siembra-reseed-siniestro,
+  .siembra-wizard-grid-reseeding .siembra-reseed-fecha-inicio,
+  .siembra-wizard-grid-reseeding .siembra-reseed-fecha-fin {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .siembra-wizard-grid-reseeding .siembra-reseed-divider {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+
+  .siembra-wizard-grid-reseeding .siembra-group-divider {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 620px) {
+  .siembra-registration-card {
+    padding: 16px;
+  }
+
+  .siembra-registration-options {
+    grid-template-columns: 1fr;
+  }
+}
+
 .siembra-wide-field {
   grid-column: span 2;
 }
@@ -2553,6 +2819,94 @@ button {
 .field-rule strong {
   color: #17492b;
   font-weight: 900;
+}
+
+.field input:read-only,
+.field textarea:read-only {
+  border-color: #9ecbac;
+  background: #eaf5ed;
+  color: #17492b;
+  -webkit-text-fill-color: #17492b;
+  font-weight: 850;
+  box-shadow: inset 0 1px 2px rgba(30, 73, 43, 0.08);
+  cursor: default;
+}
+
+.field input:read-only::placeholder,
+.field textarea:read-only::placeholder {
+  color: #54705e;
+  opacity: 1;
+}
+
+.readonly-output {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  height: 46px;
+  box-sizing: border-box;
+  padding: 0 13px;
+  border: 1px solid #d8e1e5;
+  border-radius: 10px;
+  background: linear-gradient(100deg, #f4f7f9, #eef2f5);
+  box-shadow: inset 0 1px 2px rgba(32, 57, 70, 0.05);
+}
+
+.readonly-output svg {
+  color: #70808a;
+}
+
+.readonly-output-green {
+  border-color: #9ecbac;
+  background: linear-gradient(100deg, #edf8ef, #e2f3e6);
+  box-shadow: inset 0 1px 2px rgba(30, 73, 43, 0.08);
+}
+
+.readonly-output-green svg {
+  color: #228a42;
+}
+
+.field .readonly-output-green input,
+.field .readonly-output-green input:read-only {
+  color: #17492b;
+  -webkit-text-fill-color: #17492b;
+}
+
+.field .readonly-output input,
+.field .readonly-output input:read-only {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #2e3d46;
+  -webkit-text-fill-color: #2e3d46;
+  font-weight: 850;
+  box-shadow: none;
+}
+
+.field .readonly-output input:focus {
+  outline: 0;
+  box-shadow: none;
+}
+
+.field .readonly-output input::placeholder {
+  color: #73818a;
+  opacity: 1;
+}
+
+.grain-change-field .readonly-output {
+  min-width: 0;
+}
+
+.field input:disabled {
+  border-color: #d7dfe2;
+  background: #f6f8f8;
+  color: #687780;
+  -webkit-text-fill-color: #687780;
+  cursor: not-allowed;
 }
 
 .field-error {
@@ -3588,6 +3942,36 @@ button {
   color: #d62727;
 }
 
+/* La marca obligatoria no debe ocupar una fila propia dentro de la grilla. */
+.field {
+  position: relative;
+}
+
+.field > .field-label {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 4px;
+  grid-row: 1;
+  width: max-content;
+  max-width: 100%;
+}
+
+.field-label b {
+  position: static;
+  color: #e53935;
+  font-size: calc(18px * var(--text-scale, 1));
+  font-weight: 900;
+  line-height: 0.8;
+}
+
+.field > input,
+.field > select,
+.field > textarea,
+.field > .grain-change-field,
+.field > .readonly-output {
+  grid-row: 2;
+}
+
 .field input,
 .field select,
 .area-grid input,
@@ -3812,6 +4196,200 @@ button {
   border-radius: 12px;
   background: #dde4df;
   overflow: hidden;
+}
+
+.seguimiento-map-box {
+  width: min(50%, 720px);
+  min-width: 380px;
+  max-width: 720px;
+}
+
+.lotes-table tbody tr.seguimiento-resiembra-separator > td {
+  height: 30px;
+  min-height: 0;
+  padding: 4px 14px;
+  border: 0;
+  background: #eaf8ee;
+  color: #0f7635;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  line-height: 1;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.seguimiento-resiembra-separator span {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.seguimiento-resiembra-separator span::before,
+.seguimiento-resiembra-separator span::after {
+  width: min(11vw, 140px);
+  height: 1px;
+  background: currentColor;
+  content: '';
+  opacity: 0.6;
+}
+
+.seguimiento-history-page {
+  padding-top: 18px;
+}
+
+.seguimiento-history-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 10px 0 18px;
+}
+
+.seguimiento-history-title,
+.seguimiento-history-card-header,
+.seguimiento-history-actions,
+.seguimiento-history-card-icon,
+.seguimiento-history-title-icon {
+  display: flex;
+  align-items: center;
+}
+
+.seguimiento-history-title {
+  gap: 16px;
+}
+
+.seguimiento-history-title-icon,
+.seguimiento-history-card-icon {
+  flex: 0 0 auto;
+  justify-content: center;
+  color: #129240;
+  background: #e6f7e9;
+  border-radius: 14px;
+}
+
+.seguimiento-history-title-icon {
+  width: 64px;
+  height: 64px;
+}
+
+.seguimiento-history-title h1 {
+  margin: 0;
+  font-size: clamp(2rem, 3vw, 2.7rem);
+}
+
+.seguimiento-history-title p,
+.seguimiento-history-card-header p {
+  margin: 4px 0 0;
+  color: #718096;
+  font-weight: 600;
+}
+
+.seguimiento-history-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.seguimiento-history-actions .green-button {
+  min-height: 46px;
+  padding: 0 18px;
+  gap: 9px;
+  white-space: nowrap;
+}
+
+.seguimiento-history-card {
+  margin: 0 0 18px;
+  padding: 18px 16px 14px;
+  border: 1px solid #e2ece4;
+  border-radius: 20px;
+  box-shadow: 0 12px 30px rgba(25, 76, 39, 0.07);
+}
+
+.seguimiento-history-card-header {
+  gap: 12px;
+  padding: 0 8px 14px;
+}
+
+.seguimiento-history-card-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+}
+
+.seguimiento-history-card-header h2 {
+  margin: 0;
+  color: #183d27;
+  font-size: 1.18rem;
+}
+
+.seguimiento-history-card-header p {
+  font-size: 0.88rem;
+}
+
+.seguimiento-history-card .table-shell {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0;
+  border: 1px solid #e1ebe3;
+  border-radius: 14px;
+  isolation: isolate;
+}
+
+.seguimiento-history-card .lotes-table thead th {
+  padding: 12px 18px;
+  color: #164128;
+  background: linear-gradient(90deg, #eaf8ee, #f7fcf8);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.seguimiento-history-card .lotes-table thead th svg {
+  margin-right: 8px;
+  vertical-align: -3px;
+}
+
+.seguimiento-history-card .lotes-table thead th:first-child {
+  border-top-left-radius: 13px;
+}
+
+.seguimiento-history-card .lotes-table thead th:last-child {
+  border-top-right-radius: 13px;
+}
+
+.seguimiento-history-card .lotes-table tbody tr:last-child td:first-child {
+  border-bottom-left-radius: 13px;
+}
+
+.seguimiento-history-card .lotes-table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: 13px;
+}
+
+.seguimiento-history-card .lotes-table tbody td {
+  padding: 12px 18px;
+}
+
+.seguimiento-history-card .actions-cell {
+  gap: 8px;
+}
+
+.seguimiento-history-card .table-action-tooltip {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 12px;
+  color: #175e32;
+  background: #edf8ef;
+}
+
+.seguimiento-history-card .table-action-tooltip:has(svg.lucide-trash-2) {
+  color: #e23a35;
+  background: #fff0f0;
+}
+
+.seguimiento-section-title {
+  margin: 28px 0 12px;
+  font-size: 1.25rem;
 }
 
 .map-box-expanded {
@@ -5059,6 +5637,11 @@ button {
 
   .map-box {
     height: 360px;
+  }
+
+  .seguimiento-map-box {
+    width: 100%;
+    min-width: 0;
   }
 
   .map-box-expanded {
@@ -7369,10 +7952,38 @@ button {
   color: #173522;
 }
 
+/* Los formularios renderizados mediante portal no heredan la clase .field. */
+.confirmation-modal > input {
+  width: 100%;
+  height: 46px;
+  box-sizing: border-box;
+  border: 1px solid #dddddd;
+  border-radius: 9px;
+  padding: 0 12px;
+  background: #ffffff;
+  color: #1b1b1b;
+  font-size: calc(15px * var(--text-scale, 1));
+  font-weight: 800;
+}
+
+.confirmation-modal > input::placeholder {
+  color: #8a9690;
+  opacity: 0.58;
+}
+
+.confirmation-modal > input:focus {
+  outline: 2px solid rgba(24, 136, 59, 0.24);
+  border-color: #18883b;
+}
+
 .confirmation-modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+}
+
+.confirmation-modal-actions-wrap {
+  flex-wrap: wrap;
 }
 
 .confirmation-modal-actions button {
@@ -7444,3 +8055,122 @@ button {
 .field-wide {
   grid-column: 1 / -1;
 }
+
+.cosecha-warning-modal-backdrop,
+.modal-backdrop,
+.confirmation-modal-backdrop {
+  height: 100dvh;
+  min-height: 100dvh;
+  box-sizing: border-box;
+  align-items: center;
+  justify-items: center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.confirmation-modal {
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+}
+/* Los datos de la siembra dependen del lote elegido. */
+.siembra-fields-require-lote {
+  display: contents;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.siembra-fields-require-lote:disabled .field input,
+.siembra-fields-require-lote:disabled .field select,
+.siembra-fields-require-lote:disabled .field textarea,
+.siembra-fields-require-lote:disabled .readonly-output input,
+.siembra-fields-require-lote:disabled .grain-change-field button {
+  color: transparent;
+  background: #f3f5f6;
+  border-color: #dfe5e7;
+  box-shadow: none;
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.siembra-fields-require-lote:disabled .field input::placeholder,
+.siembra-fields-require-lote:disabled .field textarea::placeholder {
+  color: transparent;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9aa7a0;
+  opacity: 0.66;
+}
+
+/* Orden del bloque informativo en la siembra original. */
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-lote-divider {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-lote {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-hectareas {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-afectado {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-cultivo {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-normal-divider {
+  grid-column: 1 / -1;
+  grid-row: 4;
+}
+
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-fecha-inicio {
+  grid-column: 1;
+  grid-row: 5;
+}
+
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-fecha-fin {
+  grid-column: 2;
+  grid-row: 5;
+}
+
+.field .readonly-output input::placeholder {
+  color: #aab4ba;
+  opacity: 0.58;
+}
+
+.siembra-insumo-parent {
+  margin: 0 0 14px;
+  padding: 16px;
+  border: 1px solid #dbece0;
+  border-radius: 16px;
+  background: #f5fbf7;
+}
+
+.siembra-insumo-parent .siembra-insumo-title {
+  margin-bottom: 14px;
+}
+
+.siembra-insumo-detail-modal {
+  width: min(920px, 100%);
+}
+
+.catalogo-select { position: relative; display: flex; }
+.catalogo-select input { width: 100%; padding-right: 44px; }
+.catalogo-select > button { position: absolute; right: 5px; top: 5px; width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 9px; color: #177b37; background: #eaf7ed; }
+.catalogo-select-menu { position: absolute; z-index: 30; top: calc(100% + 5px); left: 0; right: 0; max-height: 220px; overflow: auto; padding: 6px; border: 1px solid #cfe2d4; border-radius: 12px; background: #fff; box-shadow: 0 14px 28px rgba(20, 68, 35, .16); }
+.catalogo-select-menu > button, .catalogo-select-menu > span { display: flex; width: 100%; align-items: center; gap: 8px; padding: 10px; border: 0; border-radius: 8px; color: #244332; background: transparent; text-align: left; font: inherit; }
+.catalogo-select-menu > button:hover { background: #edf8ef; }
+.catalogo-select-menu .catalogo-select-add { color: #177b37; font-weight: 800; }

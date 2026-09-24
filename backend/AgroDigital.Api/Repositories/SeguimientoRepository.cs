@@ -10,14 +10,29 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
         ?? throw new InvalidOperationException("No se encontro la cadena de conexion AgroDigital.");
 
     private const string SelectSeguimientoColumns = """
-        SELECT SiembraSeguimientoId, SiembraId, Fecha, Longitud, Latitud, Incidencia,
-               PerdidaEconomica, AplicacionAgroquimicos, Observaciones
-        FROM dbo.SiembraSeguimientos
+        SELECT s.SiembraSeguimientoId, s.SiembraId, s.Fecha, s.Longitud, s.Latitud, s.TipoRegistro, s.Siniestro, s.Alcance, s.Incidencia,
+               s.PerdidaEconomica, s.AplicacionAgroquimicos, s.Observaciones,
+               (SELECT STRING_AGG(i.Variedad, N', ')
+                FROM dbo.SeguimientoInsumos AS i
+                WHERE i.SiembraSeguimientoId = s.SiembraSeguimientoId) AS DrogasAplicadas,
+               COALESCE(s.Cultivo, origen.Producto) AS Cultivo,
+               s.EsResiembra,
+               CAST(CASE WHEN s.SiembraId <> @SiembraId THEN 1 ELSE 0 END AS bit) AS EsHistorialAnterior
+        FROM dbo.SiembraSeguimientos AS s
+        INNER JOIN dbo.Siembras AS origen ON origen.SiembraId = s.SiembraId
         """;
 
     public async Task<IReadOnlyList<SiembraSeguimientoDto>> ObtenerTodosAsync(int siembraId)
     {
-        var sql = SelectSeguimientoColumns + " WHERE SiembraId = @SiembraId ORDER BY Fecha DESC, SiembraSeguimientoId DESC;";
+        var sql = """
+            WITH Cadena AS (
+                SELECT SiembraId, SiembraOriginalId FROM dbo.Siembras WHERE SiembraId = @SiembraId
+                UNION ALL
+                SELECT anterior.SiembraId, anterior.SiembraOriginalId
+                FROM dbo.Siembras AS anterior
+                INNER JOIN Cadena AS actual ON actual.SiembraOriginalId = anterior.SiembraId
+            )
+            """ + SelectSeguimientoColumns + " INNER JOIN Cadena AS cadena ON cadena.SiembraId = s.SiembraId ORDER BY s.Fecha DESC, s.SiembraSeguimientoId DESC OPTION (MAXRECURSION 5);";
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -36,7 +51,7 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
 
     public async Task<SiembraSeguimientoDto?> ObtenerPorIdAsync(int siembraId, int seguimientoId)
     {
-        var sql = SelectSeguimientoColumns + " WHERE SiembraSeguimientoId = @Id AND SiembraId = @SiembraId;";
+        var sql = SelectSeguimientoColumns + " WHERE s.SiembraSeguimientoId = @Id AND s.SiembraId = @SiembraId;";
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -52,10 +67,10 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
     {
         const string insertSql = """
             INSERT INTO dbo.SiembraSeguimientos
-                (SiembraId, Fecha, Longitud, Latitud, Incidencia, PerdidaEconomica, AplicacionAgroquimicos, Observaciones)
+                (SiembraId, Fecha, Longitud, Latitud, TipoRegistro, Siniestro, Alcance, Incidencia, PerdidaEconomica, AplicacionAgroquimicos, Observaciones)
             OUTPUT INSERTED.SiembraSeguimientoId
             VALUES
-                (@SiembraId, @Fecha, @Longitud, @Latitud, @Incidencia, @PerdidaEconomica, @AplicacionAgroquimicos, @Observaciones);
+                (@SiembraId, @Fecha, @Longitud, @Latitud, @TipoRegistro, @Siniestro, @Alcance, @Incidencia, @PerdidaEconomica, @AplicacionAgroquimicos, @Observaciones);
             """;
 
         await using var connection = new SqlConnection(_connectionString);
@@ -70,6 +85,9 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
             command.Parameters.AddWithValue("@Fecha", request.Fecha ?? DateTime.Now);
             command.Parameters.AddWithValue("@Longitud", (object?)request.Longitud ?? DBNull.Value);
             command.Parameters.AddWithValue("@Latitud", (object?)request.Latitud ?? DBNull.Value);
+            command.Parameters.AddWithValue("@TipoRegistro", request.TipoRegistro.Trim());
+            command.Parameters.AddWithValue("@Siniestro", string.IsNullOrWhiteSpace(request.Siniestro) ? DBNull.Value : request.Siniestro.Trim());
+            command.Parameters.AddWithValue("@Alcance", string.IsNullOrWhiteSpace(request.Alcance) ? DBNull.Value : request.Alcance.Trim());
             command.Parameters.AddWithValue("@Incidencia", string.IsNullOrWhiteSpace(request.Incidencia) ? DBNull.Value : request.Incidencia.Trim());
             command.Parameters.AddWithValue("@PerdidaEconomica", (object?)request.PerdidaEconomica ?? DBNull.Value);
             command.Parameters.AddWithValue("@AplicacionAgroquimicos", (object?)request.AplicacionAgroquimicos ?? DBNull.Value);
@@ -98,7 +116,8 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
     {
         const string sql = """
             UPDATE dbo.SiembraSeguimientos
-            SET Fecha = @Fecha, Longitud = @Longitud, Latitud = @Latitud, Incidencia = @Incidencia,
+            SET Fecha = @Fecha, Longitud = @Longitud, Latitud = @Latitud, TipoRegistro = @TipoRegistro,
+                Siniestro = @Siniestro, Alcance = @Alcance, Incidencia = @Incidencia,
                 PerdidaEconomica = @PerdidaEconomica, AplicacionAgroquimicos = @AplicacionAgroquimicos,
                 Observaciones = @Observaciones
             WHERE SiembraSeguimientoId = @Id AND SiembraId = @SiembraId;
@@ -112,6 +131,9 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
         command.Parameters.AddWithValue("@Fecha", request.Fecha ?? DateTime.Now);
         command.Parameters.AddWithValue("@Longitud", (object?)request.Longitud ?? DBNull.Value);
         command.Parameters.AddWithValue("@Latitud", (object?)request.Latitud ?? DBNull.Value);
+        command.Parameters.AddWithValue("@TipoRegistro", request.TipoRegistro.Trim());
+        command.Parameters.AddWithValue("@Siniestro", string.IsNullOrWhiteSpace(request.Siniestro) ? DBNull.Value : request.Siniestro.Trim());
+        command.Parameters.AddWithValue("@Alcance", string.IsNullOrWhiteSpace(request.Alcance) ? DBNull.Value : request.Alcance.Trim());
         command.Parameters.AddWithValue("@Incidencia", string.IsNullOrWhiteSpace(request.Incidencia) ? DBNull.Value : request.Incidencia.Trim());
         command.Parameters.AddWithValue("@PerdidaEconomica", (object?)request.PerdidaEconomica ?? DBNull.Value);
         command.Parameters.AddWithValue("@AplicacionAgroquimicos", (object?)request.AplicacionAgroquimicos ?? DBNull.Value);
@@ -178,7 +200,7 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
     public async Task<IReadOnlyList<SeguimientoInsumoDto>> ObtenerInsumosAsync(int seguimientoId)
     {
         const string sql = """
-            SELECT SeguimientoInsumoId, FechaAplicacion, Marca, Tipo, Variedad, CantidadAplicada
+            SELECT SeguimientoInsumoId, FechaAplicacion, Marca, Tipo, Variedad, CantidadAplicada, UnidadMedida
             FROM dbo.SeguimientoInsumos
             WHERE SiembraSeguimientoId = @Id
             ORDER BY SeguimientoInsumoId DESC;
@@ -200,7 +222,8 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
                 Marca = reader.IsDBNull(2) ? null : reader.GetString(2),
                 Tipo = reader.IsDBNull(3) ? null : reader.GetString(3),
                 Variedad = reader.IsDBNull(4) ? null : reader.GetString(4),
-                CantidadAplicada = reader.IsDBNull(5) ? null : reader.GetDecimal(5)
+                CantidadAplicada = reader.IsDBNull(5) ? null : reader.GetDecimal(5),
+                UnidadMedida = reader.IsDBNull(6) ? null : reader.GetString(6)
             });
         }
 
@@ -210,20 +233,20 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
     public async Task<SeguimientoInsumoDto> AgregarInsumoAsync(int seguimientoId, CrearSeguimientoInsumoRequest request)
     {
         const string sql = """
-            INSERT INTO dbo.SeguimientoInsumos (SiembraSeguimientoId, FechaAplicacion, Marca, Tipo, Variedad, CantidadAplicada)
+            INSERT INTO dbo.SeguimientoInsumos (SiembraSeguimientoId, FechaAplicacion, Marca, Tipo, Variedad, CantidadAplicada, UnidadMedida)
             OUTPUT INSERTED.SeguimientoInsumoId
-            VALUES (@Id, @FechaAplicacion, @Marca, @Tipo, @Variedad, @CantidadAplicada);
+            VALUES (@Id, (SELECT CAST(Fecha AS DATE) FROM dbo.SiembraSeguimientos WHERE SiembraSeguimientoId = @Id), @Marca, @Tipo, @Variedad, @CantidadAplicada, @UnidadMedida);
             """;
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.AddWithValue("@Id", seguimientoId);
-        command.Parameters.AddWithValue("@FechaAplicacion", request.FechaAplicacion is null ? DBNull.Value : request.FechaAplicacion.Value.ToDateTime(TimeOnly.MinValue));
         command.Parameters.AddWithValue("@Marca", string.IsNullOrWhiteSpace(request.Marca) ? DBNull.Value : request.Marca.Trim());
         command.Parameters.AddWithValue("@Tipo", string.IsNullOrWhiteSpace(request.Tipo) ? DBNull.Value : request.Tipo.Trim());
         command.Parameters.AddWithValue("@Variedad", string.IsNullOrWhiteSpace(request.Variedad) ? DBNull.Value : request.Variedad.Trim());
         command.Parameters.AddWithValue("@CantidadAplicada", (object?)request.CantidadAplicada ?? DBNull.Value);
+        command.Parameters.AddWithValue("@UnidadMedida", string.IsNullOrWhiteSpace(request.UnidadMedida) ? DBNull.Value : request.UnidadMedida.Trim());
 
         var insumoId = (int)(await command.ExecuteScalarAsync()
             ?? throw new InvalidOperationException("No se pudo agregar el insumo."));
@@ -231,11 +254,12 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
         return new SeguimientoInsumoDto
         {
             SeguimientoInsumoId = insumoId,
-            FechaAplicacion = request.FechaAplicacion,
+            FechaAplicacion = null,
             Marca = request.Marca?.Trim(),
             Tipo = request.Tipo?.Trim(),
             Variedad = request.Variedad?.Trim(),
-            CantidadAplicada = request.CantidadAplicada
+            CantidadAplicada = request.CantidadAplicada,
+            UnidadMedida = request.UnidadMedida?.Trim()
         };
     }
 
@@ -362,10 +386,17 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
             Fecha = reader.GetDateTime(2),
             Longitud = reader.IsDBNull(3) ? null : reader.GetDecimal(3),
             Latitud = reader.IsDBNull(4) ? null : reader.GetDecimal(4),
-            Incidencia = reader.IsDBNull(5) ? null : reader.GetString(5),
-            PerdidaEconomica = reader.IsDBNull(6) ? null : reader.GetBoolean(6),
-            AplicacionAgroquimicos = reader.IsDBNull(7) ? null : reader.GetBoolean(7),
-            Observaciones = reader.GetString(8)
+            TipoRegistro = reader.GetString(5),
+            Siniestro = reader.IsDBNull(6) ? null : reader.GetString(6),
+            Alcance = reader.IsDBNull(7) ? null : reader.GetString(7),
+            Incidencia = reader.IsDBNull(8) ? null : reader.GetString(8),
+            PerdidaEconomica = reader.IsDBNull(9) ? null : reader.GetBoolean(9),
+            AplicacionAgroquimicos = reader.IsDBNull(10) ? null : reader.GetBoolean(10),
+            Observaciones = reader.GetString(11),
+            DrogasAplicadas = reader.IsDBNull(12) ? null : reader.GetString(12),
+            Cultivo = reader.IsDBNull(13) ? null : reader.GetString(13),
+            EsResiembra = reader.GetBoolean(14),
+            EsHistorialAnterior = reader.GetBoolean(15)
         };
     }
 }

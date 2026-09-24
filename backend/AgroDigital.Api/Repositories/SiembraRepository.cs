@@ -16,7 +16,8 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
                s.JustificacionDesvioFin, s.HectareasHora, s.VariedadSemilla, s.PMG,
                s.DensidadSiembra, s.Profundidad, s.CantidadHectareasTrabajadas, s.UreaKgHa, s.CantidadSemillas,
                s.ResponsableACargo, s.FechaMuestreo, s.FechaAnalisis, s.CantidadMuestras,
-               s.ProductoAntecesor, s.ObservacionesPreSiembra, s.EstadoSiembra, s.Estado
+               s.ProductoAntecesor, s.ObservacionesPreSiembra, s.EstadoSiembra, s.Estado,
+               s.CicloCultivo, s.TipoImplantacion
         FROM dbo.Siembras AS s
         INNER JOIN dbo.Lotes AS l ON l.LoteId = s.LoteId
         LEFT JOIN dbo.Siembras AS so ON so.SiembraId = s.SiembraOriginalId
@@ -53,6 +54,24 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
         return await reader.ReadAsync() ? MapearSiembra(reader) : null;
     }
 
+    public async Task<SiembraDto?> ObtenerUltimaDelLoteEnCampaniaAsync(int loteId, string? campaniaNombre)
+    {
+        var sql = SelectSiembraColumns + "\n" + """
+            WHERE s.LoteId = @LoteId
+              AND LEFT(LTRIM(RTRIM(ISNULL(s.CampaniaNombre, N''))), 9) = LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)
+            ORDER BY s.SiembraId DESC;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@LoteId", loteId);
+        command.Parameters.AddWithValue("@CampaniaNombre", (object?)campaniaNombre ?? DBNull.Value);
+        await using var reader = await command.ExecuteReaderAsync();
+
+        return await reader.ReadAsync() ? MapearSiembra(reader) : null;
+    }
+
     public async Task<SiembraDto> CrearAsync(CrearSiembraRequest request, int? usuarioId)
     {
         await using var connection = new SqlConnection(_connectionString);
@@ -63,40 +82,65 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
         const string insertSql = """
             SET XACT_ABORT ON;
             BEGIN TRANSACTION;
+            DECLARE @NuevaSiembra TABLE (SiembraId INT NOT NULL);
+            DECLARE @NuevoSiembraId INT;
             IF @TipoRegistro <> N'Resiembra' AND EXISTS (
                 SELECT 1 FROM dbo.Siembras WITH (UPDLOCK, HOLDLOCK)
                 WHERE LoteId = @LoteId AND ISNULL(TipoRegistro, N'Siembra') <> N'Resiembra'
                   AND LEFT(LTRIM(RTRIM(ISNULL(CampaniaNombre, N''))), 9) = LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)
             )
                 THROW 50001, N'Este lote ya tiene una siembra registrada en este periodo de campaña. Utiliza Registrar resiembra si corresponde.', 1;
-            IF @TipoRegistro = N'Resiembra' AND EXISTS (
-                SELECT 1 FROM dbo.Siembras WITH (UPDLOCK, HOLDLOCK)
+            IF @TipoRegistro = N'Resiembra' AND 4 <= (
+                SELECT COUNT(1) FROM dbo.Siembras WITH (UPDLOCK, HOLDLOCK)
                 WHERE LoteId = @LoteId AND TipoRegistro = N'Resiembra'
                   AND LEFT(LTRIM(RTRIM(ISNULL(CampaniaNombre, N''))), 9) = LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)
-                  
             )
-                THROW 50001, N'Este lote ya tiene una resiembra registrada en este periodo de campaña. Solo se permite una.', 1;
+                THROW 50001, N'Este lote ya alcanzó el máximo de 4 resiembras en este periodo de campaña.', 1;
             INSERT INTO dbo.Siembras
                 (Nombre, LoteId, CampaniaNombre, Producto, Empresa, TipoRegistro, SiembraOriginalId, TipoResiembra, Siniestro,
                  FechaInicio, FechaFin,
-                 VariedadSemilla, PMG, DensidadSiembra, Profundidad, CantidadHectareasTrabajadas, UreaKgHa,
+                 VariedadSemilla, CicloCultivo, TipoImplantacion, PMG, DensidadSiembra, Profundidad, CantidadHectareasTrabajadas, UreaKgHa,
                  CantidadSemillas, ResponsableACargo, FechaMuestreo, FechaAnalisis, CantidadMuestras,
                  ProductoAntecesor, ObservacionesPreSiembra, CreadoPorUsuarioId)
-            OUTPUT INSERTED.SiembraId
+            OUTPUT INSERTED.SiembraId INTO @NuevaSiembra
             VALUES
                 (@Nombre, @LoteId, @CampaniaNombre, @Producto, @Empresa, @TipoRegistro, @SiembraOriginalId, @TipoResiembra, @Siniestro,
                  @FechaInicio, @FechaFin,
-                 @VariedadSemilla, @PMG, @DensidadSiembra, @Profundidad, @CantidadHectareasTrabajadas, @UreaKgHa,
+                 @VariedadSemilla, @CicloCultivo, @TipoImplantacion, @PMG, @DensidadSiembra, @Profundidad, @CantidadHectareasTrabajadas, @UreaKgHa,
                  @CantidadSemillas, @ResponsableACargo, @FechaMuestreo, @FechaAnalisis, @CantidadMuestras,
                  @ProductoAntecesor, @ObservacionesPreSiembra, @CreadoPorUsuarioId);
+
+            SELECT @NuevoSiembraId = SiembraId FROM @NuevaSiembra;
+
+            IF @TipoRegistro = N'Resiembra'
+            BEGIN
+                INSERT INTO dbo.SiembraSeguimientos
+                    (SiembraId, Fecha, TipoRegistro, Siniestro, Alcance, Observaciones, Cultivo, EsResiembra)
+                VALUES
+                    (@NuevoSiembraId, @FechaInicio, N'Siniestro', @Siniestro, @TipoResiembra,
+                     N'Registro automático de resiembra.', @Producto, 1);
+
+                UPDATE dbo.Siembras SET Estado = N'En curso' WHERE SiembraId = @NuevoSiembraId;
+            END;
+
+            UPDATE cc
+            SET Estado = N'En curso',
+                EtapaActual = N'Siembra'
+            FROM dbo.CampaniaCombinaciones AS cc
+            INNER JOIN dbo.Campanias AS c ON c.CampaniaId = cc.CampaniaId
+            WHERE @TipoRegistro <> N'Resiembra'
+              AND cc.LoteId = @LoteId
+              AND cc.Producto = @Producto
+              AND c.Nombre = @CampaniaNombre;
             COMMIT TRANSACTION;
+            SELECT @NuevoSiembraId;
             """;
 
         await using var command = new SqlCommand(insertSql, connection);
         command.Parameters.AddWithValue("@Nombre", nombre);
         AgregarParametrosSiembra(command, request.LoteId, request.CampaniaNombre, request.Producto, request.Empresa,
             request.TipoRegistro, request.SiembraOriginalId, request.TipoResiembra, request.Siniestro,
-            request.FechaInicio, request.FechaFin, request.VariedadSemilla, request.PMG, request.DensidadSiembra,
+            request.FechaInicio, request.FechaFin, request.VariedadSemilla, request.CicloCultivo, request.TipoImplantacion, request.PMG, request.DensidadSiembra,
             request.Profundidad, request.CantidadHectareasTrabajadas, request.UreaKgHa, request.CantidadSemillas, request.ResponsableACargo,
             request.FechaMuestreo, request.FechaAnalisis, request.CantidadMuestras, request.ProductoAntecesor,
             request.ObservacionesPreSiembra);
@@ -120,18 +164,19 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
                   AND LEFT(LTRIM(RTRIM(ISNULL(CampaniaNombre, N''))), 9) = LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)
             )
                 THROW 50001, N'Este lote ya tiene una siembra registrada en este periodo de campaña. Utiliza Registrar resiembra si corresponde.', 1;
-            IF @TipoRegistro = N'Resiembra' AND EXISTS (
-                SELECT 1 FROM dbo.Siembras WITH (UPDLOCK, HOLDLOCK)
+            IF @TipoRegistro = N'Resiembra' AND 4 <= (
+                SELECT COUNT(1) FROM dbo.Siembras WITH (UPDLOCK, HOLDLOCK)
                 WHERE LoteId = @LoteId AND TipoRegistro = N'Resiembra'
                   AND LEFT(LTRIM(RTRIM(ISNULL(CampaniaNombre, N''))), 9) = LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)
                   AND SiembraId <> @SiembraId
             )
-                THROW 50001, N'Este lote ya tiene una resiembra registrada en este periodo de campaña. Solo se permite una.', 1;
+                THROW 50001, N'Este lote ya alcanzó el máximo de 4 resiembras en este periodo de campaña.', 1;
             UPDATE dbo.Siembras
             SET LoteId = @LoteId, CampaniaNombre = @CampaniaNombre, Producto = @Producto, Empresa = @Empresa,
                 TipoRegistro = @TipoRegistro, SiembraOriginalId = @SiembraOriginalId,
                 TipoResiembra = @TipoResiembra, Siniestro = @Siniestro,
-                FechaInicio = @FechaInicio, FechaFin = @FechaFin, VariedadSemilla = @VariedadSemilla, PMG = @PMG,
+                FechaInicio = @FechaInicio, FechaFin = @FechaFin, VariedadSemilla = @VariedadSemilla,
+                CicloCultivo = @CicloCultivo, TipoImplantacion = @TipoImplantacion, PMG = @PMG,
                 DensidadSiembra = @DensidadSiembra, Profundidad = @Profundidad,
                 CantidadHectareasTrabajadas = @CantidadHectareasTrabajadas, UreaKgHa = @UreaKgHa, CantidadSemillas = @CantidadSemillas,
                 ResponsableACargo = @ResponsableACargo, FechaMuestreo = @FechaMuestreo, FechaAnalisis = @FechaAnalisis,
@@ -147,7 +192,7 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
         command.Parameters.AddWithValue("@SiembraId", siembraId);
         AgregarParametrosSiembra(command, request.LoteId, request.CampaniaNombre, request.Producto, request.Empresa,
             request.TipoRegistro, request.SiembraOriginalId, request.TipoResiembra, request.Siniestro,
-            request.FechaInicio, request.FechaFin, request.VariedadSemilla, request.PMG, request.DensidadSiembra,
+            request.FechaInicio, request.FechaFin, request.VariedadSemilla, request.CicloCultivo, request.TipoImplantacion, request.PMG, request.DensidadSiembra,
             request.Profundidad, request.CantidadHectareasTrabajadas, request.UreaKgHa, request.CantidadSemillas, request.ResponsableACargo,
             request.FechaMuestreo, request.FechaAnalisis, request.CantidadMuestras, request.ProductoAntecesor,
             request.ObservacionesPreSiembra);
@@ -190,7 +235,7 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
     public async Task<IReadOnlyList<SiembraInsumoDto>> ObtenerInsumosAsync(int siembraId)
     {
         const string sql = """
-            SELECT SiembraInsumoId, FechaAplicacion, Marca, Tipo, Variedad, CantidadAplicada, UnidadMedida
+            SELECT SiembraInsumoId, FechaAplicacion, MotivoAplicacion, Marca, Tipo, Variedad, CantidadAplicada, UnidadMedida
             FROM dbo.SiembraInsumos
             WHERE SiembraId = @SiembraId
             ORDER BY FechaAplicacion DESC, SiembraInsumoId DESC;
@@ -209,11 +254,12 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
             {
                 SiembraInsumoId = reader.GetInt32(0),
                 FechaAplicacion = reader.IsDBNull(1) ? null : DateOnly.FromDateTime(reader.GetDateTime(1)),
-                Marca = reader.IsDBNull(2) ? null : reader.GetString(2),
-                Tipo = reader.IsDBNull(3) ? null : reader.GetString(3),
-                Variedad = reader.IsDBNull(4) ? null : reader.GetString(4),
-                CantidadAplicada = reader.IsDBNull(5) ? null : reader.GetDecimal(5),
-                UnidadMedida = reader.IsDBNull(6) ? null : reader.GetString(6)
+                MotivoAplicacion = reader.IsDBNull(2) ? null : reader.GetString(2),
+                Marca = reader.IsDBNull(3) ? null : reader.GetString(3),
+                Tipo = reader.IsDBNull(4) ? null : reader.GetString(4),
+                Variedad = reader.IsDBNull(5) ? null : reader.GetString(5),
+                CantidadAplicada = reader.IsDBNull(6) ? null : reader.GetDecimal(6),
+                UnidadMedida = reader.IsDBNull(7) ? null : reader.GetString(7)
             });
         }
 
@@ -223,9 +269,9 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
     public async Task<SiembraInsumoDto> AgregarInsumoAsync(int siembraId, CrearSiembraInsumoRequest request)
     {
         const string sql = """
-            INSERT INTO dbo.SiembraInsumos (SiembraId, FechaAplicacion, Marca, Tipo, Variedad, CantidadAplicada, UnidadMedida)
+            INSERT INTO dbo.SiembraInsumos (SiembraId, FechaAplicacion, MotivoAplicacion, Marca, Tipo, Variedad, CantidadAplicada, UnidadMedida)
             OUTPUT INSERTED.SiembraInsumoId
-            VALUES (@SiembraId, @FechaAplicacion, @Marca, @Tipo, @Variedad, @CantidadAplicada, @UnidadMedida);
+            VALUES (@SiembraId, @FechaAplicacion, @MotivoAplicacion, @Marca, @Tipo, @Variedad, @CantidadAplicada, @UnidadMedida);
             """;
 
         await using var connection = new SqlConnection(_connectionString);
@@ -233,6 +279,7 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.AddWithValue("@SiembraId", siembraId);
         command.Parameters.AddWithValue("@FechaAplicacion", request.FechaAplicacion is null ? DBNull.Value : request.FechaAplicacion.Value.ToDateTime(TimeOnly.MinValue));
+        command.Parameters.AddWithValue("@MotivoAplicacion", string.IsNullOrWhiteSpace(request.MotivoAplicacion) ? DBNull.Value : request.MotivoAplicacion.Trim());
         command.Parameters.AddWithValue("@Marca", string.IsNullOrWhiteSpace(request.Marca) ? DBNull.Value : request.Marca.Trim());
         command.Parameters.AddWithValue("@Tipo", string.IsNullOrWhiteSpace(request.Tipo) ? DBNull.Value : request.Tipo.Trim());
         command.Parameters.AddWithValue("@Variedad", string.IsNullOrWhiteSpace(request.Variedad) ? DBNull.Value : request.Variedad.Trim());
@@ -246,6 +293,7 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
         {
             SiembraInsumoId = insumoId,
             FechaAplicacion = request.FechaAplicacion,
+            MotivoAplicacion = request.MotivoAplicacion?.Trim(),
             Marca = request.Marca?.Trim(),
             Tipo = request.Tipo?.Trim(),
             Variedad = request.Variedad?.Trim(),
@@ -374,7 +422,8 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
     private static void AgregarParametrosSiembra(
         SqlCommand command, int loteId, string? campaniaNombre, string producto, string? empresa,
         string tipoRegistro, int? siembraOriginalId, string? tipoResiembra, string? siniestro,
-        DateTime fechaInicio, DateTime fechaFin, string? variedadSemilla, decimal? pmg, decimal? densidadSiembra,
+        DateTime fechaInicio, DateTime fechaFin, string? variedadSemilla, string? cicloCultivo, string? tipoImplantacion,
+        decimal? pmg, decimal? densidadSiembra,
         decimal? profundidad, decimal? cantidadHectareasTrabajadas, decimal? ureaKgHa, decimal? cantidadSemillas, string? responsableACargo,
         DateTime? fechaMuestreo, DateTime? fechaAnalisis, int? cantidadMuestras, string? productoAntecesor,
         string? observacionesPreSiembra)
@@ -390,6 +439,8 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
         command.Parameters.AddWithValue("@FechaInicio", fechaInicio);
         command.Parameters.AddWithValue("@FechaFin", fechaFin);
         command.Parameters.AddWithValue("@VariedadSemilla", string.IsNullOrWhiteSpace(variedadSemilla) ? DBNull.Value : variedadSemilla.Trim().ToUpperInvariant());
+        command.Parameters.AddWithValue("@CicloCultivo", string.IsNullOrWhiteSpace(cicloCultivo) ? DBNull.Value : cicloCultivo.Trim());
+        command.Parameters.AddWithValue("@TipoImplantacion", string.IsNullOrWhiteSpace(tipoImplantacion) ? DBNull.Value : tipoImplantacion.Trim());
         command.Parameters.AddWithValue("@PMG", (object?)pmg ?? DBNull.Value);
         command.Parameters.AddWithValue("@DensidadSiembra", (object?)densidadSiembra ?? DBNull.Value);
         command.Parameters.AddWithValue("@Profundidad", (object?)profundidad ?? DBNull.Value);
@@ -439,7 +490,9 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
             ProductoAntecesor = reader.IsDBNull(28) ? null : reader.GetString(28),
             ObservacionesPreSiembra = reader.IsDBNull(29) ? null : reader.GetString(29),
             EstadoSiembra = reader.IsDBNull(30) ? "En curso" : reader.GetString(30),
-            Estado = reader.GetString(31)
+            Estado = reader.GetString(31),
+            CicloCultivo = reader.IsDBNull(32) ? null : reader.GetString(32),
+            TipoImplantacion = reader.IsDBNull(33) ? null : reader.GetString(33)
         };
     }
 }
