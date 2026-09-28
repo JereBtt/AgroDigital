@@ -2158,7 +2158,13 @@ function App() {
             onLoadTeamUsers={loadManagerTeamUsers}
           />
         ) : activeModule === 'silos' ? (
-          <Silos session={session} lotes={lotes} />
+          <Silos
+            session={session}
+            lotes={parentFilteredLotes}
+            parentFilters={parentFiltersForEmpresa}
+            selectedEmpresaId={selectedParentEmpresaId}
+            selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
+          />
         ) : activeModule === 'campanias' ? (
           <Campanias
             session={session}

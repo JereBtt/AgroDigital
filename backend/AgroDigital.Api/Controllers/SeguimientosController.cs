@@ -252,7 +252,7 @@ public class SeguimientosController(
         if (request.Latitud is null || request.Longitud is null)
             return "Debes marcar el punto del seguimiento en el mapa.";
 
-        if (!PuntoDentroDelPoligono(request.Latitud.Value, request.Longitud.Value, coordenadasLote))
+        if (!GeoUtils.PuntoDentroDelPoligono(request.Latitud.Value, request.Longitud.Value, coordenadasLote))
             return "El punto del seguimiento debe ubicarse dentro del polígono del lote.";
 
         var fecha = request.Fecha.Value.Date;
@@ -297,21 +297,4 @@ public class SeguimientosController(
             AplicacionAgroquimicos = request.AplicacionAgroquimicos,
             Observaciones = request.Observaciones
         }, fechaInicioSiembra, coordenadasLote);
-
-    private static bool PuntoDentroDelPoligono(decimal latitud, decimal longitud, IReadOnlyList<LoteCoordenadaDto> coordenadas)
-    {
-        var vertices = coordenadas.OrderBy(coordenada => coordenada.Orden).ToList();
-        if (vertices.Count < 3) return false;
-
-        var dentro = false;
-        for (int indice = 0, anterior = vertices.Count - 1; indice < vertices.Count; anterior = indice++)
-        {
-            var actual = vertices[indice];
-            var previo = vertices[anterior];
-            var intersecta = ((actual.Latitud > latitud) != (previo.Latitud > latitud))
-                && (longitud < ((previo.Longitud - actual.Longitud) * (latitud - actual.Latitud) / (previo.Latitud - actual.Latitud)) + actual.Longitud);
-            if (intersecta) dentro = !dentro;
-        }
-        return dentro;
-    }
 }

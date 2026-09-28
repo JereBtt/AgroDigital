@@ -161,6 +161,12 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
             const string updateSiloSql = """
                 UPDATE dbo.Silos
                 SET CantidadGranoAlmacenado = @StockResultante,
+                    -- Estado operativo segun el stock (script 21). Mantenimiento y baja los maneja el usuario.
+                    EstadoOperativo = CASE
+                        WHEN EstadoOperativo IN (N'En mantenimiento', N'Dado de baja') THEN EstadoOperativo
+                        WHEN @StockResultante > 0 THEN N'Con grano'
+                        ELSE N'Vacio'
+                    END,
                     FechaModificacion = SYSDATETIME()
                 WHERE SiloId = @SiloId;
                 """;
@@ -294,6 +300,12 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
             const string updateSiloSql = """
                 UPDATE dbo.Silos
                 SET CantidadGranoAlmacenado = @StockResultante,
+                    -- Estado operativo segun el stock (script 21). Mantenimiento y baja los maneja el usuario.
+                    EstadoOperativo = CASE
+                        WHEN EstadoOperativo IN (N'En mantenimiento', N'Dado de baja') THEN EstadoOperativo
+                        WHEN @StockResultante > 0 THEN N'Con grano'
+                        ELSE N'Vacio'
+                    END,
                     FechaModificacion = SYSDATETIME()
                 WHERE SiloId = @SiloId;
                 """;

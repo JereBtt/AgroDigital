@@ -8174,3 +8174,930 @@ textarea::placeholder {
 .catalogo-select-menu > button, .catalogo-select-menu > span { display: flex; width: 100%; align-items: center; gap: 8px; padding: 10px; border: 0; border-radius: 8px; color: #244332; background: transparent; text-align: left; font: inherit; }
 .catalogo-select-menu > button:hover { background: #edf8ef; }
 .catalogo-select-menu .catalogo-select-add { color: #177b37; font-weight: 800; }
+
+/* =========================================================================
+   Silos - tablero (rediseno, paso 1)
+   Mismos tokens que el resto de la app: verde #18883b, texto #071f13
+   y la escala de accesibilidad --text-scale.
+   ========================================================================= */
+
+.silo-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.silo-kpi {
+  padding: 18px 20px;
+  border: 1px solid #d6e5d8;
+  border-left: 5px solid #18883b;
+  border-radius: 18px;
+  background: #ffffff;
+}
+
+.silo-kpi small {
+  display: block;
+  color: #3b4f42;
+  font-weight: 900;
+  font-size: calc(14px * var(--text-scale, 1));
+}
+
+.silo-kpi strong {
+  display: block;
+  margin-top: 4px;
+  color: #071f13;
+  font-size: calc(26px * var(--text-scale, 1));
+  line-height: 1.1;
+  font-weight: 900;
+}
+
+.silo-kpi p {
+  margin: 6px 0 0;
+  color: #617168;
+  font-size: calc(13px * var(--text-scale, 1));
+  font-weight: 700;
+}
+
+.silo-kpi-alerta {
+  border-left-color: #d99a1e;
+}
+
+.silo-kpi-alerta strong {
+  color: #8a5a00;
+}
+
+.silo-alert-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 14px;
+  border: 1.5px solid #e6c48a;
+  border-radius: 12px;
+  background: #fff8ec;
+  color: #8a5a00;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.silo-alert-toggle.active {
+  border-color: #b25e09;
+  background: #fff0d6;
+  box-shadow: inset 0 0 0 1px #b25e09;
+}
+
+.silo-view-toggle {
+  display: inline-flex;
+  height: 44px;
+  border: 1px solid #d6e5d8;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.silo-view-toggle button {
+  width: 44px;
+  border: 0;
+  background: #ffffff;
+  color: #0a4327;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.silo-view-toggle button.active {
+  background: #0a4327;
+  color: #ffffff;
+}
+
+.silo-alert-toggle:focus-visible,
+.silo-view-toggle button:focus-visible {
+  outline: 3px solid #83c994;
+  outline-offset: 2px;
+}
+
+.silo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 16px;
+}
+
+.silo-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #d6e5d8;
+  border-radius: 18px;
+  background: #ffffff;
+}
+
+.silo-card-rojo {
+  border-color: #f0b5ad;
+  box-shadow: inset 4px 0 0 #c0392b;
+}
+
+.silo-card-ambar {
+  border-color: #f0d49f;
+  box-shadow: inset 4px 0 0 #d99a1e;
+}
+
+.silo-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.silo-card-header small {
+  color: #617168;
+  font-weight: 800;
+  font-size: calc(12px * var(--text-scale, 1));
+}
+
+.silo-card-header h2 {
+  margin: 2px 0 0;
+  color: #0a4327;
+  font-size: calc(18px * var(--text-scale, 1));
+}
+
+.silo-card-body {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.silo-card-body > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.silo-card-pct {
+  color: #071f13;
+  font-size: calc(26px * var(--text-scale, 1));
+  font-weight: 900;
+}
+
+.silo-card-kg {
+  color: #617168;
+  font-weight: 700;
+  font-size: calc(13px * var(--text-scale, 1));
+}
+
+.silo-card-grano {
+  color: #14311f;
+  font-weight: 800;
+  font-size: calc(14px * var(--text-scale, 1));
+}
+
+.silo-card-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid #e3ece5;
+  color: #617168;
+  font-weight: 700;
+  font-size: calc(13px * var(--text-scale, 1));
+}
+
+.silo-card-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.silo-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.silo-card-alerta {
+  color: #617168;
+  font-weight: 700;
+  font-size: calc(12.5px * var(--text-scale, 1));
+}
+
+.silo-card-alerta.tono-rojo { color: #b42318; font-weight: 800; }
+.silo-card-alerta.tono-ambar { color: #8a5a00; font-weight: 800; }
+
+.silo-chip {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: calc(12.5px * var(--text-scale, 1));
+  white-space: nowrap;
+}
+
+.silo-chip-verde { background: #e5f6e9; color: #18883b; }
+.silo-chip-ambar { background: #fff3d6; color: #8a5a00; }
+.silo-chip-rojo { background: #fdecea; color: #b42318; }
+.silo-chip-azul { background: #e8f0fb; color: #1f5fae; }
+.silo-chip-gris { background: #eef1ef; color: #55645b; }
+
+.silo-sub {
+  color: #617168;
+  font-weight: 600;
+  font-size: calc(12.5px * var(--text-scale, 1));
+}
+
+.filters-card.silo-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.silo-filters .search-field {
+  flex: 1 1 280px;
+}
+
+.silo-filters select {
+  flex: 0 1 180px;
+  width: auto;
+  min-width: 150px;
+}
+
+.silo-filters .silo-alert-toggle,
+.silo-filters .silo-view-toggle {
+  flex: 0 0 auto;
+  height: 48px;
+}
+
+.silo-filters .clear-button {
+  flex: 0 0 auto;
+}
+
+.silo-table-scroll {
+  overflow-x: auto;
+}
+
+.silo-table-scroll .silo-sub {
+  white-space: nowrap;
+}
+
+/* =========================================================================
+   Silos - registrar / editar en 4 pasos y detalle (rediseno, paso 2)
+   ========================================================================= */
+
+.silo-context {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  border: 1px solid #dceadf;
+  border-radius: 14px;
+  background: #f7fcf8;
+  color: #617168;
+  font-weight: 700;
+}
+
+.silo-context svg { color: #18883b; }
+.silo-context strong { color: #0a4327; }
+.silo-context small { margin-left: auto; }
+
+.silo-form-error {
+  color: #c0392b;
+  font-weight: 700;
+}
+
+.silo-hint {
+  display: block;
+  color: #617168;
+  font-weight: 600;
+  font-size: calc(13px * var(--text-scale, 1));
+}
+
+.silo-wizard-card {
+  padding: 22px;
+  margin-bottom: 18px;
+}
+
+.silo-wizard-card h2 {
+  margin: 0 0 14px;
+  color: #0a4327;
+  font-size: calc(18px * var(--text-scale, 1));
+}
+
+.silo-stepper {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex-wrap: wrap;
+}
+
+.silo-step {
+  flex: 1 1 180px;
+}
+
+.silo-step button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.silo-step button:disabled {
+  cursor: default;
+}
+
+.silo-step button:focus-visible {
+  outline: 3px solid #83c994;
+  outline-offset: 2px;
+}
+
+.silo-step-num {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1.5px solid #d4e6d7;
+  color: #617168;
+  font-weight: 800;
+  font-size: calc(13px * var(--text-scale, 1));
+}
+
+.silo-step-label {
+  color: #617168;
+  font-weight: 700;
+  font-size: calc(14px * var(--text-scale, 1));
+}
+
+.silo-step-hecho .silo-step-num { background: #18883b; border-color: #18883b; color: #ffffff; }
+.silo-step-hecho .silo-step-label { color: #18883b; }
+.silo-step-actual .silo-step-num { background: #0a4327; border-color: #0a4327; color: #ffffff; }
+.silo-step-actual .silo-step-label { color: #0a4327; font-weight: 900; }
+.silo-step-actual button { background: #eff9f0; }
+
+.silo-wizard-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+
+@media (min-width: 1100px) {
+  .silo-wizard-layout {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+}
+
+.silo-wizard-side {
+  align-self: start;
+}
+
+.silo-side-glyph {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.silo-side-glyph strong {
+  display: block;
+  color: #071f13;
+  font-size: calc(26px * var(--text-scale, 1));
+  font-weight: 900;
+}
+
+.silo-side-glyph span {
+  color: #617168;
+  font-weight: 700;
+  font-size: calc(13px * var(--text-scale, 1));
+}
+
+.silo-type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.silo-type-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #d6e5d8;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #617168;
+  text-align: left;
+  cursor: pointer;
+}
+
+.silo-type-option strong { display: block; color: #14311f; }
+.silo-type-option small { display: block; font-weight: 600; }
+
+.silo-type-option.selected {
+  border: 2px solid #18883b;
+  background: #eff9f0;
+  color: #18883b;
+}
+
+.silo-type-option:focus-visible {
+  outline: 3px solid #83c994;
+  outline-offset: 2px;
+}
+
+.silo-map-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  margin: 18px 0 10px;
+}
+
+.silo-map-heading strong { display: block; color: #14311f; }
+
+.silo-map {
+  height: 340px;
+  border: 1px solid #d6e5d8;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.silo-pin span {
+  display: block;
+  width: 22px;
+  height: 22px;
+  margin: 2px;
+  border-radius: 50% 50% 50% 0;
+  background: #18883b;
+  border: 3px solid #ffffff;
+  transform: rotate(-45deg);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.silo-kv {
+  margin: 0;
+}
+
+.silo-kv > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid #e8f0ea;
+}
+
+.silo-kv dt { color: #617168; font-weight: 700; }
+.silo-kv dd { margin: 0; color: #14311f; font-weight: 800; text-align: right; }
+
+.silo-wizard-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.silo-wizard-actions > div {
+  display: flex;
+  gap: 10px;
+}
+
+.silo-estado-acciones {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.silo-estado-acciones button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.silo-confirm {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #f0d49f;
+  border-radius: 12px;
+  background: #fff8ec;
+}
+
+.silo-confirm strong { color: #8a5a00; }
+.silo-confirm p { margin: 6px 0 12px; color: #3b4f42; font-weight: 600; }
+.silo-confirm div { display: flex; gap: 10px; }
+
+/* =========================================================================
+   Silos - ficha del silo (rediseno, paso 3)
+   ========================================================================= */
+
+.silo-ficha-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.silo-ficha-acciones {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.silo-ficha-acciones button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.silo-tabs {
+  display: inline-flex;
+  gap: 6px;
+  padding: 6px;
+  margin-bottom: 18px;
+  border: 1px solid #d6e5d8;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.silo-tabs button {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 18px;
+  background: transparent;
+  color: #0a4327;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.silo-tabs button.active {
+  background: #0a4327;
+  color: #ffffff;
+}
+
+.silo-tabs button:focus-visible {
+  outline: 3px solid #83c994;
+  outline-offset: 2px;
+}
+
+.silo-ficha-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+
+@media (min-width: 1100px) {
+  .silo-ficha-grid {
+    grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  }
+}
+
+.silo-ficha-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.silo-gauge {
+  display: block;
+  width: 200px;
+  max-width: 100%;
+  margin: 0 auto 10px;
+}
+
+.silo-gauge-pct {
+  fill: #0a4327;
+  font-size: 34px;
+  font-weight: 900;
+}
+
+.silo-gauge-sub {
+  fill: #617168;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.silo-mini-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: calc(14px * var(--text-scale, 1));
+}
+
+.silo-mini-table th {
+  text-align: left;
+  padding: 10px;
+  color: #ffffff;
+  background: #0a4327;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.silo-mini-table th:first-child { border-top-left-radius: 10px; }
+.silo-mini-table th:last-child { border-top-right-radius: 10px; }
+
+.silo-mini-table td {
+  padding: 10px;
+  border-bottom: 1px solid #e8f0ea;
+  color: #14311f;
+}
+
+.silo-mini-table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.silo-warning {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff3d6;
+  color: #8a5a00;
+  font-weight: 800;
+  font-size: calc(13px * var(--text-scale, 1));
+}
+
+.silo-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
+}
+
+.silo-chart {
+  margin: 0;
+}
+
+.silo-chart figcaption {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.silo-chart figcaption strong {
+  color: #0a4327;
+}
+
+.silo-chart-legend {
+  display: flex;
+  gap: 12px;
+  color: #617168;
+  font-weight: 700;
+  font-size: calc(12.5px * var(--text-scale, 1));
+}
+
+.silo-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.silo-chart-legend i {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.silo-chart-legend i.silo-chart-ref {
+  width: 16px;
+  height: 0;
+  border-radius: 0;
+  border-top: 2px dashed #c0392b;
+}
+
+.silo-chart svg {
+  width: 100%;
+  height: auto;
+  max-height: 260px;
+  display: block;
+}
+
+.silo-chart-axis {
+  fill: #617168;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* =========================================================================
+   Silos - control con alertas y parametros por grano (rediseno, paso 4)
+   ========================================================================= */
+
+.silo-heading-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.silo-heading-actions .back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-resultado {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1.5px solid #d6e5d8;
+  background: #f7fcf8;
+}
+
+.control-resultado-titulo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: calc(18px * var(--text-scale, 1));
+}
+
+.control-resultado ul {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  color: #14311f;
+  font-weight: 600;
+}
+
+.control-resultado li + li {
+  margin-top: 4px;
+}
+
+.control-resultado p {
+  margin: 10px 0 0;
+  color: #3b4f42;
+  font-weight: 600;
+}
+
+.control-resultado-vacio strong { color: #0a4327; }
+.control-resultado-vacio p { color: #617168; }
+
+.control-resultado-verde { border-color: #9fd3ae; background: #eff9f0; }
+.control-resultado-verde .control-resultado-titulo { color: #18883b; }
+.control-resultado-ambar { border-color: #e6b765; background: #fff8ec; }
+.control-resultado-ambar .control-resultado-titulo { color: #8a5a00; }
+.control-resultado-rojo { border-color: #e6a39b; background: #fdf1ef; }
+.control-resultado-rojo .control-resultado-titulo { color: #b42318; }
+
+.control-link {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #18883b;
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.silo-ok {
+  color: #18883b;
+  font-weight: 800;
+}
+
+.silo-param-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.silo-param-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.silo-row-activa td {
+  background: #eff9f0;
+}
+
+/* =========================================================================
+   Silos - ficha y control completos segun el mockup (rediseno, ajustes)
+   ========================================================================= */
+
+.silo-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.silo-card-title svg {
+  color: #18883b;
+  flex-shrink: 0;
+}
+
+.silo-lead {
+  margin: 0 0 12px;
+  color: #3b4f42;
+  font-weight: 600;
+  font-size: calc(14px * var(--text-scale, 1));
+}
+
+.silo-chart-point {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.silo-chart-point-hum { fill: #0a4327; }
+.silo-chart-point-temp { fill: #b25e09; }
+
+.silo-chart-ref-label {
+  fill: #c0392b;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.control-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 22px;
+}
+
+@media (min-width: 1100px) {
+  .control-layout {
+    grid-template-columns: minmax(0, 1fr) 360px;
+  }
+}
+
+.control-side {
+  align-self: start;
+  position: sticky;
+  top: 16px;
+}
+
+.control-side .control-resultado {
+  margin-top: 0;
+}
+
+.control-motivos {
+  list-style: none;
+  padding-left: 0 !important;
+}
+
+.control-motivos li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.control-motivos li svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.control-habilitadas {
+  font-size: calc(13px * var(--text-scale, 1));
+}
+
+.control-regla {
+  color: #18883b;
+  font-weight: 900;
+}
+
+.control-aviso {
+  color: #8a5a00;
+  font-weight: 800;
+  font-size: calc(12.5px * var(--text-scale, 1));
+}
+
+.control-aviso-error {
+  color: #b42318;
+  font-weight: 800;
+  font-size: calc(12.5px * var(--text-scale, 1));
+}
+
+.field input.input-alerta {
+  border-color: #d99a1e;
+  box-shadow: 0 0 0 1px #d99a1e;
+}
+
+.field input.input-error {
+  border-color: #c0392b;
+  box-shadow: 0 0 0 1px #c0392b;
+}
+
+.control-seccion-titulo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.control-sugerido {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #fff3d6;
+  color: #8a5a00;
+  font-size: calc(12.5px * var(--text-scale, 1));
+  font-weight: 800;
+}
+
+.control-seccion-destacada {
+  border-color: #e6b765 !important;
+  box-shadow: 0 0 0 2px rgba(217, 154, 30, 0.25);
+}

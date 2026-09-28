@@ -20,6 +20,7 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddScoped<ILoteRepository, LoteRepository>();
 builder.Services.AddScoped<ISiloRepository, SiloRepository>();
+builder.Services.AddScoped<IGranoParametroRepository, GranoParametroRepository>();
 builder.Services.AddScoped<ICampaniaRepository, CampaniaRepository>();
 builder.Services.AddScoped<IAlmacenamientoRepository, AlmacenamientoRepository>();
 builder.Services.AddScoped<ISiembraRepository, SiembraRepository>();
