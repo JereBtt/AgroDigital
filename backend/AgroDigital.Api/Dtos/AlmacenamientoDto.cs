@@ -4,6 +4,12 @@ public class AlmacenamientoDto
 {
     public int AlmacenamientoId { get; set; }
     public int SiloId { get; set; }
+    public int? EmpresaId { get; set; }
+    public string? SiloCodigo { get; set; }
+    public int? CosechaId { get; set; }
+    public int? CampaniaId { get; set; }
+    public decimal? HumedadIngreso { get; set; }
+    public decimal? Impurezas { get; set; }
     public string SiloNombre { get; set; } = string.Empty;
     public string? SiloProducto { get; set; }
     public DateOnly Fecha { get; set; }

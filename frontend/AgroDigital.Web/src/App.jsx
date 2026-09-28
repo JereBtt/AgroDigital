@@ -2203,7 +2203,12 @@ function App() {
             selectedCampaniaName={selectedParentCampania?.campaniaNombre || ''}
           />
         ) : activeModule === 'almacenamiento' ? (
-          <Almacenamiento session={session} />
+          <Almacenamiento
+            session={session}
+            parentFilters={parentFiltersForEmpresa}
+            selectedEmpresaId={selectedParentEmpresaId}
+            selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
+          />
         ) : view === 'list' ? (
           <LotesList
             lotes={parentFilteredLotes}

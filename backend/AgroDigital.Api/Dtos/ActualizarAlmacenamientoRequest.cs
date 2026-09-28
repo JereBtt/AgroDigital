@@ -9,4 +9,6 @@ public class ActualizarAlmacenamientoRequest
     public string? Campania { get; set; }
     public string? Cosecha { get; set; }
     public string? Producto { get; set; }
+    public decimal? HumedadIngreso { get; set; }
+    public decimal? Impurezas { get; set; }
 }

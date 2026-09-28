@@ -10,4 +10,9 @@ public class CrearAlmacenamientoRequest
     public string? Campania { get; set; }
     public string? Cosecha { get; set; }
     public string? Producto { get; set; }
+
+    // Ingreso vinculado a una cosecha real (lote, grano y campania salen de ahi).
+    public int? CosechaId { get; set; }
+    public decimal? HumedadIngreso { get; set; }
+    public decimal? Impurezas { get; set; }
 }
