@@ -8,4 +8,5 @@ public class ActualizarAlmacenamientoRequest
     public string? Observaciones { get; set; }
     public string? Campania { get; set; }
     public string? Cosecha { get; set; }
+    public string? Producto { get; set; }
 }

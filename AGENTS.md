@@ -97,7 +97,7 @@ No utilizar, modificar, actualizar, eliminar ni tomar `JERESERVER` como instanci
 
 ## Arquitectura actual del sistema
 
-Arquitectura pendiente de implementacion en el repositorio. La orientacion definida es:
+Arquitectura implementada parcialmente en el repositorio:
 
 - Backend en C# con ASP.NET / ASP.NET Core.
 - Frontend en React.
@@ -120,6 +120,9 @@ Estructura inicial definida:
 - `frontend/AgroDigital.Web/`: frontend inicial en React + Vite.
 - `database/`: scripts SQL, documentacion y recursos de base de datos.
 - `database/scripts/00_master_create_database.sql`: script madre de creacion completa de la base de datos.
+- `database/scripts/09_cosechas.sql`: script incremental del modulo Cosechas y documentos adjuntos.
+- `database/scripts/09_almacenamiento.sql` y `10_almacenamiento_campania_cosecha.sql`: estructura de Almacenamiento y referencias textuales. Comparten prefijos numericos con scripts de otros modulos; identificarlos por nombre completo y respetar sus dependencias.
+- `frontend/AgroDigital.Web/src/Almacenamiento.jsx`: consulta, registro y edicion de movimientos de almacenamiento.
 - `docs/`: documentacion tecnica y funcional versionada que corresponda.
 
 Actualizar esta seccion cuando se creen carpetas, proyectos, scripts o convenciones reales.
@@ -154,6 +157,31 @@ AgroBot esta disponible para los cuatro roles, pero sus respuestas deben respeta
 
 ## Reglas funcionales destacadas
 
+- En la consulta de Siembras, Desde/Hasta se ocultan inicialmente y el boton Mas filtros alterna su visibilidad. Ocultarlos conserva el rango aplicado; Limpiar restablece sus valores.
+
+- La tabla de consulta de Siembras muestra Hectareas (CantidadHectareasTrabajadas, en ha) en lugar de Cantidad de Semillas. La cantidad de semillas se conserva en el registro, detalle y persistencia.
+
+- La consulta de Siembras permite filtrar Fecha de inicio con Desde/Hasta inclusivos, combinados con los demas filtros. Cualquiera de los extremos puede dejarse vacio; Limpiar restablece ambos. La productividad promedio se calcula sobre los registros filtrados.
+
+- En resiembra, seleccionar Si en pulverizacion exige al menos un registro en la tabla de agroquimicos para continuar o guardar. Completar el formulario sin agregarlo a la tabla no satisface la condicion; seleccionar No permite continuar sin aplicaciones.
+
+- En Datos generales de resiembra se muestran dos campos: Cultivo afectado, informativo y de solo lectura obtenido de Producto de la siembra original; y Cultivo a resembrar, que conserva el campo tecnico Producto y las reglas de seleccion existentes (parcial conserva el original; total permite cambiarlo). En siembras originales el campo se presenta como Cultivo.
+
+- En Datos generales de Siembras, la seleccion del lote y la referencia a la siembra original se presentan antes de las fechas. La fecha de inicio de resiembra permanece deshabilitada hasta seleccionar un lote con fecha real de fin original disponible, para aplicar los limites correspondientes.
+
+- En resiembras, el paso 2 pregunta mediante radio buttons Si/No integrados como opciones con borde redondeado y seleccion verde si se pulverizo luego de la primera siembra. Por defecto No oculta el apartado de agroquimicos y permite continuar sin aplicaciones; Si lo muestra. Al editar, las aplicaciones existentes mantienen visible el apartado y el selector en Si; para elegir No primero se eliminan explicitamente las aplicaciones. El selector controla la carga opcional y no agrega un campo persistido; en siembras originales el apartado sigue visible.
+
+- Por ahora se permite una sola resiembra por lote y periodo de campaña, sea total o parcial e independientemente de su estado. Se excluyen lotes ya resembrados del selector y se bloquea el duplicado al guardar con HTTP 409 dentro de la transaccion SQL. Editar la resiembra existente excluye el propio registro de la comprobacion.
+
+- La resiembra inicia entre FechaFinReal de su siembra original y cuatro meses calendario despues, inclusive (ajustando al ultimo dia del mes si corresponde). Su fin tentativo no puede ser anterior al inicio ni posterior al 31 de diciembre del año final del periodo de campaña. Frontend y API validan estos limites al crear y editar.
+
+- La tabla principal de Siembras muestra Fecha de fin tomada de FechaFinReal; sin fecha real muestra un guion. La fecha tentativa se conserva en registro, edicion, detalle y modal de finalizacion.
+
+- Registrar resiembra solo permite lotes cuya siembra original tenga EstadoSiembra Finalizado y seguimiento en Estado Finalizado dentro de la misma campaña. La API valida ambos estados, lote y campaña tanto al crear como al editar. El nuevo seguimiento queda asociado al SiembraId de la resiembra; el historial de seguimiento original se conserva en su registro.
+- El boton de estado En curso de Siembras abre una ventana modal de finalizacion sobre la consulta. Solicita FechaFinReal y hectareas por hora promedio; conserva la justificacion por desvio mayor a 3 dias. FechaFin se carga al registrar como fecha tentativa, se presenta con ese nombre y no se reemplaza por FechaFinReal al finalizar.
+
+- Solo se permite una siembra original por lote y periodo de campaña, independientemente del grano o estado. Los lotes ya sembrados se excluyen del selector para nuevas siembras; editar excluye el propio registro de la comprobacion. Las resiembras mantienen su flujo asociado a una siembra original. La API rechaza duplicados con HTTP 409 y verifica dentro de una transaccion SQL con bloqueos UPDLOCK/HOLDLOCK para evitar altas simultaneas duplicadas. Mientras se conserve CampaniaNombre como texto, su prefijo de periodo YYYY-YYYY identifica el periodo.
+
 - Las cuentas nuevas quedan en estado pendiente de aprobacion hasta que un Gerente las apruebe y asigne rol.
 - El boton Aprobar usuario permanece deshabilitado hasta seleccionar un rol.
 - Los lotes no se eliminan una vez creados, por trazabilidad historica.
@@ -167,14 +195,25 @@ AgroBot esta disponible para los cuatro roles, pero sus respuestas deben respeta
 - El boton Finalizar actua sobre una combinacion Producto + Lote, no sobre toda la campania.
 - Cuando todas las combinaciones de una campania quedan finalizadas, el sistema finaliza automaticamente la campania.
 - En Siembras, el estado inicia como Pendiente, pasa a En curso con el primer seguimiento y a Finalizado al finalizar seguimiento.
-- En Cosechas, el estado inicia como Pendiente, pasa a En curso con el primer control de Tirada de Aros y a Finalizado al finalizar control.
+- Decision vigente de Cosechas: la Tirada de Aros es un control opcional y no gobierna el estado de la cosecha. Al registrar una cosecha queda directamente En curso con fecha de fin tentativa; al finalizar se carga fecha real de finalizacion, resultado de cosecha y, si la fecha real se aleja mas de 3 dias de la tentativa, una justificacion operativa.
+- Los controles de Tirada de Aros pueden registrarse mientras la cosecha esta En curso, durante la finalizacion, o luego de finalizada con una advertencia clara para el usuario.
 - Almacenamiento registra ingresos y egresos de grano en silos y recalcula stock automaticamente.
 - Se generan movimientos automaticos de almacenamiento al crear un silo con grano inicial y al distribuir grano desde un silo.
 - Distribucion puede salir directo desde una cosecha o desde un silo.
 - ReporterIA debe generar analisis y recomendaciones basadas en datos reales de la operacion, sin inventar informacion.
 - AgroBot no guarda historial entre sesiones segun el Manual de Usuario.
 
+- El formulario de registro y edicion de Siembras mantiene cuatro pasos en este orden: 1) Datos generales; 2) Pre-siembra y agroquimicos (muestreo, analisis de suelo, cantidad de muestras, grano antecesor, observaciones y multiples aplicaciones); 3) Detalle de siembra (datos tecnicos del cultivo, superficie, urea, semillas y responsable); 4) Documentacion y revision. Cada paso debe mostrar su contenido y ayuda correspondientes; avanzar desde el indicador de pasos debe respetar las validaciones de los pasos anteriores.
+
 ## Calculos funcionales definidos
+
+- Los campos numericos de Detalle de siembra (PMG, densidad, profundidad, hectareas cultivables, urea y cantidad de semillas) bloquean negativos en el formulario y la API los rechaza.
+- El historial de cultivos del lote incorpora cultivos operativos solo cuando su cosecha esta Finalizada; crear una campaña o iniciar una siembra/cosecha no los agrega. Se consulta desde Cosechas, agrupado por campaña y cultivo, con fechas de cosecha y orden por finalizacion real descendente. Se conserva el cultivo anterior inicial cargado al registrar el lote como antecedente historico. Cultivo antecesor de Siembras usa este historial, excluyendo cultivos pendientes o en curso.
+
+- En pre-siembra, Cantidad de Muestras admite enteros no negativos y Cantidad Aplicada de agroquimicos debe ser mayor a cero. El formulario bloquea cantidades negativas y la API valida antes de persistir.
+- En registro y edicion de Siembras, Cultivo antecesor es de solo lectura y se obtiene del registro mas reciente de HistorialCultivos del lote seleccionado (el historial se entrega del mas reciente al mas antiguo). Si no hay historial se muestra Sin historial y se guarda null. La API obtiene el dato del lote, sin confiar en un valor editable enviado por el cliente; se conserva el nombre tecnico ProductoAntecesor.
+
+- En registro y edicion de Siembras, la fecha de muestreo debe estar entre el 1 de enero del primer año del periodo de campaña y la fecha de inicio de siembra, inclusive. La fecha de analisis no puede ser anterior al muestreo ni posterior al inicio de siembra. Estos limites se validan tanto en frontend como en API.
 
 - Rinde de cosecha: `Rinde (kg/ha) = Cantidad de grano cosechado / Hectareas trabajadas`.
 - Perdida de cabezal en Tirada de Aros: `((Granos del Aro Cabezal / 0.25) * PMG) / 100`.
@@ -204,6 +243,16 @@ La tesis describe el flujo operativo de campania:
 
 ## Convenciones de trabajo con Codex
 
+- En la tabla de Lotes, la celda de acciones conserva display table-cell y el contenedor interno actions-cell-content dispone los botones en una fila flex sin saltos, centrada verticalmente. No aplicar flex directamente a esa celda ni dejar el contenedor interno sin estilos al integrar cambios.
+
+- La revision final de Siembras usa tarjetas amplias en dos columnas en escritorio y una en pantallas chicas, con texto de datos de 16px como base, titulos de 19px y espaciado generoso; respeta el ajuste de texto de accesibilidad.
+
+- Los campos de texto editables del frontend aplican por defecto una mayuscula inicial mediante `onChangeCapture` en `App.jsx`. No se aplica a correos, contrasenias, fechas, numeros, buscadores ni identificadores/codigos con formato propio. Las excepciones se declaran con `data-text-case`: `preserve` conserva el valor y `upper` convierte todo a mayusculas. Variedad de Semilla usa `upper` y la API tambien la persiste en mayusculas.
+
+- El formulario de registro y edicion de Siembras muestra debajo de cada campo una ayuda breve identificada como `Regla`, basada en las validaciones vigentes del frontend y la API. Los textos se centralizan en `SIEMBRA_FIELD_RULES` dentro de `Siembras.jsx` y deben actualizarse junto con cualquier cambio de obligatoriedad, rango, dependencia, calculo o condicion funcional; los errores dinamicos se mantienen separados y en rojo.
+
+- Accesibilidad cambia exclusivamente el tamaño de las fuentes (Chico 100%, Medio 112%, Grande 124%) mediante font-size. No aplicar zoom ni transform de escala al body o contenedores; imagenes, iconos, sidebar y anchos de la estructura mantienen sus dimensiones. El texto puede ocupar mas lineas y aumentar naturalmente la altura del contenido.
+
 - Antes de cambios relevantes, revisar contexto existente, `AGENTS.md` y documentos relacionados con la tarea.
 - Mantener coherencia con la arquitectura y tecnologias definidas.
 - Priorizar soluciones simples, mantenibles y justificables para una tesis academica.
@@ -221,6 +270,11 @@ La tesis describe el flujo operativo de campania:
 
 ## Decisiones tecnicas vigentes
 
+- Almacenamiento esta integrado al menu y a la API; genera el ingreso inicial de grano al crear un silo. El script madre incluye su estructura y las bases existentes se actualizan con los dos incrementales de almacenamiento, sin ejecutar scripts de reasignacion de empresas.
+- Pendiente de integracion estructural: Almacenamiento conserva Campania/Cosecha como texto libre y no posee EmpresaId ni aislamiento por empresa. Esto no reemplaza la regla objetivo de EmpresaId en tablas operativas; requiere una migracion especifica antes de considerarlo integrado al flujo multiempresa de Campanias/Cosechas.
+- Almacenamiento agrega Producto como texto libre y opcional en el movimiento (mismo criterio que Campania/Cosecha, columna NULL agregada via `11_almacenamiento_producto.sql`). Es independiente del campo `Producto` ya existente en `dbo.Silos`, porque un mismo silo puede recibir mas de un producto a lo largo del tiempo y el movimiento debe poder dejar registrado cual corresponde a ese ingreso o egreso puntual. La tabla de consulta muestra el Producto del movimiento y, si no fue cargado, cae al Producto registrado en el Silo. Cuando exista un catalogo formal de Productos, la migracion natural es agregar ProductoId (INT NULL + FK) y evaluar la baja de esta columna de texto.
+- Lotes permite exportar los registros seleccionados a PDF y confirmar la habilitacion/deshabilitacion mediante modal. Se conservan los filtros y campos de cultivo locales.
+
 - SQL Server objetivo: SQL Server 2019 Developer Edition configurado localmente por cada integrante.
 - No usar `JERESERVER` para AgroDigital salvo indicacion expresa.
 - Stack base: C# / ASP.NET Core Web API, React, SQL Server 2019.
@@ -231,16 +285,16 @@ La tesis describe el flujo operativo de campania:
 - La API inicial expone endpoints `GET /api/lotes`, `GET /api/lotes/{loteId}`, `POST /api/lotes` y `PUT /api/lotes/{loteId}`.
 - La API expone `POST /api/auth/login` para validar credenciales contra `dbo.Usuarios` en SQL Server. El admin inicial se seedeea desde el script madre con usuario fijo y contrasenia guardada como hash PBKDF2-SHA256 con salt, nunca en texto plano ni hardcodeada en el frontend.
 - La firma local de tokens de autenticacion debe configurarse fuera del repositorio con `dotnet user-secrets` usando la clave `Auth:SigningKey`. En produccion debe configurarse mediante variable de entorno o gestor de secretos equivalente.
-- La tabla `dbo.Usuarios` es la tabla unica para identidades del sistema: Admin, Gerente, Encargado, EmpleadoCampo y EmpleadoAdministrativo. Los permisos finos por empresa/equipo se resolveran con tablas relacionales asociadas.
+- La tabla `dbo.Usuarios` es la tabla unica para identidades del sistema: Admin, Gerente, Encargado, EmpleadoCampo y EmpleadoAdministrativo. Los permisos finos por empresa se resolveran con tablas relacionales asociadas.
 - Los datos personales ampliados del usuario deben modelarse en una tabla relacionada separada de `dbo.Usuarios`, para no mezclar identidad/login con perfil personal y datos de contacto.
 - El frontend inicial muestra una pantalla de login y un panel interno de administracion para AgroDigital. El panel admin solo solicita el nombre del responsable inicial y crea una cuenta gerente inicial persistida en SQL Server. La contrasenia temporal se muestra una unica vez al crearla o regenerarla; en base solo se almacena su hash en `dbo.Usuarios.PasswordHash`. La trazabilidad del acceso inicial queda en `dbo.AccesosGerenteIniciales`.
 - El panel admin permite editar el responsable inicial y habilitar/deshabilitar accesos gerente mediante baja logica. Si el acceso esta en `Pendiente de primer ingreso`, editar el responsable tambien regenera el usuario inicial. No se implementa eliminacion fisica de estos registros para conservar trazabilidad y permitir reactivacion.
 - Cuando un gerente ingresa por primera vez con credenciales temporales, el frontend muestra una pantalla de completar registro antes del dashboard. Al finalizar, el mismo registro de `dbo.Usuarios` se actualiza con nombre, apellido, telefono, correo, nueva contrasenia hasheada y `DebeCambiarPassword = 0`; desde ese momento el gerente ingresa con correo electronico y contrasenia definitiva.
-- El primer registro del gerente crea un `GrupoGestion` padre y una o varias `Empresas` iniciales. La relacion usuario-empresa queda en `UsuarioEmpresas`, preparada para roles discriminados por empresa/equipo.
-- El ID de grupo de gestion no lo genera el panel admin. Se genera cuando el gerente completa su primer registro y crea su grupo de gestion, momento en el que tambien debe poder cargar todos los equipos/empresas que quiera.
+- El primer registro del gerente crea un `GrupoGestion` padre y una o varias `Empresas` iniciales. La relacion usuario-empresa queda en `UsuarioEmpresas`, preparada para roles discriminados por empresa.
+- El ID de grupo de gestion no lo genera el panel admin. Se genera cuando el gerente completa su primer registro y crea su grupo de gestion, momento en el que tambien debe poder cargar todas las empresas que quiera.
 - El flujo de gestion de usuarios queda orientado a `GrupoGestion` como nivel padre del gerente, empresas asociadas al grupo, usuarios que pueden pertenecer a varias empresas y roles discriminados por empresa. Las invitaciones/OTP deben ser de un solo uso, vencer a los 7 dias y conservar historial de solicitudes descartadas/rechazadas.
 - Las empresas no deben eliminarse fisicamente; si un gerente pierde acceso o deja de operar una empresa, debe deshabilitarse para conservar trazabilidad.
-- Toda tabla operativa debe incluir `EmpresaId` para separar correctamente la informacion entre empresas/equipos.
+- Toda tabla operativa debe incluir `EmpresaId` para separar correctamente la informacion entre empresas.
 - No se implementa eliminacion fisica de lotes porque el Manual de Usuario indica que forman parte de la trazabilidad historica.
 - El frontend inicial de Lotes consume `http://localhost:5135/api/lotes` y se sirve localmente en `http://127.0.0.1:5173/`.
 - CORS de la API permite `http://localhost:5173`, `http://127.0.0.1:5173` y `http://localhost:3000` para desarrollo local.
@@ -286,4 +340,5 @@ La tesis describe el flujo operativo de campania:
 - La busqueda interna de dropdowns debe ignorar acentos/diacriticos para mejorar usabilidad: por ejemplo, `Cordoba` debe encontrar `Córdoba`.
 - Las localidades del campo `Zona` se cargan dinamicamente desde la API oficial Georef Argentina (`https://apis.datos.gob.ar/georef/api/localidades`) filtrando por provincia. Se conserva un fallback local reducido solo para que el formulario siga funcionando si Georef no responde.
 - El flujo de empleados permite registrarse desde `Unirse a grupo` usando ID de grupo de gestion + OTP valida. La solicitud queda pendiente para el gerente; al aprobarla, el gerente puede dar acceso a todas sus empresas con un rol general o a empresas puntuales con roles discriminados por empresa.
+- El modulo Cosechas queda implementado inicialmente con consulta, registro, edicion, detalle y documentacion. Mientras Campanias no exista como tabla, conserva `CampaniaNombre` como texto opcional y permite asociar una `SiembraId` existente para arrastrar lote, producto, empresa y hectareas trabajadas.
 

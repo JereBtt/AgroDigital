@@ -13,7 +13,7 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
         SELECT
             a.AlmacenamientoId, a.SiloId, s.Nombre AS SiloNombre, s.Producto AS SiloProducto,
             a.Fecha, a.TipoMovimiento, a.Cantidad, a.StockAnterior, a.StockResultante,
-            a.Origen, a.Observaciones, a.Campania, a.Cosecha, u.Nombre + ' ' + u.Apellido AS CreadoPorNombre,
+            a.Origen, a.Observaciones, a.Campania, a.Cosecha, a.Producto, u.Nombre + ' ' + u.Apellido AS CreadoPorNombre,
             a.FechaCreacion, a.FechaModificacion
         FROM dbo.Almacenamientos AS a
         INNER JOIN dbo.Silos AS s ON s.SiloId = a.SiloId
@@ -74,17 +74,17 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
     {
         return await InsertarMovimientoAsync(
             request.SiloId, request.TipoMovimiento, request.Cantidad,
-            origen: "Manual", request.Observaciones, request.Campania, request.Cosecha, usuarioId);
+            origen: "Manual", request.Observaciones, request.Campania, request.Cosecha, request.Producto, usuarioId);
     }
 
     public async Task<AlmacenamientoDto> RegistrarMovimientoAutomaticoAsync(
         int siloId, string tipoMovimiento, decimal cantidad, string origen, string? observaciones, int? usuarioId)
     {
-        return await InsertarMovimientoAsync(siloId, tipoMovimiento, cantidad, origen, observaciones, campania: null, cosecha: null, usuarioId);
+        return await InsertarMovimientoAsync(siloId, tipoMovimiento, cantidad, origen, observaciones, campania: null, cosecha: null, producto: null, usuarioId);
     }
 
     private async Task<AlmacenamientoDto> InsertarMovimientoAsync(
-        int siloId, string tipoMovimiento, decimal cantidad, string origen, string? observaciones, string? campania, string? cosecha, int? usuarioId)
+        int siloId, string tipoMovimiento, decimal cantidad, string origen, string? observaciones, string? campania, string? cosecha, string? producto, int? usuarioId)
     {
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -132,10 +132,10 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
 
             const string insertSql = """
                 INSERT INTO dbo.Almacenamientos
-                    (SiloId, Fecha, TipoMovimiento, Cantidad, StockAnterior, StockResultante, Origen, Observaciones, Campania, Cosecha, CreadoPorUsuarioId)
+                    (SiloId, Fecha, TipoMovimiento, Cantidad, StockAnterior, StockResultante, Origen, Observaciones, Campania, Cosecha, Producto, CreadoPorUsuarioId)
                 OUTPUT INSERTED.AlmacenamientoId
                 VALUES
-                    (@SiloId, @Fecha, @TipoMovimiento, @Cantidad, @StockAnterior, @StockResultante, @Origen, @Observaciones, @Campania, @Cosecha, @CreadoPorUsuarioId);
+                    (@SiloId, @Fecha, @TipoMovimiento, @Cantidad, @StockAnterior, @StockResultante, @Origen, @Observaciones, @Campania, @Cosecha, @Producto, @CreadoPorUsuarioId);
                 """;
 
             int almacenamientoId;
@@ -151,6 +151,7 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
                 insertCommand.Parameters.AddWithValue("@Observaciones", string.IsNullOrWhiteSpace(observaciones) ? DBNull.Value : observaciones.Trim());
                 insertCommand.Parameters.AddWithValue("@Campania", string.IsNullOrWhiteSpace(campania) ? DBNull.Value : campania.Trim());
                 insertCommand.Parameters.AddWithValue("@Cosecha", string.IsNullOrWhiteSpace(cosecha) ? DBNull.Value : cosecha.Trim());
+                insertCommand.Parameters.AddWithValue("@Producto", string.IsNullOrWhiteSpace(producto) ? DBNull.Value : producto.Trim());
                 insertCommand.Parameters.AddWithValue("@CreadoPorUsuarioId", (object?)usuarioId ?? DBNull.Value);
 
                 almacenamientoId = (int)(await insertCommand.ExecuteScalarAsync()
@@ -270,6 +271,7 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
                     Observaciones = @Observaciones,
                     Campania = @Campania,
                     Cosecha = @Cosecha,
+                    Producto = @Producto,
                     FechaModificacion = SYSDATETIME()
                 WHERE AlmacenamientoId = @AlmacenamientoId;
                 """;
@@ -284,6 +286,7 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
                 updateCommand.Parameters.AddWithValue("@Observaciones", string.IsNullOrWhiteSpace(request.Observaciones) ? DBNull.Value : request.Observaciones.Trim());
                 updateCommand.Parameters.AddWithValue("@Campania", string.IsNullOrWhiteSpace(request.Campania) ? DBNull.Value : request.Campania.Trim());
                 updateCommand.Parameters.AddWithValue("@Cosecha", string.IsNullOrWhiteSpace(request.Cosecha) ? DBNull.Value : request.Cosecha.Trim());
+                updateCommand.Parameters.AddWithValue("@Producto", string.IsNullOrWhiteSpace(request.Producto) ? DBNull.Value : request.Producto.Trim());
                 updateCommand.Parameters.AddWithValue("@AlmacenamientoId", almacenamientoId);
                 filasAfectadas = await updateCommand.ExecuteNonQueryAsync();
             }
@@ -327,8 +330,9 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
         Observaciones = reader.IsDBNull(10) ? null : reader.GetString(10),
         Campania = reader.IsDBNull(11) ? null : reader.GetString(11),
         Cosecha = reader.IsDBNull(12) ? null : reader.GetString(12),
-        CreadoPorNombre = reader.IsDBNull(13) ? null : reader.GetString(13),
-        FechaCreacion = reader.GetDateTime(14),
-        FechaModificacion = reader.IsDBNull(15) ? null : reader.GetDateTime(15),
+        Producto = reader.IsDBNull(13) ? null : reader.GetString(13),
+        CreadoPorNombre = reader.IsDBNull(14) ? null : reader.GetString(14),
+        FechaCreacion = reader.GetDateTime(15),
+        FechaModificacion = reader.IsDBNull(16) ? null : reader.GetDateTime(16),
     };
 }
