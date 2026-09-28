@@ -13,6 +13,7 @@ public class AlmacenamientoMovimiento
     public string? Observaciones { get; set; }
     public string? Campania { get; set; }
     public string? Cosecha { get; set; }
+    public string? Producto { get; set; }
     public int? CreadoPorUsuarioId { get; set; }
     public DateTime FechaCreacion { get; set; }
     public DateTime? FechaModificacion { get; set; }

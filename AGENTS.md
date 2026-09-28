@@ -166,6 +166,7 @@ AgroBot esta disponible para los cuatro roles, pero sus respuestas deben respeta
 - En resiembra, seleccionar Si en pulverizacion exige al menos un registro en la tabla de agroquimicos para continuar o guardar. Completar el formulario sin agregarlo a la tabla no satisface la condicion; seleccionar No permite continuar sin aplicaciones.
 
 - En Datos generales de siembra y resiembra se muestra Cultivo anterior, informativo y de solo lectura, obtenido del último cultivo cosechado en una campaña previa del lote. En resiembra, Cultivo a resembrar conserva el campo técnico Producto y las reglas de selección existentes (parcial conserva el original; total permite cambiarlo). En siembras originales el campo se presenta como Cultivo.
+- En Datos generales de resiembra se muestran dos campos: Cultivo afectado, informativo y de solo lectura obtenido de Producto de la siembra original; y Cultivo a resembrar, que conserva el campo tecnico Producto y las reglas de seleccion existentes (parcial conserva el original; total permite cambiarlo). En siembras originales el campo se presenta como Cultivo.
 
 - En Datos generales de Siembras, la seleccion del lote y la referencia a la siembra original se presentan antes de las fechas. La fecha de inicio de resiembra permanece deshabilitada hasta seleccionar un lote con fecha real de fin original disponible, para aplicar los limites correspondientes.
 
@@ -181,6 +182,16 @@ AgroBot esta disponible para los cuatro roles, pero sus respuestas deben respeta
 - El boton de estado En curso de Siembras abre una ventana modal de finalizacion sobre la consulta. Solicita FechaFinReal y hectareas por hora promedio; conserva la justificacion por desvio mayor a 3 dias. FechaFin se carga al registrar como fecha tentativa, se presenta con ese nombre y no se reemplaza por FechaFinReal al finalizar.
 
 - Solo se permite una siembra original por lote y periodo de campaña, independientemente del grano o estado. Los lotes ya sembrados se excluyen del selector para nuevas siembras; editar excluye el propio registro de la comprobacion. Las resiembras se encadenan al último registro finalizado del lote. La API rechaza duplicados con HTTP 409 y verifica dentro de una transaccion SQL con bloqueos UPDLOCK/HOLDLOCK para evitar altas simultaneas duplicadas. Mientras se conserve CampaniaNombre como texto, su prefijo de periodo YYYY-YYYY identifica el periodo.
+- Por ahora se permite una sola resiembra por lote y periodo de campaña, sea total o parcial e independientemente de su estado. Se excluyen lotes ya resembrados del selector y se bloquea el duplicado al guardar con HTTP 409 dentro de la transaccion SQL. Editar la resiembra existente excluye el propio registro de la comprobacion.
+
+- La resiembra inicia entre FechaFinReal de su siembra original y cuatro meses calendario despues, inclusive (ajustando al ultimo dia del mes si corresponde). Su fin tentativo no puede ser anterior al inicio ni posterior al 31 de diciembre del año final del periodo de campaña. Frontend y API validan estos limites al crear y editar.
+
+- La tabla principal de Siembras muestra Fecha de fin tomada de FechaFinReal; sin fecha real muestra un guion. La fecha tentativa se conserva en registro, edicion, detalle y modal de finalizacion.
+
+- Registrar resiembra solo permite lotes cuya siembra original tenga EstadoSiembra Finalizado y seguimiento en Estado Finalizado dentro de la misma campaña. La API valida ambos estados, lote y campaña tanto al crear como al editar. El nuevo seguimiento queda asociado al SiembraId de la resiembra; el historial de seguimiento original se conserva en su registro.
+- El boton de estado En curso de Siembras abre una ventana modal de finalizacion sobre la consulta. Solicita FechaFinReal y hectareas por hora promedio; conserva la justificacion por desvio mayor a 3 dias. FechaFin se carga al registrar como fecha tentativa, se presenta con ese nombre y no se reemplaza por FechaFinReal al finalizar.
+
+- Solo se permite una siembra original por lote y periodo de campaña, independientemente del grano o estado. Los lotes ya sembrados se excluyen del selector para nuevas siembras; editar excluye el propio registro de la comprobacion. Las resiembras mantienen su flujo asociado a una siembra original. La API rechaza duplicados con HTTP 409 y verifica dentro de una transaccion SQL con bloqueos UPDLOCK/HOLDLOCK para evitar altas simultaneas duplicadas. Mientras se conserve CampaniaNombre como texto, su prefijo de periodo YYYY-YYYY identifica el periodo.
 
 - Las cuentas nuevas quedan en estado pendiente de aprobacion hasta que un Gerente las apruebe y asigne rol.
 - El boton Aprobar usuario permanece deshabilitado hasta seleccionar un rol.
@@ -288,6 +299,7 @@ La tesis describe el flujo operativo de campania:
 
 - Almacenamiento esta integrado al menu y a la API; genera el ingreso inicial de grano al crear un silo. El script madre incluye su estructura y las bases existentes se actualizan con los dos incrementales de almacenamiento, sin ejecutar scripts de reasignacion de empresas.
 - Pendiente de integracion estructural: Almacenamiento conserva Campania/Cosecha como texto libre y no posee EmpresaId ni aislamiento por empresa. Esto no reemplaza la regla objetivo de EmpresaId en tablas operativas; requiere una migracion especifica antes de considerarlo integrado al flujo multiempresa de Campanias/Cosechas.
+- Almacenamiento agrega Producto como texto libre y opcional en el movimiento (mismo criterio que Campania/Cosecha, columna NULL agregada via `11_almacenamiento_producto.sql`). Es independiente del campo `Producto` ya existente en `dbo.Silos`, porque un mismo silo puede recibir mas de un producto a lo largo del tiempo y el movimiento debe poder dejar registrado cual corresponde a ese ingreso o egreso puntual. La tabla de consulta muestra el Producto del movimiento y, si no fue cargado, cae al Producto registrado en el Silo. Cuando exista un catalogo formal de Productos, la migracion natural es agregar ProductoId (INT NULL + FK) y evaluar la baja de esta columna de texto.
 - Lotes permite exportar los registros seleccionados a PDF y confirmar la habilitacion/deshabilitacion mediante modal. Se conservan los filtros y campos de cultivo locales.
 
 - SQL Server objetivo: SQL Server 2019 Developer Edition configurado localmente por cada integrante.

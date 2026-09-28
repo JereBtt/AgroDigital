@@ -24,6 +24,7 @@ function emptyMovimientoForm() {
     fecha: todayIso(),
     tipoMovimiento: 'Ingreso',
     cantidad: '',
+    producto: '',
     campania: '',
     cosecha: '',
     observaciones: ''
@@ -116,6 +117,7 @@ export default function Almacenamiento({ session }) {
       fecha: movimiento.fecha ? movimiento.fecha.slice(0, 10) : todayIso(),
       tipoMovimiento: movimiento.tipoMovimiento,
       cantidad: movimiento.cantidad,
+      producto: movimiento.producto ?? '',
       campania: movimiento.campania ?? '',
       cosecha: movimiento.cosecha ?? '',
       observaciones: movimiento.observaciones ?? ''
@@ -165,6 +167,7 @@ export default function Almacenamiento({ session }) {
           fecha: form.fecha,
           tipoMovimiento: form.tipoMovimiento,
           cantidad: Number(form.cantidad),
+          producto: form.producto || null,
           campania: form.campania || null,
           cosecha: form.cosecha || null,
           observaciones: form.observaciones || null
@@ -191,6 +194,7 @@ export default function Almacenamiento({ session }) {
           fecha: form.fecha,
           tipoMovimiento: form.tipoMovimiento,
           cantidad: Number(form.cantidad),
+          producto: form.producto || null,
           campania: form.campania || null,
           cosecha: form.cosecha || null,
           observaciones: form.observaciones || null
@@ -260,6 +264,7 @@ function MovimientosList({ movimientos, loading, error, editableIds, onAdd, onVi
     const camposBusqueda = [
       movimiento.siloNombre,
       movimiento.siloProducto,
+      movimiento.producto,
       movimiento.tipoMovimiento,
       movimiento.origen,
       movimiento.observaciones,
@@ -369,7 +374,7 @@ function MovimientosList({ movimientos, loading, error, editableIds, onAdd, onVi
                   </td>
                   <td>{Number(movimiento.cantidad).toLocaleString('es-AR')} kg</td>
                   <td>{Number(movimiento.stockResultante).toLocaleString('es-AR')} kg</td>
-                  <td>{movimiento.siloProducto || '-'}</td>
+                  <td>{movimiento.producto || movimiento.siloProducto || '-'}</td>
                   <td>{movimiento.campania || '-'}</td>
                   <td>{movimiento.cosecha || '-'}</td>
                   <td className="actions-cell">
@@ -453,6 +458,10 @@ function MovimientoForm({
         <label className="field">
           Cant. grano a {form.tipoMovimiento === 'Egreso' ? 'retirar' : 'almacenar'} <b>*</b>
           <input type="number" min="0" value={form.cantidad} readOnly={readOnly} onChange={(e) => onFieldChange('cantidad', e.target.value)} />
+        </label>
+        <label className="field">
+          Producto
+          <input value={form.producto} readOnly={readOnly} onChange={(e) => onFieldChange('producto', e.target.value)} placeholder="Opcional" />
         </label>
         <label className="field">
           Campaña
