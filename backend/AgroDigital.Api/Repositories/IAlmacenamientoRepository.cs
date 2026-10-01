@@ -31,6 +31,18 @@ public interface IAlmacenamientoRepository
     /// se da de alta un Silo con stock inicial, "Distribucion" el dia que
     /// exista ese modulo y despache grano tomando un Silo como origen.
     /// </summary>
+    /// <summary>ALM-08: ajuste de stock. Solo Encargado (UnauthorizedAccessException si no lo es).</summary>
+    Task<AlmacenamientoDto> RegistrarAjusteAsync(RegistrarAjusteRequest request, int usuarioId, bool incluirTodos);
+
+    /// <summary>ALM-06: transferencia entre silos. Las partidas conservan fecha de ingreso y cosecha.</summary>
+    Task<TransferenciaResultadoDto> RegistrarTransferenciaAsync(RegistrarTransferenciaRequest request, int usuarioId, bool incluirTodos);
+
+    // Documentos del movimiento (tickets de balanza, comprobantes).
+    Task<IReadOnlyList<AlmacenamientoDocumentoDto>> ObtenerDocumentosAsync(int almacenamientoId);
+    Task<AlmacenamientoDocumentoDto> AgregarDocumentoAsync(int almacenamientoId, string nombreArchivo, string rutaArchivo, int? usuarioId);
+    Task<string?> ObtenerRutaDocumentoAsync(int almacenamientoId, int documentoId);
+    Task<bool> EliminarDocumentoAsync(int almacenamientoId, int documentoId);
+
     Task<AlmacenamientoDto> RegistrarMovimientoAutomaticoAsync(
         int siloId, string tipoMovimiento, decimal cantidad, string origen, string? observaciones, int? usuarioId);
 

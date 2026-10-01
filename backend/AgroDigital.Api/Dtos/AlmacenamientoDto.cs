@@ -10,6 +10,12 @@ public class AlmacenamientoDto
     public int? CampaniaId { get; set; }
     public decimal? HumedadIngreso { get; set; }
     public decimal? Impurezas { get; set; }
+
+    /// <summary>Motivo del egreso manual o del ajuste.</summary>
+    public string? Motivo { get; set; }
+
+    /// <summary>Identifica los dos movimientos (egreso e ingreso) de una misma transferencia.</summary>
+    public Guid? TransferenciaId { get; set; }
     public string SiloNombre { get; set; } = string.Empty;
     public string? SiloProducto { get; set; }
     public DateOnly Fecha { get; set; }

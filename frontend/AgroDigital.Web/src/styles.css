@@ -9597,3 +9597,182 @@ textarea::placeholder {
 .alm-table td:last-child {
   white-space: nowrap;
 }
+
+/* =========================================================================
+   Almacenamiento - registrar movimiento igual al prototipo (paso 6)
+   ========================================================================= */
+
+.alm-type-grid-4 {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.alm-context-extra {
+  color: #617168;
+  font-weight: 600;
+  font-size: calc(13px * var(--text-scale, 1));
+}
+
+.alm-subtitulo {
+  margin: 20px 0 10px;
+  color: #0a4327;
+  font-size: calc(15px * var(--text-scale, 1));
+}
+
+.alm-dropzone {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px;
+  border: 1.5px dashed #c9dccd;
+  border-radius: 14px;
+  background: #fbfdfb;
+  color: #617168;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.alm-dropzone.activa,
+.alm-dropzone:hover {
+  border-color: #18883b;
+  background: #eff9f0;
+  color: #18883b;
+}
+
+.alm-dropzone:focus-visible {
+  outline: 3px solid #83c994;
+  outline-offset: 2px;
+}
+
+.alm-docs-lista {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.alm-docs-lista li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #e3ece5;
+  border-radius: 10px;
+}
+
+.alm-docs-lista li svg { color: #18883b; flex-shrink: 0; }
+.alm-docs-nombre { font-weight: 700; color: #14311f; }
+.alm-docs-lista li small { color: #617168; font-weight: 600; margin-left: auto; }
+
+.alm-transfer-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.alm-transfer-silo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid #d6e5d8;
+  border-radius: 16px;
+}
+
+.alm-transfer-silo > small {
+  color: #617168;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.alm-transfer-silo > strong {
+  color: #0a4327;
+  font-size: calc(17px * var(--text-scale, 1));
+}
+
+.alm-transfer-body {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 6px;
+}
+
+.alm-transfer-body > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: calc(13.5px * var(--text-scale, 1));
+  color: #3b4f42;
+}
+
+.alm-transfer-body b { color: #14311f; }
+
+.alm-transfer-flecha {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #18883b;
+}
+
+@media (max-width: 800px) {
+  .alm-transfer-preview { grid-template-columns: 1fr; }
+  .alm-transfer-flecha { flex-direction: row; }
+}
+
+.alm-asi-queda {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.alm-asi-queda strong {
+  display: block;
+  font-size: calc(26px * var(--text-scale, 1));
+  font-weight: 900;
+}
+
+.alm-asi-queda span {
+  color: #617168;
+  font-weight: 700;
+  font-size: calc(13px * var(--text-scale, 1));
+}
+
+.alm-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.alm-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.movimiento-chip.movimiento-especial {
+  background: #e8f0fb;
+  color: #1f5fae;
+}
+
+@media (min-width: 1100px) {
+  .create-grid.alm-grid-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Los selectores con textos largos se recortan en lugar de desbordar su columna. */
+.alm-form-main .field {
+  min-width: 0;
+}
+
+.alm-form-main .field select {
+  width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
+}

@@ -15,4 +15,7 @@ public class CrearAlmacenamientoRequest
     public int? CosechaId { get; set; }
     public decimal? HumedadIngreso { get; set; }
     public decimal? Impurezas { get; set; }
+
+    /// <summary>Obligatorio en el egreso manual: Semilla propia, Consumo interno o Deterioro.</summary>
+    public string? Motivo { get; set; }
 }

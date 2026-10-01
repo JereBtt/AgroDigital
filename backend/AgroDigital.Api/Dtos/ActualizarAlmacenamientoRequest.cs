@@ -11,4 +11,5 @@ public class ActualizarAlmacenamientoRequest
     public string? Producto { get; set; }
     public decimal? HumedadIngreso { get; set; }
     public decimal? Impurezas { get; set; }
+    public string? Motivo { get; set; }
 }
