@@ -23,6 +23,8 @@ builder.Services.AddScoped<ISiloRepository, SiloRepository>();
 builder.Services.AddScoped<IGranoParametroRepository, GranoParametroRepository>();
 builder.Services.AddScoped<ICampaniaRepository, CampaniaRepository>();
 builder.Services.AddScoped<IAlmacenamientoRepository, AlmacenamientoRepository>();
+builder.Services.AddScoped<IDistribucionRepository, DistribucionRepository>();
+builder.Services.AddScoped<IDistribucionCatalogoRepository, DistribucionCatalogoRepository>();
 builder.Services.AddScoped<ISiembraRepository, SiembraRepository>();
 builder.Services.AddScoped<ISeguimientoRepository, SeguimientoRepository>();
 builder.Services.AddScoped<ICosechaRepository, CosechaRepository>();

@@ -264,7 +264,8 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
             SELECT
                 c.CosechaId, lo.EmpresaId, c.Nombre, c.Producto, c.LoteId, lo.Nombre AS LoteNombre,
                 cp.CampaniaId, COALESCE(cp.Nombre, c.CampaniaNombre) AS CampaniaNombre,
-                c.Estado, c.FechaInicio, c.CantidadGranoCosechado, ISNULL(alm.Kg, 0) AS KgAlmacenados
+                c.Estado, c.FechaInicio, c.CantidadGranoCosechado, ISNULL(alm.Kg, 0) AS KgAlmacenados,
+                ISNULL(dist.Kg, 0) AS KgDistribuidosDirecto
             FROM dbo.Cosechas AS c
             INNER JOIN dbo.Lotes AS lo ON lo.LoteId = c.LoteId
             OUTER APPLY (
@@ -281,6 +282,14 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
                   AND a.Origen <> N'Transferencia'
                   AND (@ExcluirAlmacenamientoId IS NULL OR a.AlmacenamientoId <> @ExcluirAlmacenamientoId)
             ) AS alm
+            OUTER APPLY (
+                -- Grano despachado directo de la cosecha, sin pasar por un silo (modulo Distribucion).
+                SELECT SUM(dc.KgDespachados) AS Kg
+                FROM dbo.DistribucionCamiones AS dc
+                INNER JOIN dbo.Distribuciones AS d ON d.DistribucionId = dc.DistribucionId
+                WHERE d.CosechaId = c.CosechaId
+                  AND d.OrigenGrano = N'Cosecha'
+            ) AS dist
             WHERE (@IncluirTodos = 1 OR EXISTS (
                     SELECT 1 FROM dbo.UsuarioEmpresas AS ue
                     WHERE ue.UsuarioId = @UsuarioId AND ue.EmpresaId = lo.EmpresaId AND ue.Activo = 1))
@@ -322,7 +331,7 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
                     FechaInicio = DateOnly.FromDateTime(reader.GetDateTime(9)),
                     KgCosechados = reader.IsDBNull(10) ? null : reader.GetDecimal(10),
                     KgAlmacenados = reader.GetDecimal(11),
-                    KgDistribuidosDirecto = 0,
+                    KgDistribuidosDirecto = reader.GetDecimal(12),
                 });
             }
 
@@ -409,6 +418,42 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
 
         var almacenamientoId = await RegistrarCoreAsync(movimiento, usuarioId ?? 0, incluirTodos: true, usuarioCreadorId: usuarioId);
         return (await ObtenerPorIdAsync(almacenamientoId, usuarioId ?? 0, incluirTodos: true))!;
+    }
+
+    /// <summary>
+    /// Egreso automatico de Distribucion. Corre DENTRO de la transaccion del envio
+    /// (la abre DistribucionRepository), para que el camion y su egreso se guarden
+    /// juntos o no se guarde ninguno. Consume partidas FIFO y actualiza el silo.
+    /// El control de acceso y de rol ya lo hizo el modulo de Distribucion.
+    /// </summary>
+    public async Task<int> RegistrarEgresoDistribucionAsync(
+        SqlConnection connection, SqlTransaction transaction,
+        int siloId, int empresaId, DateOnly fecha, decimal cantidad, string observaciones, int usuarioId)
+    {
+        var silo = await BloquearSiloAsync(connection, transaction, siloId, usuarioId, incluirTodos: true)
+            ?? throw new InvalidOperationException("El silo de origen no existe.");
+
+        if (silo.EmpresaId != empresaId)
+        {
+            throw new InvalidOperationException("El silo de origen no pertenece a la empresa del envio.");
+        }
+
+        await ValidarFechaAsync(connection, transaction, siloId, fecha, excluirAlmacenamientoId: null);
+
+        if (cantidad > silo.Stock)
+        {
+            throw new InvalidOperationException(
+                $"La cantidad a despachar supera el stock actual del silo {silo.Nombre} ({silo.Stock:N0} kg).");
+        }
+
+        var stockResultante = silo.Stock - cantidad;
+        var almacenamientoId = await InsertarFilaAsync(connection, transaction, new FilaMovimiento(
+            siloId, silo.EmpresaId, fecha, "Egreso", cantidad, silo.Stock, stockResultante,
+            "Distribucion", observaciones, silo.Producto, Motivo: null, TransferenciaId: null, usuarioId));
+
+        await ConsumirPartidasFifoAsync(connection, transaction, siloId, almacenamientoId, cantidad);
+        await ActualizarSiloAsync(connection, transaction, siloId, stockResultante, silo.Producto);
+        return almacenamientoId;
     }
 
     private sealed record MovimientoNuevo(

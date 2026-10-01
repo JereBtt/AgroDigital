@@ -61,7 +61,7 @@ public class PartidaDto
 
 /// <summary>
 /// Saldo de una cosecha: lo cosechado menos lo ya almacenado.
-/// KgDistribuidosDirecto queda en 0 hasta que exista el modulo de Distribucion.
+/// KgDistribuidosDirecto: lo despachado directo de la cosecha desde Distribucion.
 /// </summary>
 public class SaldoCosechaDto
 {

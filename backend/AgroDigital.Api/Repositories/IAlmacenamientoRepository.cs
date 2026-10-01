@@ -1,4 +1,5 @@
 using AgroDigital.Api.Dtos;
+using Microsoft.Data.SqlClient;
 
 namespace AgroDigital.Api.Repositories;
 
@@ -26,11 +27,6 @@ public interface IAlmacenamientoRepository
     /// </summary>
     Task<AlmacenamientoDto> RegistrarAsync(CrearAlmacenamientoRequest request, int usuarioId, bool incluirTodos);
 
-    /// <summary>
-    /// Alta automatica disparada por otro modulo (ALM-04): "AltaSilo" cuando
-    /// se da de alta un Silo con stock inicial, "Distribucion" el dia que
-    /// exista ese modulo y despache grano tomando un Silo como origen.
-    /// </summary>
     /// <summary>ALM-08: ajuste de stock. Solo Encargado (UnauthorizedAccessException si no lo es).</summary>
     Task<AlmacenamientoDto> RegistrarAjusteAsync(RegistrarAjusteRequest request, int usuarioId, bool incluirTodos);
 
@@ -43,8 +39,17 @@ public interface IAlmacenamientoRepository
     Task<string?> ObtenerRutaDocumentoAsync(int almacenamientoId, int documentoId);
     Task<bool> EliminarDocumentoAsync(int almacenamientoId, int documentoId);
 
+    /// <summary>Alta automatica disparada por otro modulo (ALM-04): "AltaSilo" con stock inicial.</summary>
     Task<AlmacenamientoDto> RegistrarMovimientoAutomaticoAsync(
         int siloId, string tipoMovimiento, decimal cantidad, string origen, string? observaciones, int? usuarioId);
+
+    /// <summary>
+    /// ALM-04: egreso automatico de Distribucion, dentro de la transaccion del envio.
+    /// Devuelve el AlmacenamientoId del egreso para vincularlo al camion.
+    /// </summary>
+    Task<int> RegistrarEgresoDistribucionAsync(
+        SqlConnection connection, SqlTransaction transaction,
+        int siloId, int empresaId, DateOnly fecha, decimal cantidad, string observaciones, int usuarioId);
 
     /// <summary>Solo el ultimo movimiento manual de cada silo. No cambia el tipo ni la cosecha.</summary>
     Task<bool> ActualizarAsync(int almacenamientoId, ActualizarAlmacenamientoRequest request, int usuarioId, bool incluirTodos);

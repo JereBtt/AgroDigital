@@ -9776,3 +9776,593 @@ textarea::placeholder {
   min-width: 0;
   text-overflow: ellipsis;
 }
+
+/* =========================================================================
+   Distribucion
+   Semaforo: Bajo (verde), Medio (ambar), Alto (rojo); estados del camion:
+   En transito (azul), Recibido (ambar), Conciliado (verde). Siempre con texto,
+   nunca solo color.
+   ========================================================================= */
+
+.dist-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: calc(12.5px * var(--text-scale, 1));
+  white-space: nowrap;
+}
+
+.dist-bajo { background: #e5f6e9; color: #146c30; }
+.dist-medio { background: #fff3d6; color: #7a4f00; }
+.dist-alto { background: #fde3e1; color: #a5281b; }
+.dist-info { background: #e8f0fb; color: #1f5fae; }
+.dist-neutro { background: #eef1ee; color: #4f5d54; }
+
+.dist-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.dist-aviso {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #e5f6e9;
+  color: #146c30;
+  font-weight: 800;
+}
+
+.dist-num,
+.lotes-table th.dist-num,
+.lotes-table td.dist-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dist-cpe {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  color: #14311f;
+  white-space: nowrap;
+}
+
+.dist-cpe-titulo {
+  font-variant-numeric: tabular-nums;
+  color: #18883b;
+}
+
+.dist-tabla tbody tr.dist-fila-pendiente td {
+  background: #fffaf0;
+}
+
+.dist-fila-inactiva td {
+  color: #7d8a81;
+}
+
+.dist-fila-editando td {
+  background: #eff9f0;
+}
+
+.actions-cell button.dist-accion-texto {
+  width: auto;
+  padding: 0 12px;
+  border-color: #18883b;
+  color: #18883b;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* Filtros: las fechas llevan su etiqueta visible. */
+.dist-fecha-filtro {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #3b4f42;
+  font-weight: 800;
+  font-size: calc(12.5px * var(--text-scale, 1));
+}
+
+/* KPIs del modulo (sobre .alm-kpi) */
+.dist-kpi-ancho { flex: 1; min-width: 0; }
+
+.dist-kpi-sufijo {
+  font-size: calc(15px * var(--text-scale, 1));
+  font-weight: 700;
+  color: #617168;
+}
+
+.dist-kpi-vacio { color: #9aa79f; }
+
+.alm-kpi.dist-kpi-alerta { border-left-color: #d99a1e; }
+.alm-kpi.dist-kpi-alerta .alm-kpi-icon { background: #fff3d6; color: #8a5a00; }
+
+.dist-barra-apilada {
+  display: flex;
+  height: 10px;
+  margin-top: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #e3e9e4;
+}
+
+.dist-seg-distribuido { background: #18883b; }
+.dist-seg-silos { background: #d99a1e; }
+
+/* Registrar */
+.dist-disponible {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #f5f8f5;
+}
+
+.dist-disponible small {
+  display: block;
+  color: #4f5d54;
+  font-weight: 800;
+}
+
+.dist-disponible strong {
+  display: block;
+  margin-top: 2px;
+  font-size: calc(20px * var(--text-scale, 1));
+  color: #14311f;
+}
+
+.dist-disponible .dist-positivo { color: #146c30; }
+.dist-disponible .dist-negativo { color: #a5281b; }
+
+.dist-disponible-barra {
+  grid-column: 1 / -1;
+}
+
+.dist-disponible-barra p { margin: 8px 0 0; }
+
+.dist-camion-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.dist-camion-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.dist-camion-col .field { min-width: 0; }
+
+.dist-col-titulo {
+  color: #18883b;
+  font-weight: 900;
+}
+
+.dist-ficha { margin: -4px 0 0; }
+
+.dist-select-con-alta {
+  display: flex;
+  gap: 8px;
+  min-width: 0; /* es hijo de la grilla de .field: sin esto crece con la opcion mas larga */
+}
+
+.dist-select-con-alta select {
+  flex: 1;
+  min-width: 0;
+}
+
+.dist-alta-rapida {
+  width: 44px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid #cfe3d4;
+  border-radius: 12px;
+  background: #f7fcf8;
+  color: #18883b;
+  cursor: pointer;
+}
+
+.dist-alta-rapida:focus-visible,
+.dist-accion-texto:focus-visible {
+  outline: 3px solid #83c994;
+  outline-offset: 2px;
+}
+
+.field input.dist-input-error {
+  border: 2px solid #c0392b;
+}
+
+.dist-error-campo {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: #a5281b;
+  font-weight: 800;
+  font-size: calc(12.5px * var(--text-scale, 1));
+}
+
+.dist-tabla-camiones { margin-top: 18px; }
+
+/* Conciliar */
+.dist-pasos {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: #7d8a81;
+  font-weight: 800;
+  font-size: calc(13px * var(--text-scale, 1));
+}
+
+.dist-pasos li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dist-pasos li + li::before {
+  content: '';
+  width: 26px;
+  height: 2px;
+  margin-right: 2px;
+  background: #cfd8d1;
+}
+
+.dist-pasos li.hecho { color: #146c30; }
+.dist-pasos li.hecho + li.hecho::before { background: #18883b; }
+.dist-pasos li[aria-current='step'] { color: #0a4327; }
+
+.dist-paso-marca {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  font-size: calc(11px * var(--text-scale, 1));
+}
+
+.dist-resumen {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.dist-resumen > div {
+  padding: 14px 16px;
+  border: 1px solid #d6e5d8;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.dist-resumen small,
+.dist-resumen span {
+  display: block;
+  color: #617168;
+  font-weight: 700;
+  font-size: calc(12.5px * var(--text-scale, 1));
+}
+
+.dist-resumen strong {
+  display: block;
+  margin: 4px 0 2px;
+  color: #14311f;
+  font-size: calc(20px * var(--text-scale, 1));
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 1100px) {
+  .alm-form-layout.dist-conciliar-layout:has(.alm-form-side) {
+    grid-template-columns: minmax(0, 1fr) 420px;
+  }
+}
+
+/* El panel de analisis es el centro de la pantalla de conciliacion. */
+.dist-analisis {
+  border-top: 5px solid #0a4327;
+  transition: opacity 0.2s ease;
+}
+
+.dist-analisis.dist-recalculando { opacity: 0.6; }
+
+.dist-analisis-cabecera {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dist-sub {
+  margin: 18px 0 6px;
+  color: #0a4327;
+  font-size: calc(14px * var(--text-scale, 1));
+}
+
+.dist-analisis .alm-kv dt small {
+  display: block;
+  color: #7d8a81;
+  font-weight: 600;
+  font-size: calc(12px * var(--text-scale, 1));
+}
+
+.dist-analisis .alm-kv dd {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dist-comparacion {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f5f8f5;
+  font-weight: 700;
+  color: #3b4f42;
+}
+
+.dist-comparacion strong {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.dist-barra {
+  height: 14px;
+  border-radius: 7px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.dist-barra span {
+  display: block;
+  height: 100%;
+  border-radius: 7px;
+}
+
+.dist-barra-esperada { background: #8fb89a; }
+.dist-barra-aplicada { background: #c2410c; }
+
+.dist-alerta {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-weight: 700;
+}
+
+.dist-alerta svg { flex-shrink: 0; margin-top: 1px; }
+.dist-alerta-medio { background: #fff3d6; color: #6b4500; }
+.dist-alerta-alto { background: #fde3e1; color: #8e2216; }
+
+/* Detalle y trazabilidad */
+.dist-cabecera-chips {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.dist-traza {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dist-traza li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 16px 0 0;
+}
+
+.dist-traza li::after {
+  content: '';
+  position: absolute;
+  top: 18px;
+  left: 44px;
+  right: 8px;
+  height: 2px;
+  background: #b9d8c1;
+}
+
+.dist-traza li:last-child::after { display: none; }
+
+.dist-traza-icono {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 8px;
+  border-radius: 50%;
+  background: #18883b;
+  color: #ffffff;
+}
+
+.dist-traza li:last-child .dist-traza-icono { background: #0a4327; }
+
+.dist-traza small {
+  color: #617168;
+  font-weight: 800;
+}
+
+.dist-traza strong { color: #14311f; }
+
+.dist-traza span {
+  color: #4f5d54;
+  font-weight: 600;
+  font-size: calc(12.5px * var(--text-scale, 1));
+}
+
+.dist-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f5f8f5;
+  color: #3b4f42;
+  font-weight: 700;
+}
+
+.dist-kv-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
+}
+
+/* Catalogos y parametros */
+.dist-catalogos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+  gap: 18px;
+}
+
+.dist-catalogo-cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.dist-catalogo-cabecera h2 { margin: 0; }
+
+.dist-input-chico {
+  width: 90px;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid #cfe3d4;
+  border-radius: 10px;
+  text-align: right;
+}
+
+.dist-boton-chico {
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+.dist-check {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  color: #3b4f42;
+}
+
+.dist-modal {
+  width: min(720px, calc(100vw - 36px));
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  padding: 26px;
+}
+
+@media (max-width: 900px) {
+  .dist-disponible,
+  .dist-camion-grid,
+  .dist-resumen,
+  .dist-kv-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dist-catalogos { grid-template-columns: minmax(0, 1fr); }
+
+  .dist-traza li::after { display: none; }
+
+  .dist-pasos li + li::before { width: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dist-analisis { transition: none; }
+}
+
+/* Filtros de Distribucion: buscador ancho, dos selectores, dos fechas y limpiar. */
+.filters-card.dist-filtros {
+  grid-template-columns: minmax(240px, 2fr) repeat(2, minmax(140px, 1fr)) repeat(2, minmax(150px, 1fr)) minmax(120px, auto);
+  align-items: end;
+}
+
+.dist-fecha-filtro input {
+  width: 100%;
+  height: 48px;
+  padding: 0 12px;
+  border: 1px solid #dfe7e0;
+  border-radius: 12px;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.dist-nowrap { white-space: nowrap; }
+
+@media (max-width: 1100px) {
+  .filters-card.dist-filtros { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* En el analisis, los totales no van en verde: un desvio no es una buena noticia. */
+.dist-analisis .alm-kv-total dd,
+.dist-kv-neutro .alm-kv-total dd { color: #14311f; }
+
+/* Iconos de la trazabilidad en blanco sobre el circulo. */
+.dist-traza .dist-traza-icono svg { color: #ffffff; stroke: #ffffff; }
+
+/* Selector con boton de alta rapida: el select cede ancho al boton. */
+.field .dist-select-con-alta select {
+  width: auto;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.field textarea.dist-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid #dfe7e0;
+  border-radius: 12px;
+  background: #ffffff;
+  font: inherit;
+  resize: vertical;
+}
+
+.field textarea.dist-textarea:disabled { background: #f5f8f5; }
+
+/* Catalogos en una sola columna: cada tabla necesita el ancho completo. */
+.dist-catalogos { grid-template-columns: minmax(0, 1fr); }
+
+.dist-rol {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid #d6e5d8;
+  border-radius: 12px;
+  background: #f7fcf8;
+  color: #3b4f42;
+  font-weight: 700;
+}
+
+.dist-rol svg { flex-shrink: 0; color: #18883b; }

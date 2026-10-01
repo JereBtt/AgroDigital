@@ -11,6 +11,7 @@ import Campanias from './Campanias';
 import Siembras from './Siembras';
 import Cosechas from './Cosechas';
 import Almacenamiento from './Almacenamiento';
+import Distribucion from './Distribucion';
 import {
   AlertTriangle,
   BarChart3,
@@ -541,6 +542,8 @@ function App() {
   const [copiedKey, setCopiedKey] = useState('');
   const [activeModule, setActiveModule] = useState('lotes');
   const [managerContext, setManagerContext] = useState(null);
+  // Empresas del usuario cuando no es Gerente (el Gerente las toma de managerContext).
+  const [misEmpresas, setMisEmpresas] = useState([]);
   const [managerContextError, setManagerContextError] = useState('');
   const [managerRequests, setManagerRequests] = useState([]);
   const [managerRequestsError, setManagerRequestsError] = useState('');
@@ -593,8 +596,8 @@ function App() {
   const areaM2 = useMemo(() => polygonAreaSquareMeters(form.coordenadas), [form.coordenadas]);
   const areaHa = areaM2 / 10000;
   const empresasDisponibles = useMemo(
-    () => (managerContext?.empresas ?? []).filter((empresa) => empresa.activo),
-    [managerContext]
+    () => (session?.role === 'Gerente' ? managerContext?.empresas ?? [] : misEmpresas).filter((empresa) => empresa.activo),
+    [managerContext, misEmpresas, session?.role]
   );
   const selectedParentEmpresa = useMemo(
     () => empresasDisponibles.find((empresa) => String(empresa.empresaId) === String(selectedParentEmpresaId)) ?? null,
@@ -855,6 +858,25 @@ function App() {
     }
   }
 
+  // Encargado, empleados y Admin: sus empresas salen de UsuarioEmpresas.
+  async function loadMisEmpresas() {
+    if (!session?.token || session.role === 'Gerente') {
+      setMisEmpresas([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/usuarios/mis-empresas`, {
+        headers: authHeaders()
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+      setMisEmpresas(await response.json());
+    } catch {
+      setMisEmpresas([]);
+    }
+  }
+
   async function loadManagerContext() {
     if (!session?.token || session.role !== 'Gerente') {
       setManagerContext(null);
@@ -1029,6 +1051,7 @@ function App() {
   useEffect(() => {
     if (session?.type === 'manager-demo') {
       loadManagerContext();
+      loadMisEmpresas();
       loadManagerRequests();
       loadManagerUsers();
     }
@@ -2037,7 +2060,7 @@ function App() {
             <Home size={23} />
             <span>Almacenamiento</span>
           </button>
-          <button className="nav-item" type="button">
+          <button className={`nav-item ${activeModule === 'distribucion' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('distribucion'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
             <Tractor size={23} />
             <span>Distribución</span>
           </button>
@@ -2068,7 +2091,7 @@ function App() {
               <Home size={17} />
             </button>
             <button className="breadcrumb-link" type="button" onClick={activeModule === 'lotes' ? goToList : undefined}>
-                          {activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Empresas' : activeModule === 'campanias' ? 'Campañas' : activeModule === 'silos' ? 'Silos' : activeModule === 'siembras' ? 'Siembras' : activeModule === 'cosechas' ? 'Cosechas' : activeModule === 'almacenamiento' ? 'Almacenamiento' : 'Lotes'}
+                          {activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Empresas' : activeModule === 'campanias' ? 'Campañas' : activeModule === 'silos' ? 'Silos' : activeModule === 'siembras' ? 'Siembras' : activeModule === 'cosechas' ? 'Cosechas' : activeModule === 'almacenamiento' ? 'Almacenamiento' : activeModule === 'distribucion' ? 'Distribución' : 'Lotes'}
             </button>
             {false && activeModule === 'users' && (
               <>
@@ -2204,6 +2227,13 @@ function App() {
           />
         ) : activeModule === 'almacenamiento' ? (
           <Almacenamiento
+            session={session}
+            parentFilters={parentFiltersForEmpresa}
+            selectedEmpresaId={selectedParentEmpresaId}
+            selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
+          />
+        ) : activeModule === 'distribucion' ? (
+          <Distribucion
             session={session}
             parentFilters={parentFiltersForEmpresa}
             selectedEmpresaId={selectedParentEmpresaId}

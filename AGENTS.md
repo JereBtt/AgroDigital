@@ -123,6 +123,8 @@ Estructura inicial definida:
 - `database/scripts/09_cosechas.sql`: script incremental del modulo Cosechas y documentos adjuntos.
 - `database/scripts/09_almacenamiento.sql` y `10_almacenamiento_campania_cosecha.sql`: estructura de Almacenamiento y referencias textuales. Comparten prefijos numericos con scripts de otros modulos; identificarlos por nombre completo y respetar sus dependencias.
 - `frontend/AgroDigital.Web/src/Almacenamiento.jsx`: consulta, registro y edicion de movimientos de almacenamiento.
+- `frontend/AgroDigital.Web/src/Distribucion.jsx`: envios por camion (indicadores y tabla por Carta de Porte), registro, conciliacion con analisis de merma en vivo, detalle con trazabilidad, catalogos y parametros por grano. Sus estilos son el bloque `dist-*` al final de `styles.css`; reutiliza las clases `alm-*` de Almacenamiento.
+- `database/scripts/23_distribucion.sql`: estructura del modulo Distribucion (catalogos, parametros por grano, envios, camiones, documentos y vistas). Pendiente de incorporar al script madre cuando el modulo este probado.
 - `docs/`: documentacion tecnica y funcional versionada que corresponda.
 
 Actualizar esta seccion cuando se creen carpetas, proyectos, scripts o convenciones reales.
@@ -243,7 +245,14 @@ AgroBot esta disponible para los cuatro roles, pero sus respuestas deben respeta
 - Perdida de cabezal en Tirada de Aros: `((Granos del Aro Cabezal / 0.25) * PMG) / 100`.
 - Perdida de cola en Tirada de Aros: `((Promedio de granos de los 3 Aros Cola / 0.25) * PMG) / 100`.
 - Perdida total en Tirada de Aros: `Perdida Cabezal + Perdida Cola`.
-- Diferencia de mermas en Distribucion: cantidad despachada total menos cantidad informada por la acopiadora.
+- Merma en Distribucion (por camion / Carta de Porte, la calcula la API al conciliar):
+  - Secado (%) = `(HumedadDestino - HumedadBase) / (100 - HumedadBase) * 100`, 0 si no supera la base. HumedadBase sale de `dbo.GranoBasesComercializacion`.
+  - Materias extranas sobre tolerancia (%) = `MateriasExtranasDestino - ToleranciaME`, 0 si no la supera.
+  - Merma esperada (%) = `Secado + Manipuleo + ME sobre tolerancia`; Merma esperada (kg) = `KgRecibidos * Merma esperada % / 100`.
+  - Diferencia de balanza = `KgDespachados - KgRecibidos`; Descuento por calidad = `KgRecibidos - KgNetosLiquidados`; Merma total = `KgDespachados - KgNetosLiquidados`.
+  - Merma no justificada = `Merma total - Merma esperada (kg)`; Desvio (pp) = `Merma no justificada / KgDespachados * 100`.
+  - Nivel de desvio: Bajo <= DesvioMedioPp (0,5 por defecto), Medio <= DesvioAltoPp (1,5 por defecto), Alto por encima. Un desvio negativo es Bajo.
+  - La logica vive en `Services/CalculadoraMermaDistribucion.cs` y se usa igual en la previsualizacion y en la conciliacion.
 
 ## Integraciones funcionales previstas
 
@@ -297,6 +306,13 @@ La tesis describe el flujo operativo de campania:
 
 ## Decisiones tecnicas vigentes
 
+- Distribucion: un envio (`dbo.Distribuciones`, nombre `DIST - 0001` numerado por empresa) agrupa camiones (`dbo.DistribucionCamiones`); la merma se concilia por camion / Carta de Porte. Ciclo del camion: En transito -> Recibido -> Conciliado; el estado del envio se deriva de sus camiones (`dbo.vw_DistribucionesResumen`).
+- Distribucion: una vez registrado un camion no se borra y sus kg despachados y el origen del envio no se modifican. Solo se editan datos logisticos (chofer, camion, destino, CPE y ticket de balanza) y la cabecera (responsable y observaciones).
+- Distribucion: si el grano sale de un silo, cada camion genera su Egreso FIFO en Almacenamiento (Origen = Distribucion) dentro de la misma transaccion del envio, mediante `IAlmacenamientoRepository.RegistrarEgresoDistribucionAsync`. Si sale directo de la cosecha, el saldo disponible es cosechado - ingresos a silos - ya distribuido directo (`SaldoCosechaDto.KgDistribuidosDirecto`).
+- Distribucion: al conciliar se guarda una foto de los parametros aplicados (humedad base, manipuleo, tolerancia) y de la merma esperada; cambiar parametros despues no altera envios ya conciliados. Volver a conciliar recalcula con los parametros vigentes.
+- Distribucion: catalogos por empresa (`Transportistas`, `Choferes`, `Camiones`, `DestinosDistribucion`) con FK compuestas (Id, EmpresaId); no se borran, se desactivan. La patente se guarda sin espacios ni guiones y en mayusculas; el DNI, solo digitos. La CPE es unica por empresa.
+- Distribucion: permisos. Consulta, cualquier usuario de la empresa. Alta, edicion, recepcion, conciliacion, documentos y catalogos: Encargado y Empleado Administrativo. Parametros por grano: Gerente y Encargado. Indicadores agregados de merma: solo Gerente y Encargado (el resto recibe `IncluyeMerma = false`).
+- Distribucion: los graficos de merma por acopiadora, kg por destino y diferencia de balanza por transportista se reservan para el futuro modulo de Estadisticas, no para la pantalla de Distribucion.
 - Almacenamiento esta integrado al menu y a la API; genera el ingreso inicial de grano al crear un silo. El script madre incluye su estructura y las bases existentes se actualizan con los dos incrementales de almacenamiento, sin ejecutar scripts de reasignacion de empresas.
 - Pendiente de integracion estructural: Almacenamiento conserva Campania/Cosecha como texto libre y no posee EmpresaId ni aislamiento por empresa. Esto no reemplaza la regla objetivo de EmpresaId en tablas operativas; requiere una migracion especifica antes de considerarlo integrado al flujo multiempresa de Campanias/Cosechas.
 - Almacenamiento agrega Producto como texto libre y opcional en el movimiento (mismo criterio que Campania/Cosecha, columna NULL agregada via `11_almacenamiento_producto.sql`). Es independiente del campo `Producto` ya existente en `dbo.Silos`, porque un mismo silo puede recibir mas de un producto a lo largo del tiempo y el movimiento debe poder dejar registrado cual corresponde a ese ingreso o egreso puntual. La tabla de consulta muestra el Producto del movimiento y, si no fue cargado, cae al Producto registrado en el Silo. Cuando exista un catalogo formal de Productos, la migracion natural es agregar ProductoId (INT NULL + FK) y evaluar la baja de esta columna de texto.
