@@ -12,6 +12,7 @@ import Siembras from './Siembras';
 import Cosechas from './Cosechas';
 import Almacenamiento from './Almacenamiento';
 import Distribucion from './Distribucion';
+import Estadisticas from './Estadisticas';
 import {
   AlertTriangle,
   BarChart3,
@@ -2064,7 +2065,7 @@ function App() {
             <Tractor size={23} />
             <span>Distribución</span>
           </button>
-          <button className="nav-item" type="button">
+          <button className={`nav-item ${activeModule === 'estadisticas' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('estadisticas'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
             <BarChart3 size={23} />
             <span>Estadísticas</span>
           </button>
@@ -2091,7 +2092,7 @@ function App() {
               <Home size={17} />
             </button>
             <button className="breadcrumb-link" type="button" onClick={activeModule === 'lotes' ? goToList : undefined}>
-                          {activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Empresas' : activeModule === 'campanias' ? 'Campañas' : activeModule === 'silos' ? 'Silos' : activeModule === 'siembras' ? 'Siembras' : activeModule === 'cosechas' ? 'Cosechas' : activeModule === 'almacenamiento' ? 'Almacenamiento' : activeModule === 'distribucion' ? 'Distribución' : 'Lotes'}
+                          {activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Empresas' : activeModule === 'campanias' ? 'Campañas' : activeModule === 'silos' ? 'Silos' : activeModule === 'siembras' ? 'Siembras' : activeModule === 'cosechas' ? 'Cosechas' : activeModule === 'almacenamiento' ? 'Almacenamiento' : activeModule === 'distribucion' ? 'Distribución' : activeModule === 'estadisticas' ? 'Estadísticas' : 'Lotes'}
             </button>
             {false && activeModule === 'users' && (
               <>
@@ -2231,6 +2232,12 @@ function App() {
             parentFilters={parentFiltersForEmpresa}
             selectedEmpresaId={selectedParentEmpresaId}
             selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
+          />
+        ) : activeModule === 'estadisticas' ? (
+          <Estadisticas
+            session={session}
+            parentFilters={parentFiltersForEmpresa}
+            selectedEmpresaId={selectedParentEmpresaId}
           />
         ) : activeModule === 'distribucion' ? (
           <Distribucion
