@@ -25,6 +25,10 @@ import {
   Wheat
 } from 'lucide-react';
 
+
+// Permisos por rol (los calcula App.jsx segun el rol en la empresa). Sin la prop, se muestra todo.
+const PERMISOS_TODOS = { estructura: true, registroCampo: true, movimientoGrano: true };
+
 /*
   Almacenamiento - rediseno fase 2.
   - Pestana "Stock actual" (entrada del modulo): cuanto grano hay, donde y de donde vino.
@@ -95,7 +99,7 @@ function emptyForm(overrides = {}) {
   };
 }
 
-export default function Almacenamiento({ session, parentFilters = null, selectedEmpresaId = '', selectedEmpresaName = '' }) {
+export default function Almacenamiento({ permisos = PERMISOS_TODOS, session, parentFilters = null, selectedEmpresaId = '', selectedEmpresaName = '' }) {
   const [tab, setTab] = useState('stock');
   const [view, setView] = useState('list');
   const [stock, setStock] = useState(null);
@@ -332,7 +336,7 @@ export default function Almacenamiento({ session, parentFilters = null, selected
         movimiento={selectedMovimiento}
         silos={silos}
         stock={campaniaFilter ? null : stock}
-        canEdit={Boolean(selectedMovimiento && editableIds.has(selectedMovimiento.almacenamientoId))}
+        canEdit={permisos.movimientoGrano && Boolean(selectedMovimiento && editableIds.has(selectedMovimiento.almacenamientoId))}
         empresaId={selectedEmpresaId}
         empresaNombre={selectedEmpresaName}
         fetchJson={fetchJson}
@@ -353,10 +357,10 @@ export default function Almacenamiento({ session, parentFilters = null, selected
           <h1>Almacenamiento</h1>
           <p>Cuánto grano hay, dónde está y de dónde vino.</p>
         </div>
-        <button className="green-button add-lote-button" type="button" onClick={() => startCreate()}>
+        <>{permisos.movimientoGrano && (<button className="green-button add-lote-button" type="button" onClick={() => startCreate()}>
           <PlusCircle size={18} />
           <span>Registrar movimiento</span>
-        </button>
+        </button>)}</>
       </div>
 
       {parentFilters}
@@ -381,13 +385,13 @@ export default function Almacenamiento({ session, parentFilters = null, selected
           campaniaFilter={campaniaFilter}
           campaniaOptions={campaniaOptions}
           onCampaniaChange={changeCampania}
-          onIngresoCosecha={(cosechaId) => startCreate({ tipoMovimiento: 'Ingreso', cosechaId: String(cosechaId) })}
+          onIngresoCosecha={permisos.movimientoGrano ? (cosechaId) => startCreate({ tipoMovimiento: 'Ingreso', cosechaId: String(cosechaId) }) : null}
         />
       ) : (
         <MovimientosList
           movimientos={movimientos}
-          editableIds={editableIds}
-          onAdd={() => startCreate()}
+          editableIds={permisos.movimientoGrano ? editableIds : new Set()}
+          onAdd={permisos.movimientoGrano ? () => startCreate() : null}
           onView={(m) => openMovimiento(m, 'detail')}
           onEdit={(m) => openMovimiento(m, 'edit')}
         />
@@ -653,10 +657,10 @@ function MovimientosList({ movimientos, editableIds, onAdd, onView, onEdit }) {
             <h2>{movimientos.length === 0 ? 'Aún no tenés movimientos de almacenamiento' : 'Ningún movimiento coincide con los filtros'}</h2>
             <p>Registrá el primer ingreso de grano desde una cosecha.</p>
           </div>
-          <button className="green-button empty-state-action" type="button" onClick={onAdd}>
+          <>{onAdd && (<button className="green-button empty-state-action" type="button" onClick={onAdd}>
             <PlusCircle size={18} />
             <span>Registrar movimiento</span>
-          </button>
+          </button>)}</>
         </section>
       ) : (
         <div className="table-shell dashboard-card">

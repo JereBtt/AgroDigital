@@ -12,7 +12,8 @@ public class SilosController(
     ILoteRepository loteRepository,
     IAlmacenamientoRepository almacenamientoRepository,
     IAuthTokenService authTokenService,
-    IWebHostEnvironment environment) : ControllerBase
+    IWebHostEnvironment environment,
+    IPermisosService permisos) : ControllerBase
 {
     private readonly string _uploadsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "silos");
 
@@ -60,6 +61,13 @@ public class SilosController(
     public async Task<ActionResult<SiloDto>> Crear(CrearSiloRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        // El silo va a la empresa del lote, a la empresa indicada o a la principal (igual que SiloRepository).
+        if (request.LoteId is int loteDelSilo)
+            await permisos.ExigirAsync(usuario, RecursoOperativo.Lote, loteDelSilo, RolesPermiso.Estructura, "registrar silos");
+        else if (request.EmpresaId is int empresaDelSilo)
+            await permisos.ExigirAsync(usuario, RecursoOperativo.Empresa, empresaDelSilo, RolesPermiso.Estructura, "registrar silos");
+        else
+            await permisos.ExigirEnEmpresaPrincipalAsync(usuario, RolesPermiso.Estructura, "registrar silos");
         var esAdmin = usuario.Rol == "Admin";
 
         var validacion = await ValidarFormularioAsync(request, usuario.UsuarioId, esAdmin);
@@ -119,6 +127,7 @@ public class SilosController(
     public async Task<IActionResult> Actualizar(int siloId, ActualizarSiloRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Silo, siloId, RolesPermiso.Estructura, "editar silos");
         var esAdmin = usuario.Rol == "Admin";
 
         var validacion = await ValidarFormularioAsync(request, usuario.UsuarioId, esAdmin);
@@ -144,6 +153,7 @@ public class SilosController(
     public async Task<IActionResult> CambiarEstado(int siloId, CambiarEstadoSiloRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Silo, siloId, RolesPermiso.Estructura, "cambiar el estado de silos");
 
         var estado = request.Estado?.Trim() ?? string.Empty;
         if (!EstadosElegibles.Contains(estado))
@@ -261,6 +271,7 @@ public class SilosController(
     public async Task<ActionResult<SiloControlDto>> RegistrarControl(int siloId, CrearSiloControlRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Silo, siloId, RolesPermiso.RegistroCampo, "registrar controles de silo");
 
         var fecha = request.Fecha ?? DateTime.Now;
         var validacion = ValidarControl(request.HumedadGrano, request.Temperatura, request.EstadoGrano, fecha, request.FechaProximoControl);
@@ -296,6 +307,7 @@ public class SilosController(
     public async Task<IActionResult> ActualizarControl(int siloId, int controlId, ActualizarSiloControlRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.ControlSilo, controlId, "editar controles de silo");
 
         var fecha = request.Fecha ?? DateTime.Now;
         var validacion = ValidarControl(request.HumedadGrano, request.Temperatura, request.EstadoGrano, fecha, request.FechaProximoControl);
@@ -344,7 +356,8 @@ public class SilosController(
     [HttpDelete("{siloId:int}/controles/{controlId:int}")]
     public async Task<IActionResult> EliminarControl(int siloId, int controlId)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.ControlSilo, controlId, "eliminar controles de silo");
 
         var rutas = await siloRepository.ObtenerRutasDocumentosDeControlAsync(controlId);
         var eliminado = await siloRepository.EliminarControlAsync(siloId, controlId);
@@ -376,7 +389,8 @@ public class SilosController(
     [HttpPost("{siloId:int}/controles/{controlId:int}/incidencias")]
     public async Task<ActionResult<SiloControlIncidenciaDto>> AgregarIncidencia(int siloId, int controlId, CrearSiloControlIncidenciaRequest request)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.ControlSilo, controlId, "cargar incidencias en controles de silo");
 
         if (string.IsNullOrWhiteSpace(request.TipoPlaga) || !TiposPlagaValidos.Contains(request.TipoPlaga))
         {
@@ -395,7 +409,8 @@ public class SilosController(
     [HttpDelete("{siloId:int}/controles/{controlId:int}/incidencias/{incidenciaId:int}")]
     public async Task<IActionResult> EliminarIncidencia(int siloId, int controlId, int incidenciaId)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.ControlSilo, controlId, "eliminar incidencias de controles de silo");
         var eliminado = await siloRepository.EliminarIncidenciaAsync(controlId, incidenciaId);
         return eliminado ? NoContent() : NotFound();
     }
@@ -413,7 +428,8 @@ public class SilosController(
     [HttpPost("{siloId:int}/controles/{controlId:int}/insumos")]
     public async Task<ActionResult<SiloControlInsumoDto>> AgregarInsumo(int siloId, int controlId, CrearSiloControlInsumoRequest request)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.ControlSilo, controlId, "cargar insumos en controles de silo");
 
         if (!string.IsNullOrWhiteSpace(request.Tipo) && !TiposInsumoValidos.Contains(request.Tipo))
         {
@@ -427,7 +443,8 @@ public class SilosController(
     [HttpDelete("{siloId:int}/controles/{controlId:int}/insumos/{insumoId:int}")]
     public async Task<IActionResult> EliminarInsumo(int siloId, int controlId, int insumoId)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.ControlSilo, controlId, "eliminar insumos de controles de silo");
         var eliminado = await siloRepository.EliminarInsumoAsync(controlId, insumoId);
         return eliminado ? NoContent() : NotFound();
     }
@@ -447,6 +464,7 @@ public class SilosController(
     public async Task<ActionResult<SiloDocumentoDto>> SubirDocumento(int siloId, int controlId, IFormFile archivo)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.ControlSilo, controlId, "adjuntar documentos a controles de silo");
 
         if (archivo is null || archivo.Length == 0)
         {
@@ -487,7 +505,8 @@ public class SilosController(
     [HttpDelete("{siloId:int}/controles/{controlId:int}/documentos/{documentoId:int}")]
     public async Task<IActionResult> EliminarDocumento(int siloId, int controlId, int documentoId)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.ControlSilo, controlId, "eliminar documentos de controles de silo");
 
         var ruta = await siloRepository.ObtenerRutaDocumentoAsync(controlId, documentoId);
         var eliminado = await siloRepository.EliminarDocumentoAsync(controlId, documentoId);

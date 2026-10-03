@@ -16,6 +16,10 @@ import {
   Trash2
 } from 'lucide-react';
 
+
+// Permisos por rol (los calcula App.jsx segun el rol en la empresa). Sin la prop, se muestra todo.
+const PERMISOS_TODOS = { estructura: true, registroCampo: true, movimientoGrano: true };
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
 const DIAS_DESVIO_REQUIERE_JUSTIFICACION = 3;
 const OPERATION_DATE_MIN = '2026-01-01';
@@ -99,7 +103,7 @@ function getEmptyTiradaForm() {
   };
 }
 
-export default function Cosechas({ session, lotes, parentFilters, selectedEmpresaName = '', selectedCampaniaName = '' }) {
+export default function Cosechas({ permisos = PERMISOS_TODOS, session, lotes, parentFilters, selectedEmpresaName = '', selectedCampaniaName = '' }) {
   const [view, setView] = useState('list');
   const [cosechas, setCosechas] = useState([]);
   const [siembras, setSiembras] = useState([]);
@@ -528,9 +532,9 @@ export default function Cosechas({ session, lotes, parentFilters, selectedEmpres
         onFieldChange={updateField}
         onTiradaFieldChange={updateTiradaField}
         onGuardar={handleGuardar}
-        onGuardarTirada={handleGuardarTirada}
-        onEditTirada={startEditTirada}
-        onEliminarTirada={handleEliminarTirada}
+        onGuardarTirada={permisos.registroCampo ? handleGuardarTirada : null}
+        onEditTirada={permisos.registroCampo ? startEditTirada : null}
+        onEliminarTirada={permisos.registroCampo ? handleEliminarTirada : null}
         onSubirDocumento={handleSubirDocumento}
         onDescargarDocumento={handleDescargarDocumento}
         onEliminarDocumento={handleEliminarDocumento}
@@ -555,9 +559,9 @@ export default function Cosechas({ session, lotes, parentFilters, selectedEmpres
         onFieldChange={updateField}
         onTiradaFieldChange={updateTiradaField}
         onFinalizar={handleFinalizar}
-        onGuardarTirada={handleGuardarTirada}
-        onEditTirada={startEditTirada}
-        onEliminarTirada={handleEliminarTirada}
+        onGuardarTirada={permisos.registroCampo ? handleGuardarTirada : null}
+        onEditTirada={permisos.registroCampo ? startEditTirada : null}
+        onEliminarTirada={permisos.registroCampo ? handleEliminarTirada : null}
         onSubirDocumento={handleSubirDocumento}
         onDescargarDocumento={handleDescargarDocumento}
         onEliminarDocumento={handleEliminarDocumento}
@@ -576,9 +580,9 @@ export default function Cosechas({ session, lotes, parentFilters, selectedEmpres
         saving={tiradaSaving}
         error={error}
         onTiradaFieldChange={updateTiradaField}
-        onGuardarTirada={handleGuardarTirada}
-        onEditTirada={startEditTirada}
-        onEliminarTirada={handleEliminarTirada}
+        onGuardarTirada={permisos.registroCampo ? handleGuardarTirada : null}
+        onEditTirada={permisos.registroCampo ? startEditTirada : null}
+        onEliminarTirada={permisos.registroCampo ? handleEliminarTirada : null}
         onBack={goToList}
       />
     );
@@ -599,6 +603,7 @@ export default function Cosechas({ session, lotes, parentFilters, selectedEmpres
   return (
     <>
       <CosechasList
+        permisos={permisos}
         cosechas={cosechas}
         lotes={lotes}
         parentFilters={parentFilters}
@@ -609,7 +614,7 @@ export default function Cosechas({ session, lotes, parentFilters, selectedEmpres
         onAdd={startCreate}
         onEdit={openEdit}
         onView={openDetail}
-        onFinalize={openFinalize}
+        onFinalize={permisos.estructura ? openFinalize : null}
         onTirada={openTirada}
       />
       {pendingFinalizedTirada && (
@@ -650,7 +655,7 @@ function ConfirmTiradaFinalizadaModal({ cosecha, onCancel, onContinue }) {
   , document.body);
 }
 
-function CosechasList({ cosechas, lotes, parentFilters, selectedEmpresaName, selectedCampaniaName, loading, error, onAdd, onEdit, onView, onFinalize, onTirada }) {
+function CosechasList({ permisos = PERMISOS_TODOS, cosechas, lotes, parentFilters, selectedEmpresaName, selectedCampaniaName, loading, error, onAdd, onEdit, onView, onFinalize, onTirada }) {
   const [query, setQuery] = useState('');
   const [productoFilter, setProductoFilter] = useState('');
   const [estadoFilter, setEstadoFilter] = useState('');
@@ -739,10 +744,10 @@ function CosechasList({ cosechas, lotes, parentFilters, selectedEmpresaName, sel
           <h1>Cosechas</h1>
           <p>Registra cosechas activas, finaliza resultados y agrega controles opcionales de Tirada de Aros.</p>
         </div>
-        <button className="green-button add-lote-button" type="button" onClick={onAdd}>
+        <>{permisos.estructura && (<button className="green-button add-lote-button" type="button" onClick={onAdd}>
           <PlusCircle size={18} />
           <span>Registrar Cosecha</span>
-        </button>
+        </button>)}</>
       </div>
       {parentFilters}
 
@@ -802,10 +807,10 @@ function CosechasList({ cosechas, lotes, parentFilters, selectedEmpresaName, sel
             <h2>Aun no tenes cosechas registradas</h2>
             <p>Registra tu primera cosecha para iniciar el proceso activo.</p>
           </div>
-          <button className="green-button empty-state-action" type="button" onClick={onAdd}>
+          <>{permisos.estructura && (<button className="green-button empty-state-action" type="button" onClick={onAdd}>
             <PlusCircle size={18} />
             <span>Registrar Cosecha</span>
-          </button>
+          </button>)}</>
         </section>
       ) : filtered.length === 0 ? (
         <section className="empty-state dashboard-card empty-state-compact">
@@ -854,7 +859,7 @@ function CosechasList({ cosechas, lotes, parentFilters, selectedEmpresaName, sel
                   <td><CosechaEstadoButton estado={cosecha.estado} onFinalize={() => onFinalize(cosecha)} /></td>
                   <td className="compact-actions-cell">
                     <div className="actions-cell actions-cell-center">
-                      <button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label={`Editar ${cosecha.nombre}`} onClick={() => onEdit(cosecha)}><Edit size={18} /></button>
+                      <>{permisos.estructura && (<button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label={`Editar ${cosecha.nombre}`} onClick={() => onEdit(cosecha)}><Edit size={18} /></button>)}</>
                       <button className="table-action-tooltip" data-tooltip="Ver detalle" type="button" aria-label={`Ver ${cosecha.nombre}`} onClick={() => onView(cosecha)}><Eye size={18} /></button>
                       <button className="table-action-tooltip" data-tooltip="Tirada de Aros" type="button" aria-label={`Tirada de Aros de ${cosecha.nombre}`} onClick={() => onTirada(cosecha)}><Scale size={18} /></button>
                     </div>
@@ -879,6 +884,10 @@ function CosechaEstadoButton({ estado, onFinalize }) {
 
   if (finalizada) {
     return <span className="siembra-state-pill siembra-state-done">Finalizado</span>;
+  }
+
+  if (!onFinalize) {
+    return <span className="siembra-state-pill">En curso</span>;
   }
 
   return (
@@ -1176,6 +1185,9 @@ function TiradaStandalone({ cosecha, tiradas, tiradaForm, editingTiradaId, savin
 }
 
 function TiradaArosSection({ tiradas, form, editingTiradaId, saving, fechaInicio, fechaFin, onFieldChange, onGuardar, onEdit, onEliminar }) {
+  // Sin permiso de carga (consulta): solo la lista de tiradas.
+  if (!onGuardar) return <TiradasReadonly tiradas={tiradas} />;
+
   return (
     <div className="create-form-card dashboard-card">
       <div className="create-grid">

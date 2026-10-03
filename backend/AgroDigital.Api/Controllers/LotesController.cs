@@ -7,7 +7,7 @@ namespace AgroDigital.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class LotesController(ILoteRepository loteRepository, IAuthTokenService authTokenService) : ControllerBase
+public class LotesController(ILoteRepository loteRepository, IAuthTokenService authTokenService, IPermisosService permisos) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<LoteDto>>> ObtenerTodos()
@@ -29,6 +29,7 @@ public class LotesController(ILoteRepository loteRepository, IAuthTokenService a
     public async Task<ActionResult<LoteDto>> Crear(CrearLoteRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirEnEmpresaPrincipalAsync(usuario, RolesPermiso.Estructura, "registrar lotes");
         if (await loteRepository.ExisteNombreAsync(request.Nombre, usuario.UsuarioId, usuario.Rol == "Admin"))
         {
             return Conflict("Ya existe un lote registrado con ese nombre. Revisa mayusculas, minusculas o espacios.");
@@ -64,6 +65,7 @@ public class LotesController(ILoteRepository loteRepository, IAuthTokenService a
     public async Task<IActionResult> Actualizar(int loteId, ActualizarLoteRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Lote, loteId, RolesPermiso.Estructura, "editar lotes");
         if (await loteRepository.ExisteNombreAsync(request.Nombre, usuario.UsuarioId, usuario.Rol == "Admin", loteId))
         {
             return Conflict("Ya existe otro lote registrado con ese nombre. Revisa mayusculas, minusculas o espacios.");
@@ -84,6 +86,7 @@ public class LotesController(ILoteRepository loteRepository, IAuthTokenService a
     public async Task<IActionResult> Deshabilitar(int loteId)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Lote, loteId, RolesPermiso.Estructura, "deshabilitar lotes");
         var actualizado = await loteRepository.CambiarEstadoAsync(loteId, false, usuario.UsuarioId, usuario.Rol == "Admin");
         return actualizado ? Ok(new { mensaje = "Lote deshabilitado correctamente." }) : NotFound();
     }
@@ -92,6 +95,7 @@ public class LotesController(ILoteRepository loteRepository, IAuthTokenService a
     public async Task<IActionResult> Habilitar(int loteId)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Lote, loteId, RolesPermiso.Estructura, "habilitar lotes");
         var actualizado = await loteRepository.CambiarEstadoAsync(loteId, true, usuario.UsuarioId, usuario.Rol == "Admin");
         return actualizado ? Ok(new { mensaje = "Lote habilitado correctamente." }) : NotFound();
     }

@@ -10,7 +10,8 @@ namespace AgroDigital.Api.Controllers;
 public class AlmacenamientosController(
     IAlmacenamientoRepository almacenamientoRepository,
     IAuthTokenService authTokenService,
-    IWebHostEnvironment environment) : ControllerBase
+    IWebHostEnvironment environment,
+    IPermisosService permisos) : ControllerBase
 {
     private readonly string _uploadsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "almacenamientos");
 
@@ -86,6 +87,7 @@ public class AlmacenamientosController(
     public async Task<ActionResult<AlmacenamientoDto>> Registrar(CrearAlmacenamientoRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Silo, request.SiloId, RolesPermiso.MovimientoGrano, "registrar movimientos de grano");
 
         var validacion = ValidarMovimiento(request.SiloId, request.TipoMovimiento, request.Cantidad, request.Fecha,
             request.HumedadIngreso, request.Impurezas);
@@ -118,6 +120,7 @@ public class AlmacenamientosController(
     public async Task<IActionResult> Actualizar(int almacenamientoId, ActualizarAlmacenamientoRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Almacenamiento, almacenamientoId, RolesPermiso.MovimientoGrano, "editar movimientos de grano");
 
         var validacion = ValidarMovimiento(siloId: null, request.TipoMovimiento, request.Cantidad, request.Fecha,
             request.HumedadIngreso, request.Impurezas);
@@ -144,6 +147,7 @@ public class AlmacenamientosController(
     public async Task<ActionResult<AlmacenamientoDto>> RegistrarAjuste(RegistrarAjusteRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Silo, request.SiloId, RolesPermiso.MovimientoGrano, "registrar ajustes de stock");
 
         if (request.SiloId <= 0) return BadRequest("Debe indicar un Silo valido.");
         if (request.Sentido is not ("Positivo" or "Negativo")) return BadRequest("El ajuste debe ser Positivo o Negativo.");
@@ -178,6 +182,8 @@ public class AlmacenamientosController(
     public async Task<ActionResult<TransferenciaResultadoDto>> RegistrarTransferencia(RegistrarTransferenciaRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Silo, request.SiloOrigenId, RolesPermiso.MovimientoGrano, "transferir grano entre silos");
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Silo, request.SiloDestinoId, RolesPermiso.MovimientoGrano, "transferir grano entre silos");
 
         if (request.SiloOrigenId <= 0 || request.SiloDestinoId <= 0) return BadRequest("Debe indicar el silo de origen y el de destino.");
         if (request.SiloOrigenId == request.SiloDestinoId) return BadRequest("El silo de origen y el de destino tienen que ser distintos.");
@@ -211,6 +217,7 @@ public class AlmacenamientosController(
     public async Task<ActionResult<AlmacenamientoDocumentoDto>> SubirDocumento(int almacenamientoId, IFormFile archivo)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Almacenamiento, almacenamientoId, RolesPermiso.MovimientoGrano, "adjuntar documentos a movimientos de grano");
         if (await almacenamientoRepository.ObtenerPorIdAsync(almacenamientoId, usuario.UsuarioId, EsAdmin(usuario)) is null) return NotFound();
 
         if (archivo is null || archivo.Length == 0)
@@ -249,6 +256,7 @@ public class AlmacenamientosController(
     public async Task<IActionResult> EliminarDocumento(int almacenamientoId, int documentoId)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Almacenamiento, almacenamientoId, RolesPermiso.MovimientoGrano, "eliminar documentos de movimientos de grano");
         if (await almacenamientoRepository.ObtenerPorIdAsync(almacenamientoId, usuario.UsuarioId, EsAdmin(usuario)) is null) return NotFound();
 
         var ruta = await almacenamientoRepository.ObtenerRutaDocumentoAsync(almacenamientoId, documentoId);

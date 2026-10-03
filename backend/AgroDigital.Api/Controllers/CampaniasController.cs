@@ -7,7 +7,7 @@ namespace AgroDigital.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class CampaniasController(ICampaniaRepository campaniaRepository, IAuthTokenService authTokenService) : ControllerBase
+public class CampaniasController(ICampaniaRepository campaniaRepository, IAuthTokenService authTokenService, IPermisosService permisos) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<CampaniaConsultaDto>>> ObtenerConsulta()
@@ -33,6 +33,9 @@ public class CampaniasController(ICampaniaRepository campaniaRepository, IAuthTo
         var validation = ValidarCampania(request);
         if (validation is not null) return validation;
 
+        // La campania pertenece a la empresa de sus lotes (CampaniaRepository usa el primero).
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Lote, request.Combinaciones[0].LoteId, RolesPermiso.Estructura, "registrar campañas");
+
         try
         {
             var campania = await campaniaRepository.CrearAsync(request, usuario.UsuarioId, usuario.Rol == "Admin");
@@ -51,6 +54,8 @@ public class CampaniasController(ICampaniaRepository campaniaRepository, IAuthTo
 
         var validation = ValidarCampania(request);
         if (validation is not null) return validation;
+
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Campania, campaniaId, RolesPermiso.Estructura, "editar campañas");
 
         try
         {

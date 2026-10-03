@@ -7,7 +7,7 @@ namespace AgroDigital.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class CosechasController(ICosechaRepository cosechaRepository, IAuthTokenService authTokenService, IWebHostEnvironment environment) : ControllerBase
+public class CosechasController(ICosechaRepository cosechaRepository, IAuthTokenService authTokenService, IWebHostEnvironment environment, IPermisosService permisos) : ControllerBase
 {
     private readonly string _uploadsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "cosechas");
 
@@ -30,6 +30,7 @@ public class CosechasController(ICosechaRepository cosechaRepository, IAuthToken
     public async Task<ActionResult<CosechaDto>> Crear(CrearCosechaRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Lote, request.LoteId, RolesPermiso.Estructura, "registrar cosechas");
         var validation = ValidarCosecha(request);
         if (validation is not null) return validation;
 
@@ -40,7 +41,8 @@ public class CosechasController(ICosechaRepository cosechaRepository, IAuthToken
     [HttpPut("{cosechaId:int}")]
     public async Task<IActionResult> Actualizar(int cosechaId, ActualizarCosechaRequest request)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Cosecha, cosechaId, RolesPermiso.Estructura, "editar cosechas");
         var validation = ValidarCosecha(request);
         if (validation is not null) return validation;
 
@@ -51,7 +53,8 @@ public class CosechasController(ICosechaRepository cosechaRepository, IAuthToken
     [HttpPost("{cosechaId:int}/finalizar")]
     public async Task<IActionResult> Finalizar(int cosechaId, FinalizarCosechaRequest request)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Cosecha, cosechaId, RolesPermiso.Estructura, "finalizar cosechas");
 
         var cosecha = await cosechaRepository.ObtenerPorIdAsync(cosechaId);
         if (cosecha is null) return NotFound();
@@ -78,6 +81,7 @@ public class CosechasController(ICosechaRepository cosechaRepository, IAuthToken
     public async Task<ActionResult<CosechaTiradaAroDto>> AgregarTirada(int cosechaId, CrearCosechaTiradaAroRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Cosecha, cosechaId, RolesPermiso.RegistroCampo, "registrar tiradas de aros");
 
         var cosecha = await cosechaRepository.ObtenerPorIdAsync(cosechaId);
         if (cosecha is null) return NotFound();
@@ -92,7 +96,8 @@ public class CosechasController(ICosechaRepository cosechaRepository, IAuthToken
     [HttpPut("{cosechaId:int}/tirada-aros/{tiradaId:int}")]
     public async Task<IActionResult> ActualizarTirada(int cosechaId, int tiradaId, ActualizarCosechaTiradaAroRequest request)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.TiradaAros, tiradaId, "editar tiradas de aros");
 
         var cosecha = await cosechaRepository.ObtenerPorIdAsync(cosechaId);
         if (cosecha is null) return NotFound();
@@ -107,7 +112,8 @@ public class CosechasController(ICosechaRepository cosechaRepository, IAuthToken
     [HttpDelete("{cosechaId:int}/tirada-aros/{tiradaId:int}")]
     public async Task<IActionResult> EliminarTirada(int cosechaId, int tiradaId)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.TiradaAros, tiradaId, "eliminar tiradas de aros");
 
         var eliminado = await cosechaRepository.EliminarTiradaAsync(cosechaId, tiradaId);
         return eliminado ? NoContent() : NotFound();
@@ -125,6 +131,7 @@ public class CosechasController(ICosechaRepository cosechaRepository, IAuthToken
     public async Task<ActionResult<CosechaDocumentoDto>> SubirDocumento(int cosechaId, IFormFile archivo)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Cosecha, cosechaId, RolesPermiso.Estructura, "adjuntar documentos a cosechas");
 
         if (archivo is null || archivo.Length == 0)
         {
@@ -165,7 +172,8 @@ public class CosechasController(ICosechaRepository cosechaRepository, IAuthToken
     [HttpDelete("{cosechaId:int}/documentos/{documentoId:int}")]
     public async Task<IActionResult> EliminarDocumento(int cosechaId, int documentoId)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Cosecha, cosechaId, RolesPermiso.Estructura, "eliminar documentos de cosechas");
 
         var ruta = await cosechaRepository.ObtenerRutaDocumentoAsync(cosechaId, documentoId);
         var eliminado = await cosechaRepository.EliminarDocumentoAsync(cosechaId, documentoId);

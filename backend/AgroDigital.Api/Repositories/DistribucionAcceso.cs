@@ -17,7 +17,8 @@ public class ConflictoDistribucionException(string message) : Exception(message)
 /// </summary>
 internal static class DistribucionAcceso
 {
-    public static readonly string[] RolesGestion = ["Encargado", "EmpleadoAdministrativo"];
+    // Matriz de permisos (28_permisos_autor_seguimientos.sql): Distribucion = Gerente, Encargado y Empleado administrativo.
+    public static readonly string[] RolesGestion = ["Gerente", "Encargado", "EmpleadoAdministrativo"];
     public static readonly string[] RolesParametros = ["Gerente", "Encargado"];
     public static readonly string[] RolesIndicadoresAgregados = ["Gerente", "Encargado"];
 

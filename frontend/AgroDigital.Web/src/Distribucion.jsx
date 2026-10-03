@@ -39,7 +39,7 @@ import {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
 
-const ROLES_GESTION = ['Encargado', 'EmpleadoAdministrativo', 'Admin'];
+const ROLES_GESTION = ['Gerente', 'Encargado', 'EmpleadoAdministrativo', 'Admin'];
 const ROLES_PARAMETROS = ['Gerente', 'Encargado', 'Admin'];
 const TIPOS_DESTINO = ['Acopiadora', 'Cooperativa', 'Puerto', 'Industria', 'Otro'];
 
@@ -160,9 +160,10 @@ function DesvioChip({ desvioPp, nivel }) {
 // Modulo
 // ===========================================================================
 
-export default function Distribucion({ session, parentFilters = null, selectedEmpresaId = '', selectedEmpresaName = '' }) {
+export default function Distribucion({ permisos = null, session, parentFilters = null, selectedEmpresaId = '', selectedEmpresaName = '' }) {
   const api = useApi(session);
-  const puedeGestionar = ROLES_GESTION.includes(session?.role);
+  // Rol en la empresa seleccionada (App.jsx). Si no llega, se usa el rol general.
+  const puedeGestionar = permisos ? permisos.movimientoGrano : ROLES_GESTION.includes(session?.role);
   const puedeParametros = ROLES_PARAMETROS.includes(session?.role);
 
   const [tab, setTab] = useState('envios');

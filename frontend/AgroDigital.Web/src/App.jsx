@@ -618,6 +618,21 @@ function App() {
     () => (session?.role === 'Gerente' ? managerContext?.empresas ?? [] : misEmpresas).filter((empresa) => empresa.activo),
     [managerContext, misEmpresas, session?.role]
   );
+
+  // Rol del usuario en la empresa seleccionada (puede ser distinto en cada empresa) y permisos
+  // de la matriz de roles. La API valida lo mismo: aca solo se ocultan los botones que no corresponden.
+  const rolEmpresaActual = useMemo(() => {
+    if (session?.role === 'Admin' || session?.role === 'Gerente') return session.role;
+    const empresa = misEmpresas.find((item) => String(item.empresaId) === String(selectedParentEmpresaId));
+    return empresa?.rol ?? session?.role ?? '';
+  }, [session?.role, misEmpresas, selectedParentEmpresaId]);
+
+  const permisosRol = useMemo(() => ({
+    rol: rolEmpresaActual,
+    estructura: ['Admin', 'Gerente', 'Encargado'].includes(rolEmpresaActual),
+    registroCampo: ['Admin', 'Gerente', 'Encargado', 'EmpleadoCampo'].includes(rolEmpresaActual),
+    movimientoGrano: ['Admin', 'Gerente', 'Encargado', 'EmpleadoAdministrativo'].includes(rolEmpresaActual)
+  }), [rolEmpresaActual]);
   const selectedParentEmpresa = useMemo(
     () => empresasDisponibles.find((empresa) => String(empresa.empresaId) === String(selectedParentEmpresaId)) ?? null,
     [empresasDisponibles, selectedParentEmpresaId]
@@ -2500,6 +2515,7 @@ function App() {
           />
         ) : activeModule === 'silos' ? (
           <Silos
+            permisos={permisosRol}
             session={session}
             lotes={parentFilteredLotes}
             parentFilters={parentFiltersForEmpresa}
@@ -2508,6 +2524,7 @@ function App() {
           />
         ) : activeModule === 'campanias' ? (
           <Campanias
+            permisos={permisosRol}
             session={session}
             lotes={parentFilteredLotes}
             parentFilters={parentFiltersForEmpresa}
@@ -2525,6 +2542,7 @@ function App() {
           />
         ) : activeModule === 'siembras' ? (
           <Siembras
+            permisos={permisosRol}
             session={session}
             lotes={parentFilteredLotes}
             parentFilters={parentFiltersForEmpresaCampania}
@@ -2537,6 +2555,7 @@ function App() {
           />
         ) : activeModule === 'cosechas' ? (
           <Cosechas
+            permisos={permisosRol}
             session={session}
             lotes={parentFilteredLotes}
             parentFilters={parentFiltersForEmpresaCampania}
@@ -2545,6 +2564,7 @@ function App() {
           />
         ) : activeModule === 'almacenamiento' ? (
           <Almacenamiento
+            permisos={permisosRol}
             session={session}
             parentFilters={parentFiltersForEmpresa}
             selectedEmpresaId={selectedParentEmpresaId}
@@ -2558,6 +2578,7 @@ function App() {
           />
         ) : activeModule === 'distribucion' ? (
           <Distribucion
+            permisos={permisosRol}
             session={session}
             parentFilters={parentFiltersForEmpresa}
             selectedEmpresaId={selectedParentEmpresaId}
@@ -2565,6 +2586,7 @@ function App() {
           />
         ) : view === 'list' ? (
           <LotesList
+            permisos={permisosRol}
             lotes={parentFilteredLotes}
             loading={loading}
             parentFilters={parentFiltersForEmpresa}
@@ -5456,7 +5478,7 @@ function ParentSearchSelect({ label, value, options, placeholder, onChange }) {
   );
 }
 
-function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onToggleStatus, statusSaving }) {
+function LotesList({ permisos = { estructura: true }, lotes, loading, parentFilters, onAdd, onView, onEdit, onToggleStatus, statusSaving }) {
   const [query, setQuery] = useState('');
   const [conditionFilter, setConditionFilter] = useState('');
   const [zoneFilter, setZoneFilter] = useState('');
@@ -5543,10 +5565,10 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
             <FileText size={18} />
             <span>Exportar PDF{selectedLotes.length > 0 ? ` (${selectedLotes.length})` : ''}</span>
           </button>
-          <button className="green-button add-lote-button" type="button" onClick={onAdd}>
+          <>{permisos.estructura && (<button className="green-button add-lote-button" type="button" onClick={onAdd}>
             <PlusCircle size={18} />
             <span>Registrar lote</span>
-          </button>
+          </button>)}</>
         </div>
       </div>
       {parentFilters}
@@ -5626,7 +5648,7 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
           icon={<Tractor size={104} strokeWidth={1.8} />}
           title="Aun no tenes lotes registrados..."
           description="Registra tus lotes y comenza a operar con AgroDigital."
-          actionLabel="Registrar lote"
+          actionLabel={permisos.estructura ? 'Registrar lote' : undefined}
           onAction={onAdd}
         />
       ) : filteredLotes.length === 0 ? (
@@ -5685,8 +5707,8 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
                     <td className="actions-cell lote-actions-cell">
                       <div className="actions-cell-content">
                       <button className="table-action-tooltip" data-tooltip="Ver detalle" type="button" aria-label={`Ver ${lote.nombre}`} onClick={() => onView(lote)}><Eye size={18} /></button>
-                      <button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label={`Editar ${lote.nombre}`} onClick={() => onEdit(lote)}><Edit size={18} /></button>
-                      <button
+                      <>{permisos.estructura && (<button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label={`Editar ${lote.nombre}`} onClick={() => onEdit(lote)}><Edit size={18} /></button>)}</>
+                      <>{permisos.estructura && (<button
                         className={`table-action-tooltip status-action-button ${lote.activo ? 'status-action-disable' : 'status-action-enable'}`}
                         data-tooltip={lote.activo ? 'Deshabilitar' : 'Habilitar'}
                         type="button"
@@ -5698,7 +5720,7 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
                           ? <LoaderCircle className="spin" size={18} />
                           : lote.activo ? <Ban size={18} /> : <CheckCircle2 size={18} />}
                         <span>{lote.activo ? 'Deshabilitar' : 'Habilitar'}</span>
-                      </button>
+                      </button>)}</>
                       </div>
                     </td>
                   </tr>

@@ -12,7 +12,8 @@ public class SeguimientosController(
     ISiembraRepository siembraRepository,
     ILoteRepository loteRepository,
     IAuthTokenService authTokenService,
-    IWebHostEnvironment environment) : ControllerBase
+    IWebHostEnvironment environment,
+    IPermisosService permisos) : ControllerBase
 {
     private readonly string _uploadsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "seguimientos");
 
@@ -55,6 +56,7 @@ public class SeguimientosController(
     public async Task<ActionResult<SiembraSeguimientoDto>> Crear(int siembraId, CrearSiembraSeguimientoRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Siembra, siembraId, RolesPermiso.RegistroCampo, "registrar seguimientos");
 
         var siembra = await siembraRepository.ObtenerPorIdAsync(siembraId);
         if (siembra is null)
@@ -72,7 +74,7 @@ public class SeguimientosController(
         var validationError = ValidarRegistro(request, siembra.FechaInicio, lote.Coordenadas);
         if (validationError is not null) return BadRequest(validationError);
 
-        var seguimiento = await seguimientoRepository.CrearAsync(siembraId, request);
+        var seguimiento = await seguimientoRepository.CrearAsync(siembraId, request, usuario.UsuarioId);
         return seguimiento is null ? NotFound() : Ok(seguimiento);
     }
 
@@ -80,6 +82,7 @@ public class SeguimientosController(
     public async Task<IActionResult> Actualizar(int siembraId, int seguimientoId, ActualizarSiembraSeguimientoRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.Seguimiento, seguimientoId, "editar seguimientos");
 
         var siembra = await siembraRepository.ObtenerPorIdAsync(siembraId);
         if (siembra is null) return NotFound();
@@ -96,7 +99,8 @@ public class SeguimientosController(
     [HttpDelete("{seguimientoId:int}")]
     public async Task<IActionResult> Eliminar(int siembraId, int seguimientoId)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.Seguimiento, seguimientoId, "eliminar seguimientos");
 
         var rutas = await seguimientoRepository.ObtenerRutasDocumentosDeSeguimientoAsync(seguimientoId);
         var eliminado = await seguimientoRepository.EliminarAsync(siembraId, seguimientoId);
@@ -118,7 +122,8 @@ public class SeguimientosController(
     [HttpPost("finalizar")]
     public async Task<IActionResult> Finalizar(int siembraId)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Siembra, siembraId, RolesPermiso.Estructura, "finalizar el seguimiento");
         var finalizado = await seguimientoRepository.FinalizarAsync(siembraId);
         return finalizado ? NoContent() : NotFound();
     }
@@ -136,7 +141,8 @@ public class SeguimientosController(
     [HttpPost("{seguimientoId:int}/insumos")]
     public async Task<ActionResult<SeguimientoInsumoDto>> AgregarInsumo(int siembraId, int seguimientoId, CrearSeguimientoInsumoRequest request)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.Seguimiento, seguimientoId, "cargar insumos en seguimientos");
 
         if (!TiposInsumoValidos.Contains(request.Tipo ?? string.Empty))
         {
@@ -152,7 +158,8 @@ public class SeguimientosController(
     [HttpDelete("{seguimientoId:int}/insumos/{insumoId:int}")]
     public async Task<IActionResult> EliminarInsumo(int siembraId, int seguimientoId, int insumoId)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.Seguimiento, seguimientoId, "eliminar insumos de seguimientos");
         var eliminado = await seguimientoRepository.EliminarInsumoAsync(seguimientoId, insumoId);
         return eliminado ? NoContent() : NotFound();
     }
@@ -172,6 +179,7 @@ public class SeguimientosController(
     public async Task<ActionResult<SeguimientoDocumentoDto>> SubirDocumento(int siembraId, int seguimientoId, IFormFile archivo)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.Seguimiento, seguimientoId, "adjuntar documentos a seguimientos");
 
         if (archivo is null || archivo.Length == 0)
         {
@@ -212,7 +220,8 @@ public class SeguimientosController(
     [HttpDelete("{seguimientoId:int}/documentos/{documentoId:int}")]
     public async Task<IActionResult> EliminarDocumento(int siembraId, int seguimientoId, int documentoId)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.Seguimiento, seguimientoId, "eliminar documentos de seguimientos");
 
         var ruta = await seguimientoRepository.ObtenerRutaDocumentoAsync(seguimientoId, documentoId);
         var eliminado = await seguimientoRepository.EliminarDocumentoAsync(seguimientoId, documentoId);

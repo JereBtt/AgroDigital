@@ -22,6 +22,10 @@ import {
   X
 } from 'lucide-react';
 
+
+// Permisos por rol (los calcula App.jsx segun el rol en la empresa). Sin la prop, se muestra todo.
+const PERMISOS_TODOS = { estructura: true, registroCampo: true, movimientoGrano: true };
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
 const commonGrains = ['Soja', 'Maiz', 'Sorgo', 'Trigo', 'Girasol', 'Otro'];
 const rotationHierarchy = {
@@ -108,7 +112,7 @@ function campaignFormSignature(form) {
   });
 }
 
-export default function Campanias({ session, lotes, parentFilters, selectedEmpresaId, onLotesChanged, onCampaniasChanged, onRegisterSiembra, requestedEditCampaniaId, onCampaignEditRequestHandled }) {
+export default function Campanias({ permisos = PERMISOS_TODOS, session, lotes, parentFilters, selectedEmpresaId, onLotesChanged, onCampaniasChanged, onRegisterSiembra, requestedEditCampaniaId, onCampaignEditRequestHandled }) {
   const [view, setView] = useState('list');
   const [campanias, setCampanias] = useState([]);
   const [selectedCampania, setSelectedCampania] = useState(null);
@@ -443,6 +447,7 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
   if (view === 'detail') {
     return (
       <CampaniaDetalle
+        permisos={permisos}
         campania={selectedCampania}
         onBack={goToList}
         onEdit={() => openCampania(selectedCampania.campaniaId, 'edit')}
@@ -453,6 +458,7 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
 
   return (
     <CampaniasList
+      permisos={permisos}
       campanias={campanias}
       selectedEmpresaId={selectedEmpresaId}
       loading={loading}
@@ -466,7 +472,7 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
   );
 }
 
-function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFilters, onAdd, onEdit, onView, onRegisterSiembra }) {
+function CampaniasList({ permisos = PERMISOS_TODOS, campanias, selectedEmpresaId, loading, error, parentFilters, onAdd, onEdit, onView, onRegisterSiembra }) {
   const [query, setQuery] = useState('');
   const [productoFilter, setProductoFilter] = useState('');
   const [estadoFilter, setEstadoFilter] = useState('');
@@ -579,10 +585,10 @@ function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFil
             <span>Volver a campañas</span>
           </button>
         ) : (
-          <button className="green-button add-lote-button" type="button" onClick={onAdd}>
+          <>{permisos.estructura && (<button className="green-button add-lote-button" type="button" onClick={onAdd}>
             <PlusCircle size={18} />
             <span>Registrar Campaña</span>
-          </button>
+          </button>)}</>
         )}
       </div>
       {parentFilters}
@@ -642,10 +648,10 @@ function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFil
             <h2>Aun no tenes campañas registradas</h2>
             <p>Registra tu primera campaña para agrupar lotes, granos y procesos.</p>
           </div>
-          <button className="green-button empty-state-action" type="button" onClick={onAdd}>
+          <>{permisos.estructura && (<button className="green-button empty-state-action" type="button" onClick={onAdd}>
             <PlusCircle size={18} />
             <span>Registrar Campaña</span>
-          </button>
+          </button>)}</>
         </section>
       ) : (activeCampania ? filteredCombinaciones.length : filteredResumenes.length) === 0 ? (
         <section className="empty-state dashboard-card empty-state-compact">
@@ -690,12 +696,12 @@ function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFil
                   <td><CampaniaEtapaChip etapa={item.etapaActual} /></td>
                   <td className="compact-actions-cell">
                     <div className="actions-cell actions-cell-center">
-                      <button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label={`Editar ${item.campaniaNombre}`} onClick={() => onEdit(item.campaniaId)}><Edit size={18} /></button>
+                      <>{permisos.estructura && (<button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label={`Editar ${item.campaniaNombre}`} onClick={() => onEdit(item.campaniaId)}><Edit size={18} /></button>)}</>
                       <button className="table-action-tooltip" data-tooltip="Ver detalle" type="button" aria-label={`Ver ${item.campaniaNombre}`} onClick={() => onView(item.campaniaId)}><Eye size={18} /></button>
-                      <button className="table-action-tooltip" data-tooltip="Registrar siembra" type="button" aria-label="Registrar siembra" onClick={() => onRegisterSiembra?.(item.campaniaId)}><Sprout size={18} /></button>
-                      <button className="table-action-tooltip" data-tooltip="Registrar cosecha" type="button" aria-label="Registrar cosecha" disabled={item.estado === 'Pendiente'} onClick={() => alert('La accion quedo preparada para conectar con Registrar Cosecha.')}><Scale size={18} /></button>
-                      <button className="table-action-tooltip" data-tooltip="Almacenamiento" type="button" aria-label="Registrar almacenamiento" disabled={item.estado === 'Pendiente'}><Package size={18} /></button>
-                      <button className="table-action-tooltip" data-tooltip="Distribucion" type="button" aria-label="Registrar distribucion" disabled={item.estado === 'Pendiente'}><Truck size={18} /></button>
+                      <>{permisos.estructura && (<button className="table-action-tooltip" data-tooltip="Registrar siembra" type="button" aria-label="Registrar siembra" onClick={() => onRegisterSiembra?.(item.campaniaId)}><Sprout size={18} /></button>)}</>
+                      <>{permisos.estructura && (<button className="table-action-tooltip" data-tooltip="Registrar cosecha" type="button" aria-label="Registrar cosecha" disabled={item.estado === 'Pendiente'} onClick={() => alert('La accion quedo preparada para conectar con Registrar Cosecha.')}><Scale size={18} /></button>)}</>
+                      <>{permisos.movimientoGrano && (<button className="table-action-tooltip" data-tooltip="Almacenamiento" type="button" aria-label="Registrar almacenamiento" disabled={item.estado === 'Pendiente'}><Package size={18} /></button>)}</>
+                      <>{permisos.movimientoGrano && (<button className="table-action-tooltip" data-tooltip="Distribucion" type="button" aria-label="Registrar distribucion" disabled={item.estado === 'Pendiente'}><Truck size={18} /></button>)}</>
                     </div>
                   </td>
                 </tr>
@@ -745,7 +751,7 @@ function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFil
                   <td className="compact-actions-cell">
                     <div className="actions-cell actions-cell-center">
                       <button className="table-action-tooltip" data-tooltip="Ver lotes y cultivos" type="button" aria-label={`Ver lotes y cultivos de ${item.campaniaNombre}`} onClick={() => openCampaniaTable(item.campaniaId)}><Eye size={18} /></button>
-                      <button className="table-action-tooltip" data-tooltip="Editar campaña" type="button" aria-label={`Editar ${item.campaniaNombre}`} onClick={() => onEdit(item.campaniaId)}><Edit size={18} /></button>
+                      <>{permisos.estructura && (<button className="table-action-tooltip" data-tooltip="Editar campaña" type="button" aria-label={`Editar ${item.campaniaNombre}`} onClick={() => onEdit(item.campaniaId)}><Edit size={18} /></button>)}</>
                       <button className="table-action-tooltip" data-tooltip="Ver ficha" type="button" aria-label={`Ver ficha de ${item.campaniaNombre}`} onClick={() => onView(item.campaniaId)}><CalendarDays size={18} /></button>
                     </div>
                   </td>
@@ -1095,7 +1101,7 @@ function CampaignPeriodConflictModal({ message, onClose }) {
   , document.body);
 }
 
-function CampaniaDetalle({ campania, onBack, onEdit, onRegisterSiembra }) {
+function CampaniaDetalle({ permisos = PERMISOS_TODOS, campania, onBack, onEdit, onRegisterSiembra }) {
   if (!campania) return null;
 
   return (
@@ -1118,6 +1124,7 @@ function CampaniaDetalle({ campania, onBack, onEdit, onRegisterSiembra }) {
 
       <h2>Combinaciones de campaña</h2>
       <CombinacionesTable
+        permisos={permisos}
         combinaciones={campania.combinaciones}
         showOperationalActions
         onEdit={onEdit}
@@ -1131,7 +1138,7 @@ function CampaniaDetalle({ campania, onBack, onEdit, onRegisterSiembra }) {
   );
 }
 
-function CombinacionesTable({ combinaciones, editable = false, showOperationalActions = false, showAntecesor = editable, onRemove, onEdit, onRegisterSiembra }) {
+function CombinacionesTable({ permisos = PERMISOS_TODOS, combinaciones, editable = false, showOperationalActions = false, showAntecesor = editable, onRemove, onEdit, onRegisterSiembra }) {
   const columnCount = 8 + (showAntecesor ? 1 : 0) + (editable || showOperationalActions ? 1 : 0);
 
   return (
@@ -1171,12 +1178,12 @@ function CombinacionesTable({ combinaciones, editable = false, showOperationalAc
               {showOperationalActions && (
                 <td className="compact-actions-cell">
                   <div className="actions-cell actions-cell-center">
-                    <button className="table-action-tooltip" data-tooltip="Editar campaña" type="button" aria-label="Editar campaña" onClick={onEdit}><Edit size={18} /></button>
+                    <>{permisos.estructura && (<button className="table-action-tooltip" data-tooltip="Editar campaña" type="button" aria-label="Editar campaña" onClick={onEdit}><Edit size={18} /></button>)}</>
                     <button className="table-action-tooltip" data-tooltip="Detalle de campaña" type="button" aria-label="Detalle de campaña" onClick={() => alert('Ya estas consultando el detalle de esta campaña.')}><Eye size={18} /></button>
-                    <button className="table-action-tooltip" data-tooltip="Registrar siembra" type="button" aria-label={`Registrar siembra para ${item.loteNombre}`} onClick={() => onRegisterSiembra?.(item.campaniaId)}><Sprout size={18} /></button>
-                    <button className="table-action-tooltip" data-tooltip="Registrar cosecha" type="button" aria-label="Registrar cosecha" disabled={item.estado === 'Pendiente'} onClick={() => alert('La accion quedo preparada para conectar con Registrar Cosecha.')}><Scale size={18} /></button>
-                    <button className="table-action-tooltip" data-tooltip="Almacenamiento" type="button" aria-label="Registrar almacenamiento" disabled={item.estado === 'Pendiente'}><Package size={18} /></button>
-                    <button className="table-action-tooltip" data-tooltip="Distribucion" type="button" aria-label="Registrar distribucion" disabled={item.estado === 'Pendiente'}><Truck size={18} /></button>
+                    <>{permisos.estructura && (<button className="table-action-tooltip" data-tooltip="Registrar siembra" type="button" aria-label={`Registrar siembra para ${item.loteNombre}`} onClick={() => onRegisterSiembra?.(item.campaniaId)}><Sprout size={18} /></button>)}</>
+                    <>{permisos.estructura && (<button className="table-action-tooltip" data-tooltip="Registrar cosecha" type="button" aria-label="Registrar cosecha" disabled={item.estado === 'Pendiente'} onClick={() => alert('La accion quedo preparada para conectar con Registrar Cosecha.')}><Scale size={18} /></button>)}</>
+                    <>{permisos.movimientoGrano && (<button className="table-action-tooltip" data-tooltip="Almacenamiento" type="button" aria-label="Registrar almacenamiento" disabled={item.estado === 'Pendiente'}><Package size={18} /></button>)}</>
+                    <>{permisos.movimientoGrano && (<button className="table-action-tooltip" data-tooltip="Distribucion" type="button" aria-label="Registrar distribucion" disabled={item.estado === 'Pendiente'}><Truck size={18} /></button>)}</>
                   </div>
                 </td>
               )}

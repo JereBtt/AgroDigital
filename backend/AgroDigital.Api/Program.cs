@@ -38,6 +38,7 @@ builder.Services.AddSingleton<IAuthTokenService, HmacAuthTokenService>();
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection(EmailSettings.Seccion));
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 builder.Services.AddScoped<INotificacionesSolicitudService, NotificacionesSolicitudService>();
+builder.Services.AddScoped<IPermisosService, PermisosService>();
 
 var connectionString = builder.Configuration.GetConnectionString("AgroDigital");
 if (!string.IsNullOrWhiteSpace(connectionString))
@@ -131,6 +132,29 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors("FrontendLocal");
+
+// Permisos por rol (Services/PermisosService.cs): un permiso denegado responde 403 y un
+// registro inexistente o de otra empresa, 404, con el mensaje en texto plano (como el resto de la API).
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (PermisoDenegadoException ex) when (!context.Response.HasStarted)
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        context.Response.ContentType = "text/plain; charset=utf-8";
+        await context.Response.WriteAsync(ex.Message);
+    }
+    catch (RecursoNoEncontradoException ex) when (!context.Response.HasStarted)
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        context.Response.ContentType = "text/plain; charset=utf-8";
+        await context.Response.WriteAsync(ex.Message);
+    }
+});
+
 app.UseAuthorization();
 app.MapControllers();
 

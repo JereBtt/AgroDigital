@@ -26,6 +26,10 @@ import {
   Wheat
 } from 'lucide-react';
 
+
+// Permisos por rol (los calcula App.jsx segun el rol en la empresa). Sin la prop, se muestra todo.
+const PERMISOS_TODOS = { estructura: true, registroCampo: true, movimientoGrano: true };
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
 
 const emptySiloForm = {
@@ -109,7 +113,7 @@ function nextTempId() {
   return `tmp-${tempIdSeq}`;
 }
 
-export default function Silos({ session, lotes, parentFilters = null, selectedEmpresaId = '', selectedEmpresaName = '' }) {
+export default function Silos({ permisos = PERMISOS_TODOS, session, lotes, parentFilters = null, selectedEmpresaId = '', selectedEmpresaName = '' }) {
   const [view, setView] = useState('list');
   const [silos, setSilos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -658,6 +662,7 @@ export default function Silos({ session, lotes, parentFilters = null, selectedEm
   if (view === 'detail') {
     return (
       <SiloFicha
+        permisos={permisos}
         silo={selectedSilo}
         lotes={lotes}
         authHeaders={authHeaders}
@@ -686,6 +691,7 @@ export default function Silos({ session, lotes, parentFilters = null, selectedEm
   if (view === 'historial') {
     return (
       <SiloHistorialList
+        permisos={permisos}
         silo={selectedSilo}
         controles={controles}
         error={error}
@@ -745,6 +751,7 @@ export default function Silos({ session, lotes, parentFilters = null, selectedEm
 
   return (
     <SilosList
+      permisos={permisos}
       silos={selectedEmpresaId ? silos.filter((silo) => String(silo.empresaId) === String(selectedEmpresaId)) : silos}
       parentFilters={parentFilters}
       loading={loading}
@@ -753,7 +760,7 @@ export default function Silos({ session, lotes, parentFilters = null, selectedEm
       onView={(silo) => openSilo(silo, 'detail')}
       onEdit={(silo) => openSilo(silo, 'edit')}
       onControl={openHistorial}
-      onParametros={() => { setError(''); setView('parametros'); }}
+      onParametros={permisos.estructura ? () => { setError(''); setView('parametros'); } : null}
     />
   );
 }
@@ -862,7 +869,7 @@ function EstadoSiloChip({ estado }) {
   return <span className={`silo-chip silo-chip-${info.tono}`}>{info.texto}</span>;
 }
 
-function SilosList({ silos, parentFilters = null, loading, error, onAdd, onView, onEdit, onControl, onParametros }) {
+function SilosList({ permisos = PERMISOS_TODOS, silos, parentFilters = null, loading, error, onAdd, onView, onEdit, onControl, onParametros }) {
   const [query, setQuery] = useState('');
   const [tipoFilter, setTipoFilter] = useState('');
   const [productoFilter, setGranoFilter] = useState('');
@@ -936,7 +943,7 @@ function SilosList({ silos, parentFilters = null, loading, error, onAdd, onView,
     return (
       <>
         <button className="table-action-tooltip" data-tooltip="Ver detalle" type="button" aria-label={`Ver ${silo.nombre}`} onClick={() => onView(silo)}><Eye size={18} /></button>
-        <button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label={`Editar ${silo.nombre}`} onClick={() => onEdit(silo)}><Edit size={18} /></button>
+        <>{permisos.estructura && (<button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label={`Editar ${silo.nombre}`} onClick={() => onEdit(silo)}><Edit size={18} /></button>)}</>
         <button className="table-action-tooltip" data-tooltip="Control" type="button" aria-label={`Control de ${silo.nombre}`} onClick={() => onControl(silo)}><ClipboardControlIcon /></button>
       </>
     );
@@ -956,10 +963,10 @@ function SilosList({ silos, parentFilters = null, loading, error, onAdd, onView,
               <span>Parámetros</span>
             </button>
           )}
-          <button className="green-button add-lote-button" type="button" onClick={onAdd}>
+          <>{permisos.estructura && (<button className="green-button add-lote-button" type="button" onClick={onAdd}>
             <PlusCircle size={18} />
             <span>Registrar silo</span>
-          </button>
+          </button>)}</>
         </div>
       </div>
 
@@ -1044,10 +1051,10 @@ function SilosList({ silos, parentFilters = null, loading, error, onAdd, onView,
             <p>{silos.length === 0 ? 'Registrá tus silos para llevar el control de su ocupación.' : 'Probá limpiando los filtros.'}</p>
           </div>
           {silos.length === 0 ? (
-            <button className="green-button empty-state-action" type="button" onClick={onAdd}>
+            <>{permisos.estructura && (<button className="green-button empty-state-action" type="button" onClick={onAdd}>
               <PlusCircle size={18} />
               <span>Registrar silo</span>
-            </button>
+            </button>)}</>
           ) : (
             <button className="back-button empty-state-action" type="button" onClick={clearFilters}>Limpiar filtros</button>
           )}
@@ -1872,7 +1879,7 @@ function codigoPartida(id) {
   return `P - ${String(id).padStart(4, '0')}`;
 }
 
-function SiloFicha({ silo, lotes = [], authHeaders, version = 0, error, cambiandoEstado, onVolver, onEditar, onControles, onCambiarEstado }) {
+function SiloFicha({ permisos = PERMISOS_TODOS, silo, lotes = [], authHeaders, version = 0, error, cambiandoEstado, onVolver, onEditar, onControles, onCambiarEstado }) {
   const [tab, setTab] = useState('resumen');
   const [ficha, setFicha] = useState(null);
   const [parametro, setParametro] = useState(null);
@@ -1984,7 +1991,7 @@ function SiloFicha({ silo, lotes = [], authHeaders, version = 0, error, cambiand
           <p>{[datos.tipoSilo === 'Bolson' ? 'Bolsón' : 'Silo de chapa', ubicacion].filter(Boolean).join(' · ')}</p>
         </div>
         <div className="silo-ficha-acciones">
-          <button className="back-button" type="button" onClick={onEditar}><Edit size={17} /> Editar</button>
+          <>{permisos.estructura && (<button className="back-button" type="button" onClick={onEditar}><Edit size={17} /> Editar</button>)}</>
           <button className="green-button" type="button" onClick={onControles}><ClipboardControlIcon /> Controles</button>
         </div>
       </div>
@@ -2049,15 +2056,15 @@ function SiloFicha({ silo, lotes = [], authHeaders, version = 0, error, cambiand
               <p className="silo-hint">Vacío y Con grano se actualizan solos con Almacenamiento. Mantenimiento y baja los decidís vos.</p>
               <div className="silo-estado-acciones">
                 {estado !== 'En mantenimiento' && estado !== 'Dado de baja' && (
-                  <button type="button" className="back-button" onClick={() => setConfirmar('En mantenimiento')}>Poner en mantenimiento</button>
+                  <>{permisos.estructura && (<button type="button" className="back-button" onClick={() => setConfirmar('En mantenimiento')}>Poner en mantenimiento</button>)}</>
                 )}
                 {estado !== 'Dado de baja' && (
-                  <button type="button" className="back-button" disabled={tieneGrano} title={tieneGrano ? 'Vacialo con un egreso antes de darlo de baja' : undefined} onClick={() => setConfirmar('Dado de baja')}>
+                  <>{permisos.estructura && (<button type="button" className="back-button" disabled={tieneGrano} title={tieneGrano ? 'Vacialo con un egreso antes de darlo de baja' : undefined} onClick={() => setConfirmar('Dado de baja')}>
                     Dar de baja
-                  </button>
+                  </button>)}</>
                 )}
                 {(estado === 'En mantenimiento' || estado === 'Dado de baja') && (
-                  <button type="button" className="green-button" onClick={() => setConfirmar('Activo')}>Reactivar</button>
+                  <>{permisos.estructura && (<button type="button" className="green-button" onClick={() => setConfirmar('Activo')}>Reactivar</button>)}</>
                 )}
                 {tieneGrano && estado !== 'Dado de baja' && <small className="silo-hint">Para darlo de baja tiene que estar vacío.</small>}
               </div>
@@ -2600,7 +2607,7 @@ function NivelOcupacionBar({ porcentaje }) {
   );
 }
 
-function SiloHistorialList({ silo, controles, error, onNuevoControl, onVer, onEditar, onEliminar, onBack }) {
+function SiloHistorialList({ permisos = PERMISOS_TODOS, silo, controles, error, onNuevoControl, onVer, onEditar, onEliminar, onBack }) {
   if (!silo) return null;
 
   return (
@@ -2610,7 +2617,7 @@ function SiloHistorialList({ silo, controles, error, onNuevoControl, onVer, onEd
           <h1>Historial Control Silo</h1>
           <p>{silo.nombre} - {silo.tipoSilo} - {silo.producto || 'Sin grano'}</p>
         </div>
-        <button className="green-button" type="button" onClick={onNuevoControl}>Nuevo Control</button>
+        <>{permisos.registroCampo && (<button className="green-button" type="button" onClick={onNuevoControl}>Nuevo Control</button>)}</>
       </div>
 
       {error && <p style={{ color: '#c0392b', fontWeight: 700 }}>{error}</p>}
@@ -2641,8 +2648,8 @@ function SiloHistorialList({ silo, controles, error, onNuevoControl, onVer, onEd
                 <td>{control.roturaBolsa === null || control.roturaBolsa === undefined ? '-' : control.roturaBolsa ? 'Si' : 'No'}</td>
                 <td className="actions-cell">
                   <button className="table-action-tooltip" data-tooltip="Ver detalle" type="button" aria-label="Ver control" onClick={() => onVer(control)}><Eye size={18} /></button>
-                  <button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label="Editar control" onClick={() => onEditar(control)}><Edit size={18} /></button>
-                  <button className="table-action-tooltip" data-tooltip="Eliminar" type="button" aria-label="Eliminar control" onClick={() => onEliminar(control)}><Trash2 size={18} /></button>
+                  <>{permisos.registroCampo && (<button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label="Editar control" onClick={() => onEditar(control)}><Edit size={18} /></button>)}</>
+                  <>{permisos.registroCampo && (<button className="table-action-tooltip" data-tooltip="Eliminar" type="button" aria-label="Eliminar control" onClick={() => onEliminar(control)}><Trash2 size={18} /></button>)}</>
                 </td>
               </tr>
             ))}
