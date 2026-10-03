@@ -61,7 +61,7 @@ public class InicioRepository(IConfiguration configuration) : IInicioRepository
         {
             Rol = rol,
             MostrarIndicadores = esAdmin || DistribucionAcceso.RolesIndicadoresAgregados.Contains(rol),
-            PuedeRegistrarLotes = esAdmin || rol == "Encargado",
+            PuedeRegistrarLotes = esAdmin || rol is "Gerente" or "Encargado",
         };
 
         var hoy = DateOnly.FromDateTime(DateTime.Today);

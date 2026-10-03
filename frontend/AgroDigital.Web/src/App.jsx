@@ -530,7 +530,13 @@ function adminAccountFromApi(account, passwordTemporal = null) {
     estado: account.estado,
     grupoGestion: account.grupoGestion,
     fechaCreacion: formatDate(account.fechaCreacion),
-    fechaVencimiento: formatDate(account.fechaVencimiento)
+    fechaVencimiento: formatDate(account.fechaVencimiento),
+    correoElectronico: account.correoElectronico ?? '',
+    estadoEnvio: account.estadoEnvio ?? '',
+    fechaUltimoEnvio: account.fechaUltimoEnvio
+      ? new Date(account.fechaUltimoEnvio).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+      : '',
+    cantidadEnvios: account.cantidadEnvios ?? 0
   };
 }
 
@@ -542,6 +548,8 @@ function App() {
   const [adminAccounts, setAdminAccounts] = useState([]);
   const [lastGeneratedAccount, setLastGeneratedAccount] = useState(null);
   const [adminError, setAdminError] = useState('');
+  const [adminEnvio, setAdminEnvio] = useState(null);
+  const [adminResendingId, setAdminResendingId] = useState(null);
   const [copiedKey, setCopiedKey] = useState('');
   const [activeModule, setActiveModule] = useState('inicio');
   const [managerContext, setManagerContext] = useState(null);
@@ -1700,13 +1708,60 @@ function App() {
         : data.debeCompletarRegistro
           ? 'manager-onboarding'
           : 'manager-demo';
-      setActiveModule('lotes');
+      setActiveModule('inicio');
       setAuthView('login');
       setJoinRequestStatus('');
       setShowManagerWelcome(sessionType === 'manager-onboarding');
       setSession({ type: sessionType, name: data.nombre, role: data.rol, token: data.token, usuario: data.usuario });
     } catch (error) {
       setLoginError(error.message.replace(/^"|"$/g, ''));
+    }
+  }
+
+  // Enlace del correo de invitacion: http://.../?activar=TOKEN
+  // Se lee una sola vez al abrir la app y se quita de la URL (no queda en el historial).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('activar');
+    if (!token) return;
+
+    params.delete('activar');
+    const query = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+    handleActivateManagerAccount(token);
+  }, []);
+
+  async function handleActivateManagerAccount(token) {
+    setLoginError('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/activar-gerente`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ token })
+      });
+
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || 'El enlace de activación no es válido o ya venció.');
+      }
+
+      const data = await response.json();
+      const sessionType = data.debeCompletarRegistro ? 'manager-onboarding' : 'manager-demo';
+      setActiveModule('inicio');
+      setAuthView('login');
+      setJoinRequestStatus('');
+      setShowManagerWelcome(sessionType === 'manager-onboarding');
+      setSession({
+        type: sessionType,
+        name: data.nombre,
+        role: data.rol,
+        token: data.token,
+        usuario: data.usuario,
+        correo: data.correoElectronico ?? ''
+      });
+    } catch (error) {
+      setLoginError(error.message.replace(/^"|"$/g, '') || 'El enlace de activación no es válido o ya venció.');
     }
   }
 
@@ -1731,7 +1786,7 @@ function App() {
       }
 
       const data = await response.json();
-      setActiveModule('lotes');
+      setActiveModule('inicio');
       setSession({ type: 'manager-demo', name: data.nombre, role: data.rol, token: data.token, usuario: data.usuario });
     } catch (error) {
       setLoginError(error.message.replace(/^"|"$/g, ''));
@@ -1757,9 +1812,48 @@ function App() {
       const account = adminAccountFromApi(data.cuenta, data.passwordTemporal);
       setAdminAccounts((current) => [account, ...current]);
       setLastGeneratedAccount(account);
+      setAdminEnvio(data.envio ?? null);
+      setAdminError('');
+      return true;
+    } catch (error) {
+      setAdminEnvio(null);
+      setAdminError(error.message.replace(/^"|"$/g, '') || 'No se pudo crear el acceso.');
+      return false;
+    }
+  }
+
+  async function handleResendAdminInvitation(accountId) {
+    if (!session?.token) return;
+
+    setAdminResendingId(accountId);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/cuentas-gerente/${accountId}/reenviar-invitacion`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.token}` }
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      const data = await response.json();
+      const updatedAccount = adminAccountFromApi(data.cuenta);
+      setAdminAccounts((current) =>
+        current.map((item) =>
+          item.id === updatedAccount.id
+            ? { ...updatedAccount, passwordTemporal: item.passwordTemporal ?? null }
+            : item
+        )
+      );
+      setLastGeneratedAccount((current) =>
+        current?.id === updatedAccount.id
+          ? { ...updatedAccount, passwordTemporal: current.passwordTemporal ?? null }
+          : current
+      );
+      setAdminEnvio(data.envio ?? null);
       setAdminError('');
     } catch (error) {
-      setAdminError(error.message.replace(/^"|"$/g, '') || 'No se pudo crear el acceso.');
+      setAdminError(error.message.replace(/^"|"$/g, '') || 'No se pudo reenviar la invitación.');
+    } finally {
+      setAdminResendingId(null);
     }
   }
 
@@ -1784,7 +1878,7 @@ function App() {
     }
   }
 
-  async function handleUpdateAdminResponsible(accountId, responsable) {
+  async function handleUpdateAdminResponsible(accountId, responsable, correoElectronico = '') {
     if (!session?.token) return;
 
     try {
@@ -1794,7 +1888,7 @@ function App() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.token}`
         },
-        body: JSON.stringify({ responsable })
+        body: JSON.stringify({ responsable, correoElectronico: correoElectronico.trim() || null })
       });
 
       if (!response.ok) throw new Error(await response.text());
@@ -1815,8 +1909,10 @@ function App() {
           : current
       );
       setAdminError('');
+      return true;
     } catch (error) {
       setAdminError(error.message.replace(/^"|"$/g, '') || 'No se pudo actualizar el responsable.');
+      return false;
     }
   }
 
@@ -1989,6 +2085,7 @@ function App() {
         ) : (
           <ManagerRegistrationPage
             initialName={session.name}
+            initialEmail={session.correo}
             error={loginError}
             onSubmit={handleCompleteManagerRegistration}
             onLogout={handleLogout}
@@ -2006,7 +2103,10 @@ function App() {
           accounts={adminAccounts}
           lastGeneratedAccount={lastGeneratedAccount}
           error={adminError}
+          envio={adminEnvio}
+          resendingId={adminResendingId}
           onCreateAccount={handleCreateAdminAccount}
+          onResendInvitation={handleResendAdminInvitation}
           onRegeneratePassword={handleRegenerateAdminPassword}
           onUpdateResponsible={handleUpdateAdminResponsible}
           onToggleAccountStatus={handleToggleAdminAccountStatus}
@@ -2014,7 +2114,7 @@ function App() {
           copiedKey={copiedKey}
           onLogout={handleLogout}
           onOpenDemo={() => {
-            setActiveModule('lotes');
+            setActiveModule('inicio');
             setSession({ type: 'manager-demo', name: session.name || 'Admin AgroDigital', role: 'Admin', token: session.token, usuario: session.usuario });
           }}
         />
@@ -3009,12 +3109,12 @@ function ManagerWelcomePage({ managerName, onContinue, onLogout }) {
   );
 }
 
-function ManagerRegistrationPage({ initialName, error, onSubmit, onLogout }) {
+function ManagerRegistrationPage({ initialName, initialEmail = '', error, onSubmit, onLogout }) {
   const [form, setForm] = useState({
     nombre: initialName?.split(' ')[0] ?? '',
     apellido: '',
     telefono: '',
-    correoElectronico: '',
+    correoElectronico: initialEmail ?? '',
     password: '',
     repetirPassword: '',
     empresas: ['']
@@ -3238,12 +3338,17 @@ function PasswordRequirements({ requirements, passwordsMatch, repeatTouched }) {
     </section>
   );
 }
+const ADMIN_CORREO_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function AdminPanel({
   accounts,
   lastGeneratedAccount,
   error,
+  envio = null,
+  resendingId = null,
   copiedKey,
   onCreateAccount,
+  onResendInvitation,
   onRegeneratePassword,
   onUpdateResponsible,
   onToggleAccountStatus,
@@ -3251,36 +3356,52 @@ function AdminPanel({
   onLogout,
   onOpenDemo
 }) {
-  const [accountForm, setAccountForm] = useState({ responsable: '' });
+  const [accountForm, setAccountForm] = useState({ responsable: '', correoElectronico: '' });
+  const [creatingAccount, setCreatingAccount] = useState(false);
   const [editingAccountId, setEditingAccountId] = useState(null);
   const [editingResponsible, setEditingResponsible] = useState('');
+  const [editingEmail, setEditingEmail] = useState('');
   const [pendingAccountStatus, setPendingAccountStatus] = useState(null);
   const [updatingAccountStatus, setUpdatingAccountStatus] = useState(false);
 
-  function submitAccount(event) {
-    event.preventDefault();
-    if (!accountForm.responsable.trim()) return;
+  const formEmail = accountForm.correoElectronico.trim();
+  const formEmailInvalid = formEmail.length > 0 && !ADMIN_CORREO_REGEX.test(formEmail);
+  const canCreateAccount = accountForm.responsable.trim() && ADMIN_CORREO_REGEX.test(formEmail) && !creatingAccount;
+  const editingEmailValue = editingEmail.trim();
+  const canSaveEdit = editingResponsible.trim() && (!editingEmailValue || ADMIN_CORREO_REGEX.test(editingEmailValue));
 
-    onCreateAccount(accountForm);
-    setAccountForm({ responsable: '' });
+  async function submitAccount(event) {
+    event.preventDefault();
+    if (!canCreateAccount) return;
+
+    setCreatingAccount(true);
+    const created = await onCreateAccount({
+      responsable: accountForm.responsable.trim(),
+      correoElectronico: formEmail
+    });
+    setCreatingAccount(false);
+
+    // Si el alta falla (ej. correo repetido) se conservan los datos para corregirlos.
+    if (created) setAccountForm({ responsable: '', correoElectronico: '' });
   }
 
   function startResponsibleEdit(account) {
     setEditingAccountId(account.id);
     setEditingResponsible(account.responsable);
+    setEditingEmail(account.correoElectronico ?? '');
   }
 
   function cancelResponsibleEdit() {
     setEditingAccountId(null);
     setEditingResponsible('');
+    setEditingEmail('');
   }
 
-  function saveResponsibleEdit(accountId) {
-    const responsable = editingResponsible.trim();
-    if (!responsable) return;
+  async function saveResponsibleEdit(accountId) {
+    if (!canSaveEdit) return;
 
-    onUpdateResponsible(accountId, responsable);
-    cancelResponsibleEdit();
+    const saved = await onUpdateResponsible(accountId, editingResponsible.trim(), editingEmailValue);
+    if (saved) cancelResponsibleEdit();
   }
 
   async function confirmAccountStatus() {
@@ -3318,7 +3439,7 @@ function AdminPanel({
       <div className="admin-title">
         <div>
           <h1>Accesos iniciales de AgroDigital</h1>
-          <p>Creá credenciales de unico ingreso para responsables que luego completaran su registro.</p>
+          <p>Invitá a cada responsable por correo: recibe un enlace para activar su cuenta y completar su registro.</p>
         </div>
         <span className="admin-secure-pill">
           <CheckCircle2 size={17} />
@@ -3340,7 +3461,7 @@ function AdminPanel({
             </span>
             <div>
               <h2>Crear cuenta gerente</h2>
-              <p>Ingresá el responsable inicial para generar usuario y contraseña temporal.</p>
+              <p>Ingresá el responsable y su correo: le enviamos un enlace para activar su cuenta.</p>
             </div>
           </div>
 
@@ -3354,10 +3475,32 @@ function AdminPanel({
             />
           </label>
 
-          <button className="primary-admin-button" type="submit" disabled={!accountForm.responsable.trim()}>
-            <PlusCircle size={21} />
-            Generar acceso
+          <label className="admin-field">
+            <span>Correo electrónico *</span>
+            <input
+              type="email"
+              value={accountForm.correoElectronico}
+              onChange={(event) => setAccountForm((current) => ({ ...current, correoElectronico: event.target.value }))}
+              placeholder="Ej: juan@empresa.com"
+              aria-invalid={formEmailInvalid}
+              aria-describedby="admin-correo-ayuda"
+              autoComplete="off"
+            />
+          </label>
+          <p id="admin-correo-ayuda" className={`admin-field-help ${formEmailInvalid ? 'admin-field-help-error' : ''}`}>
+            {formEmailInvalid ? 'Revisá el formato del correo (ej: nombre@empresa.com).' : 'A este correo le llega el enlace de activación. Vence en 7 días.'}
+          </p>
+
+          <button className="primary-admin-button" type="submit" disabled={!canCreateAccount}>
+            {creatingAccount ? <LoaderCircle className="spin" size={21} /> : <PlusCircle size={21} />}
+            {creatingAccount ? 'Enviando invitación...' : 'Crear y enviar invitación'}
           </button>
+          {envio && (
+            <p className={`admin-envio ${envio.enviado ? 'admin-envio-ok' : 'admin-envio-error'}`} role="status">
+              {envio.enviado ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+              <span>{envio.mensaje}</span>
+            </p>
+          )}
           {error && <p className="auth-error admin-inline-error">{error}</p>}
         </form>
 
@@ -3367,8 +3510,8 @@ function AdminPanel({
               <KeyRound size={24} />
             </span>
             <div>
-              <h2>Credenciales generadas</h2>
-              <p>Estos datos se entregan al gerente para su primer ingreso.</p>
+              <h2>Credenciales de respaldo</h2>
+              <p>Si el correo no llega, compartí estos datos con el gerente para su primer ingreso.</p>
             </div>
           </div>
 
@@ -3411,6 +3554,7 @@ function AdminPanel({
               <thead>
                 <tr>
                   <th>Responsable</th>
+                  <th>Invitación</th>
                   <th>Usuario inicial</th>
                   <th>Contraseña temporal</th>
                   <th>Grupo de gestión</th>
@@ -3428,10 +3572,20 @@ function AdminPanel({
                           <input
                             value={editingResponsible}
                             onChange={(event) => setEditingResponsible(event.target.value)}
+                            aria-label="Responsable"
                             autoFocus
                           />
+                          {account.estado === 'Pendiente de primer ingreso' && (
+                            <input
+                              type="email"
+                              value={editingEmail}
+                              onChange={(event) => setEditingEmail(event.target.value)}
+                              aria-label="Correo electrónico"
+                              placeholder="Correo electrónico"
+                            />
+                          )}
                           <div>
-                            <button type="button" onClick={() => saveResponsibleEdit(account.id)} disabled={!editingResponsible.trim()}>
+                            <button type="button" onClick={() => saveResponsibleEdit(account.id)} disabled={!canSaveEdit}>
                               Guardar
                             </button>
                             <button type="button" onClick={cancelResponsibleEdit}>
@@ -3440,8 +3594,18 @@ function AdminPanel({
                           </div>
                         </div>
                       ) : (
-                        <strong className="admin-responsible-name">{account.responsable}</strong>
+                        <>
+                          <strong className="admin-responsible-name">{account.responsable}</strong>
+                          {account.correoElectronico && <small className="admin-responsible-email">{account.correoElectronico}</small>}
+                        </>
                       )}
+                    </td>
+                    <td>
+                      <AdminInvitationCell
+                        account={account}
+                        resending={resendingId === account.id}
+                        onResend={() => onResendInvitation(account.id)}
+                      />
                     </td>
                     <td>
                       <InlineCredential value={account.usuario} onCopy={onCopy} label="usuario inicial" copied={copiedKey === account.usuario} />
@@ -3505,6 +3669,47 @@ function AdminPanel({
         />
       )}
     </section>
+  );
+}
+
+function AdminInvitationCell({ account, resending, onResend }) {
+  const pending = account.estado === 'Pendiente de primer ingreso';
+
+  if (!account.correoElectronico) {
+    return (
+      <div className="admin-invite">
+        <span className="admin-invite-chip admin-invite-sin-correo">Sin correo</span>
+        {pending && <small>Editá el acceso para cargarlo.</small>}
+      </div>
+    );
+  }
+
+  if (!pending) {
+    return (
+      <div className="admin-invite">
+        <span className="admin-invite-chip admin-invite-ok">{account.estado === 'Usado' ? 'Activada' : 'Cerrada'}</span>
+      </div>
+    );
+  }
+
+  const estado = account.estadoEnvio || 'Pendiente';
+  const chip = { Enviado: 'admin-invite-ok', Error: 'admin-invite-error' }[estado] ?? 'admin-invite-pendiente';
+  const texto = { Enviado: 'Enviada', Error: 'No se pudo enviar' }[estado] ?? 'Sin enviar';
+
+  return (
+    <div className="admin-invite">
+      <span className={`admin-invite-chip ${chip}`}>{texto}</span>
+      {account.fechaUltimoEnvio && (
+        <small>
+          {account.fechaUltimoEnvio}
+          {account.cantidadEnvios > 1 ? ` · ${account.cantidadEnvios} envíos` : ''}
+        </small>
+      )}
+      <button className="regenerate-password-button" type="button" onClick={onResend} disabled={resending}>
+        {resending ? <LoaderCircle className="spin" size={15} /> : <Mail size={15} />}
+        {resending ? 'Enviando...' : 'Reenviar'}
+      </button>
+    </div>
   );
 }
 
