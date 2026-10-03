@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
+import { Gauge } from 'lucide-react';
 import {
   Activity,
   AlertTriangle,
@@ -967,25 +968,25 @@ function SilosList({ silos, parentFilters = null, loading, error, onAdd, onView,
       {error && <p style={{ color: '#c0392b', fontWeight: 700 }}>{error}</p>}
 
       {!loading && silos.length > 0 && (
-        <div className="silo-kpis">
-          <article className="silo-kpi">
-            <small>Capacidad total</small>
-            <strong>{formatKg(resumen.capacidad)}</strong>
+        <div className="summary-grid summary-grid-four">
+          <article className="summary-card">
+            <div className="summary-icon"><Warehouse size={28} /></div>
+            <div><span>Capacidad total</span><strong>{formatKg(resumen.capacidad)}</strong></div>
             <p>{resumen.cantidad} {resumen.cantidad === 1 ? 'silo' : 'silos'} · {resumen.chapa} chapa, {resumen.bolsones} {resumen.bolsones === 1 ? 'bolsón' : 'bolsones'}</p>
           </article>
-          <article className="silo-kpi">
-            <small>Stock almacenado</small>
-            <strong>{formatKg(resumen.stock)}</strong>
+          <article className="summary-card">
+            <div className="summary-icon"><Wheat size={28} /></div>
+            <div><span>Stock almacenado</span><strong>{formatKg(resumen.stock)}</strong></div>
             <p>{resumen.granos.length ? resumen.granos.join(', ') : 'Sin grano almacenado'}</p>
           </article>
-          <article className="silo-kpi">
-            <small>Ocupación general</small>
-            <strong>{resumen.ocupacion} %</strong>
+          <article className="summary-card">
+            <div className="summary-icon"><Gauge size={28} /></div>
+            <div><span>Ocupación general</span><strong>{resumen.ocupacion} %</strong></div>
             <p>{formatKg(Math.max(0, resumen.capacidad - resumen.stock))} libres</p>
           </article>
-          <article className={`silo-kpi ${resumen.alertas > 0 ? 'silo-kpi-alerta' : ''}`}>
-            <small>Silos con alerta</small>
-            <strong>{resumen.alertas}</strong>
+          <article className={`summary-card ${resumen.alertas > 0 ? 'summary-card-alerta' : ''}`}>
+            <div className="summary-icon"><AlertTriangle size={28} /></div>
+            <div><span>Silos con alerta</span><strong>{resumen.alertas}</strong></div>
             <p>{resumen.alertas === 0 ? 'Todo en orden' : `${resumen.alertasRojas} ${resumen.alertasRojas === 1 ? 'urgente' : 'urgentes'} · ${resumen.alertas - resumen.alertasRojas} para revisar`}</p>
           </article>
         </div>

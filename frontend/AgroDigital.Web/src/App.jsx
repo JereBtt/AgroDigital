@@ -13,6 +13,8 @@ import Cosechas from './Cosechas';
 import Almacenamiento from './Almacenamiento';
 import Distribucion from './Distribucion';
 import Estadisticas from './Estadisticas';
+import Inicio from './Inicio';
+import { LayoutDashboard } from 'lucide-react';
 import {
   AlertTriangle,
   BarChart3,
@@ -541,7 +543,7 @@ function App() {
   const [lastGeneratedAccount, setLastGeneratedAccount] = useState(null);
   const [adminError, setAdminError] = useState('');
   const [copiedKey, setCopiedKey] = useState('');
-  const [activeModule, setActiveModule] = useState('lotes');
+  const [activeModule, setActiveModule] = useState('inicio');
   const [managerContext, setManagerContext] = useState(null);
   // Empresas del usuario cuando no es Gerente (el Gerente las toma de managerContext).
   const [misEmpresas, setMisEmpresas] = useState([]);
@@ -1206,6 +1208,14 @@ function App() {
       cerrado
     }));
   }, []);
+
+  function goToInicio() {
+    setActiveModule('inicio');
+    setView('list');
+    setSelectedLote(null);
+    setIsMapExpanded(false);
+    setProfileMenuOpen(false);
+  }
 
   function goToList() {
     setActiveModule('lotes');
@@ -2028,11 +2038,15 @@ function App() {
         <button className="sidebar-toggle" type="button" aria-label={sidebarCollapsed ? 'Expandir menu lateral' : 'Contraer menu lateral'} onClick={handleSidebarToggle}>
           <ChevronDown size={22} />
         </button>
-        <nav className="nav-icons" aria-label="Modulos principales">
-          <button className={`nav-item ${activeModule === 'users' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('users'); setView('list'); setIsMapExpanded(false); setProfileMenuOpen(false); }}>
-            <Users size={23} />
-            <span>Usuarios</span>
-          </button>
+                   <nav className="nav-icons" aria-label="Modulos principales">
+             <button className={`nav-item ${activeModule === 'inicio' ? 'nav-item-active' : ''}`} type="button" onClick={goToInicio}>
+               <LayoutDashboard size={23} />
+               <span>Inicio</span>
+             </button>
+                       <button className={`nav-item ${activeModule === 'users' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('users'); setView('list'); setIsMapExpanded(false); setProfileMenuOpen(false); }}>
+               <Users size={23} />
+               <span>Usuarios</span>
+             </button>
           <button className={`nav-item ${activeModule === 'teams' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('teams'); setView('list'); setIsMapExpanded(false); setProfileMenuOpen(false); }}>
             <Building2 size={23} />
             <span>Empresas</span>
@@ -2088,11 +2102,11 @@ function App() {
         <header className="top-header">
           <div className="breadcrumb">
             <img className="header-logo" src={agroDigitalLogo} alt="AgroDigital" />
-            <button className="breadcrumb-home" type="button" aria-label="Inicio" onClick={goToList}>
+            <button className="breadcrumb-home" type="button" aria-label="Inicio" onClick={goToInicio}>
               <Home size={17} />
             </button>
             <button className="breadcrumb-link" type="button" onClick={activeModule === 'lotes' ? goToList : undefined}>
-                          {activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Empresas' : activeModule === 'campanias' ? 'Campañas' : activeModule === 'silos' ? 'Silos' : activeModule === 'siembras' ? 'Siembras' : activeModule === 'cosechas' ? 'Cosechas' : activeModule === 'almacenamiento' ? 'Almacenamiento' : activeModule === 'distribucion' ? 'Distribución' : activeModule === 'estadisticas' ? 'Estadísticas' : 'Lotes'}
+                          {activeModule === 'inicio' ? 'Inicio' : activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Empresas' : activeModule === 'campanias' ? 'Campañas' : activeModule === 'silos' ? 'Silos' : activeModule === 'siembras' ? 'Siembras' : activeModule === 'cosechas' ? 'Cosechas' : activeModule === 'almacenamiento' ? 'Almacenamiento' : activeModule === 'distribucion' ? 'Distribución' : activeModule === 'estadisticas' ? 'Estadísticas' : 'Lotes'}
             </button>
             {false && activeModule === 'users' && (
               <>
@@ -2180,6 +2194,25 @@ function App() {
             onToggleTeamStatus={handleToggleTeamStatus}
             onSetPrincipalTeam={handleSetPrincipalTeam}
             onLoadTeamUsers={loadManagerTeamUsers}
+          />
+        ) : activeModule === 'inicio' ? (
+          <Inicio
+            session={session}
+            parentFilters={parentFiltersForEmpresaCampania}
+            selectedEmpresaId={selectedParentEmpresaId}
+            selectedCampaniaId={selectedParentCampania ? selectedParentCampaniaId : ''}
+            lotes={parentFilteredLotes}
+            onRegistrarLote={startCreate}
+            onNavigate={(modulo) => {
+              if (modulo === 'lotes') {
+                goToList();
+                return;
+              }
+              setActiveModule(modulo);
+              setView('list');
+              setProfileMenuOpen(false);
+              setIsMapExpanded(false);
+            }}
           />
         ) : activeModule === 'silos' ? (
           <Silos

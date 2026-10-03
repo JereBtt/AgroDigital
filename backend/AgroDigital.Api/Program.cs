@@ -26,6 +26,7 @@ builder.Services.AddScoped<IAlmacenamientoRepository, AlmacenamientoRepository>(
 builder.Services.AddScoped<IDistribucionRepository, DistribucionRepository>();
 builder.Services.AddScoped<IDistribucionCatalogoRepository, DistribucionCatalogoRepository>();
 builder.Services.AddScoped<IEstadisticasRepository, EstadisticasRepository>();
+builder.Services.AddScoped<IInicioRepository, InicioRepository>();
 builder.Services.AddScoped<ISiembraRepository, SiembraRepository>();
 builder.Services.AddScoped<ISeguimientoRepository, SeguimientoRepository>();
 builder.Services.AddScoped<ICosechaRepository, CosechaRepository>();

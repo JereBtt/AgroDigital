@@ -10716,3 +10716,17 @@ textarea::placeholder {
 @media (prefers-reduced-motion: reduce) {
   .est-recalculando { transition: none; }
 }
+
+/* Tarjeta resumen en estado de alerta (ej. "Silos con alerta"). */
+.summary-card.summary-card-alerta {
+  border-left-color: #d99a1e;
+}
+
+.summary-card-alerta .summary-icon {
+  background: #fff3d6;
+  color: #8a5a00;
+}
+
+.summary-card-alerta strong {
+  color: #8a5a00;
+}
