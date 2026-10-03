@@ -16,13 +16,20 @@ public sealed class AuthController : ControllerBase
     private readonly IAuthRepository _authRepository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IAuthTokenService _authTokenService;
+    private readonly INotificacionesSolicitudService _notificaciones;
     private readonly string _connectionString;
 
-    public AuthController(IAuthRepository authRepository, IPasswordHasher passwordHasher, IAuthTokenService authTokenService, IConfiguration configuration)
+    public AuthController(
+        IAuthRepository authRepository,
+        IPasswordHasher passwordHasher,
+        IAuthTokenService authTokenService,
+        INotificacionesSolicitudService notificaciones,
+        IConfiguration configuration)
     {
         _authRepository = authRepository;
         _passwordHasher = passwordHasher;
         _authTokenService = authTokenService;
+        _notificaciones = notificaciones;
         _connectionString = configuration.GetConnectionString("AgroDigital")
             ?? throw new InvalidOperationException("No se encontro la cadena de conexion AgroDigital.");
     }
@@ -272,6 +279,14 @@ public sealed class AuthController : ControllerBase
             return BadRequest("El codigo de grupo o la OTP no son validos.");
         }
 
+        // Invitacion por correo (26_invitaciones_empleado_correo.sql): la OTP solo
+        // sirve para el correo al que se envio. Las OTP manuales no tienen correo.
+        if (otp.Value.CorreoInvitado is { } correoInvitado
+            && !string.Equals(correoInvitado, correo, StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest("Esta invitacion fue enviada a otro correo electronico. Usa el correo en el que la recibiste.");
+        }
+
         var usuarioExistente = await ObtenerUsuarioPorCorreoAsync(connection, correo);
         if (usuarioExistente is not null && !_passwordHasher.Verify(request.Password, usuarioExistente.PasswordHash))
         {
@@ -284,6 +299,7 @@ public sealed class AuthController : ControllerBase
             return BadRequest("Ya existe una solicitud pendiente para este grupo de gestion.");
         }
 
+        int solicitudId;
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
@@ -292,6 +308,7 @@ public sealed class AuthController : ControllerBase
             await using (var solicitudCommand = new SqlCommand("""
                 INSERT INTO dbo.SolicitudesUsuario
                     (GrupoGestionId, UsuarioId, Nombre, Apellido, Telefono, CorreoElectronico, Estado)
+                OUTPUT INSERTED.SolicitudUsuarioId
                 VALUES
                     (@GrupoGestionId, @UsuarioId, @Nombre, @Apellido, @Telefono, @CorreoElectronico, N'Pendiente');
                 """, connection, (SqlTransaction)transaction))
@@ -302,7 +319,7 @@ public sealed class AuthController : ControllerBase
                 solicitudCommand.Parameters.AddWithValue("@Apellido", apellido);
                 solicitudCommand.Parameters.AddWithValue("@Telefono", telefono);
                 solicitudCommand.Parameters.AddWithValue("@CorreoElectronico", correo);
-                await solicitudCommand.ExecuteNonQueryAsync();
+                solicitudId = Convert.ToInt32(await solicitudCommand.ExecuteScalarAsync());
             }
 
             await using (var otpCommand = new SqlCommand("""
@@ -313,18 +330,21 @@ public sealed class AuthController : ControllerBase
                 WHERE GrupoGestionOtpId = @GrupoGestionOtpId;
                 """, connection, (SqlTransaction)transaction))
             {
-                otpCommand.Parameters.AddWithValue("@GrupoGestionOtpId", otp.Value);
+                otpCommand.Parameters.AddWithValue("@GrupoGestionOtpId", otp.Value.Id);
                 await otpCommand.ExecuteNonQueryAsync();
             }
 
             await transaction.CommitAsync();
-            return Ok(new { mensaje = "Solicitud enviada. El gerente debe aprobar tu acceso." });
         }
         catch
         {
             await transaction.RollbackAsync();
             throw;
         }
+
+        // Aviso al Gerente. Si el correo falla, la solicitud queda registrada igual.
+        await _notificaciones.NotificarNuevaSolicitudAsync(solicitudId);
+        return Ok(new { mensaje = "Solicitud enviada. El gerente debe aprobar tu acceso." });
     }
 
 
@@ -382,10 +402,10 @@ public sealed class AuthController : ControllerBase
         return (reader.GetInt32(0), reader.GetString(1));
     }
 
-    private async Task<int?> ObtenerOtpValidaAsync(SqlConnection connection, int grupoGestionId, string otpIngresada)
+    private async Task<(int Id, string? CorreoInvitado)?> ObtenerOtpValidaAsync(SqlConnection connection, int grupoGestionId, string otpIngresada)
     {
         await using var command = new SqlCommand("""
-            SELECT GrupoGestionOtpId, CodigoOtpHash
+            SELECT GrupoGestionOtpId, CodigoOtpHash, CorreoInvitado
             FROM dbo.GrupoGestionOtps
             WHERE GrupoGestionId = @GrupoGestionId
               AND Activo = 1
@@ -402,7 +422,7 @@ public sealed class AuthController : ControllerBase
             var otpHash = reader.GetString(1);
             if (_passwordHasher.Verify(otpIngresada, otpHash))
             {
-                return otpId;
+                return (otpId, reader.IsDBNull(2) ? null : reader.GetString(2));
             }
         }
 

@@ -10797,3 +10797,340 @@ textarea::placeholder {
 .admin-invite-sin-correo { background: #f1f4f2; color: #546359; }
 
 .admin-invite .regenerate-password-button:disabled { opacity: 0.6; cursor: default; }
+
+/* ---------- Usuarios: invitación de empleados ---------- */
+
+.invite-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid #cfe6d2;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.invite-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 42px;
+  border: 0;
+  background: #ffffff;
+  color: #183824;
+  font-size: calc(13.5px * var(--text-scale));
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.invite-tabs button.active { background: #18883b; color: #ffffff; }
+
+.invite-panel { display: grid; gap: 14px; }
+
+.invite-form { display: grid; gap: 10px; }
+
+.invite-field { display: grid; gap: 6px; }
+
+.invite-field span {
+  color: #183824;
+  font-size: calc(13px * var(--text-scale));
+  font-weight: 900;
+}
+
+.invite-field input {
+  min-height: 44px;
+  border: 1px solid #cfe6d2;
+  border-radius: 12px;
+  padding: 0 14px;
+  background: #fbfdfb;
+  color: #0c321e;
+  font-size: calc(14px * var(--text-scale));
+  font-weight: 800;
+  outline: none;
+}
+
+.invite-field input:focus { border-color: #159447; box-shadow: 0 0 0 3px rgba(21, 148, 71, 0.12); }
+.invite-field input[aria-invalid="true"] { border-color: #e5a29d; }
+
+.invite-help {
+  margin: 0;
+  color: #607067;
+  font-size: calc(12.5px * var(--text-scale));
+  font-weight: 800;
+}
+
+.invite-help-error { color: #b3261e; }
+
+.invite-send-button { justify-self: start; }
+
+.invite-result {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+}
+
+.invite-result p {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  font-size: calc(13.5px * var(--text-scale));
+  font-weight: 900;
+}
+
+.invite-result p svg { flex: none; margin-top: 1px; }
+.invite-result small { font-size: calc(12.5px * var(--text-scale)); font-weight: 800; }
+.invite-result-ok { background: #eff9f0; color: #0a4327; }
+.invite-result-error { background: #fff3d6; color: #7a4f00; }
+
+.invite-share-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.invite-share-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid #cfe6d2;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0a4327;
+  font-size: calc(13px * var(--text-scale));
+  font-weight: 900;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.invite-share-button:hover { border-color: #18883b; background: #f4fbf5; }
+.invite-share-button-copied { border-color: #18883b; color: #18883b; }
+
+.invite-list-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 6px;
+  border-top: 1px solid #e3eee5;
+  color: #183824;
+  font-size: calc(14px * var(--text-scale));
+}
+
+.invite-list-heading span {
+  min-width: 26px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eff9f0;
+  color: #18883b;
+  font-weight: 900;
+  text-align: center;
+}
+
+.invite-empty {
+  margin: 0;
+  color: #607067;
+  font-size: calc(13px * var(--text-scale));
+  font-weight: 800;
+}
+
+.invite-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+
+.invite-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 10px 12px;
+  border: 1px solid #e3eee5;
+  border-radius: 12px;
+  background: #fbfdfb;
+}
+
+.invite-item-main { display: grid; gap: 2px; min-width: 0; }
+.invite-item-main strong { color: #0c321e; font-size: calc(14px * var(--text-scale)); word-break: break-all; }
+.invite-item-main small { color: #607067; font-size: calc(12px * var(--text-scale)); font-weight: 800; word-break: break-all; }
+
+.invite-chip {
+  justify-self: end;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: calc(12px * var(--text-scale));
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.invite-chip-ok { background: #eff9f0; color: #18883b; }
+.invite-chip-error { background: #fdecea; color: #8c1d18; }
+.invite-chip-pendiente { background: #fff3d6; color: #7a4f00; }
+.invite-chip-vencida { background: #f1f4f2; color: #546359; }
+
+.invite-item-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.invite-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid #cfe6d2;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #0a4327;
+  font-size: calc(12.5px * var(--text-scale));
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.invite-action:disabled { opacity: 0.55; cursor: default; }
+.invite-action-danger { border-color: #f0c8c8; color: #9b2c2c; }
+.invite-confirm-text { color: #9b2c2c; font-size: calc(12.5px * var(--text-scale)); font-weight: 900; }
+
+.invite-generate-button {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid #18883b;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0a4327;
+  font-size: calc(13.5px * var(--text-scale));
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.invite-generate-button:disabled { opacity: 0.55; cursor: default; }
+
+.join-invite-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #eff9f0;
+  color: #0a4327;
+  font-size: calc(13.5px * var(--text-scale));
+  font-weight: 800;
+}
+
+.join-invite-notice svg { flex: none; margin-top: 1px; }
+
+/* ---------- Campanita de notificaciones ---------- */
+
+.notification-bell { position: relative; }
+
+.notification-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #b3261e;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 0 0 2px #ffffff;
+}
+
+/* ---------- Usuarios: vista de consulta (roles que no son Gerente) ---------- */
+
+.my-access-card { display: grid; gap: 14px; }
+
+.my-access-group {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #e3eee5;
+  border-radius: 14px;
+  background: #fbfdfb;
+}
+
+.my-access-block { display: grid; gap: 8px; }
+
+.my-access-label {
+  color: #607067;
+  font-size: calc(12px * var(--text-scale));
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.my-access-contact {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e3eee5;
+}
+
+.my-access-contact > div { display: grid; gap: 3px; }
+.my-access-contact strong { color: #0c321e; font-size: calc(15px * var(--text-scale)); }
+
+.my-access-contact-text {
+  color: #3b4f42;
+  font-size: calc(13px * var(--text-scale));
+  font-weight: 700;
+}
+
+.my-access-contact a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #18883b;
+  font-size: calc(13px * var(--text-scale));
+  font-weight: 800;
+}
+
+.my-access-companies { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.my-access-principal {
+  margin-left: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fff3d6;
+  color: #7a4f00;
+  font-size: calc(11px * var(--text-scale));
+  font-weight: 900;
+}
+
+/* ---------- Empresas: vista de consulta (roles que no son Gerente) ---------- */
+
+.my-companies-list { display: grid; gap: 10px; }
+
+.my-company-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 14px;
+  padding: 14px 16px;
+  border: 1px solid #e3eee5;
+  border-radius: 14px;
+  background: #fbfdfb;
+}
+
+.my-company-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #eff9f0;
+  color: #18883b;
+}
+
+.my-company-main { display: grid; gap: 3px; flex: 1 1 220px; min-width: 0; }
+.my-company-main strong { color: #0c321e; font-size: calc(15px * var(--text-scale)); }
+.my-company-main small { color: #607067; font-size: calc(12.5px * var(--text-scale)); font-weight: 800; }
+
+.my-company-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

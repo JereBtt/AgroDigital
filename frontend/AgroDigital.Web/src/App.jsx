@@ -14,7 +14,7 @@ import Almacenamiento from './Almacenamiento';
 import Distribucion from './Distribucion';
 import Estadisticas from './Estadisticas';
 import Inicio from './Inicio';
-import { LayoutDashboard } from 'lucide-react';
+import { LayoutDashboard, MessageCircle, Send, XCircle } from 'lucide-react';
 import {
   AlertTriangle,
   BarChart3,
@@ -569,6 +569,14 @@ function App() {
   const [managerTeamSaving, setManagerTeamSaving] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState(null);
   const [otpError, setOtpError] = useState('');
+  const [managerInvitations, setManagerInvitations] = useState([]);
+  const [invitationSaving, setInvitationSaving] = useState('');
+  const [invitationResult, setInvitationResult] = useState(null);
+  const [invitationError, setInvitationError] = useState('');
+  const [joinPrefill, setJoinPrefill] = useState(null);
+  const [miAcceso, setMiAcceso] = useState(null);
+  const [equipoUsuarios, setEquipoUsuarios] = useState([]);
+  const [equipoError, setEquipoError] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
   const [view, setView] = useState('list');
   const [lotes, setLotes] = useState([]);
@@ -802,6 +810,127 @@ function App() {
     }
   }
 
+
+  // Usuarios para roles que no son Gerente: su propio acceso y, si es Encargado, el equipo (solo consulta).
+  async function loadMiAcceso() {
+    if (!session?.token || session.role === 'Gerente' || session.role === 'Admin') {
+      setMiAcceso(null);
+      setEquipoUsuarios([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/equipo/mi-acceso`, { headers: authHeaders() });
+      if (!response.ok) throw new Error(await response.text());
+      const acceso = await response.json();
+      setMiAcceso(acceso);
+      setEquipoError('');
+
+      if (acceso.puedeVerEquipo) {
+        const equipo = await fetch(`${API_BASE_URL}/api/equipo/usuarios`, { headers: authHeaders() });
+        if (!equipo.ok) throw new Error(await equipo.text());
+        setEquipoUsuarios(await equipo.json());
+      } else {
+        setEquipoUsuarios([]);
+      }
+    } catch (error) {
+      setEquipoError(error.message.replace(/^"|"$/g, '') || 'No se pudo cargar tu acceso.');
+    }
+  }
+
+  async function loadManagerInvitations() {
+    if (!session?.token || session.role !== 'Gerente') {
+      setManagerInvitations([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/manager/invitaciones`, { headers: authHeaders() });
+      if (!response.ok) throw new Error(await response.text());
+      setManagerInvitations(await response.json());
+    } catch (error) {
+      setManagerInvitations([]);
+      setInvitationError(error.message.replace(/^"|"$/g, '') || 'No se pudieron cargar las invitaciones.');
+    }
+  }
+
+  // Invitar por correo: crea la invitacion (OTP asociada al correo) y envia el mail.
+  async function handleCreateInvitation(invitationForm) {
+    if (!session?.token) return false;
+
+    setInvitationSaving('crear');
+    setInvitationError('');
+    setInvitationResult(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/manager/invitaciones`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(invitationForm)
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      const data = await response.json();
+      setInvitationResult(data);
+      await loadManagerInvitations();
+      return true;
+    } catch (error) {
+      setInvitationError(error.message.replace(/^"|"$/g, '') || 'No se pudo enviar la invitación.');
+      return false;
+    } finally {
+      setInvitationSaving('');
+    }
+  }
+
+  async function handleResendInvitation(invitationId) {
+    if (!session?.token) return;
+
+    setInvitationSaving(`reenviar-${invitationId}`);
+    setInvitationError('');
+    setInvitationResult(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/manager/invitaciones/${invitationId}/reenviar`, {
+        method: 'POST',
+        headers: authHeaders()
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      setInvitationResult(await response.json());
+      await loadManagerInvitations();
+    } catch (error) {
+      setInvitationError(error.message.replace(/^"|"$/g, '') || 'No se pudo reenviar la invitación.');
+    } finally {
+      setInvitationSaving('');
+    }
+  }
+
+  async function handleCancelInvitation(invitationId) {
+    if (!session?.token) return false;
+
+    setInvitationSaving(`cancelar-${invitationId}`);
+    setInvitationError('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/manager/invitaciones/${invitationId}/cancelar`, {
+        method: 'POST',
+        headers: authHeaders()
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      setInvitationResult((current) => (current?.invitacion?.id === invitationId ? null : current));
+      await loadManagerInvitations();
+      return true;
+    } catch (error) {
+      setInvitationError(error.message.replace(/^"|"$/g, '') || 'No se pudo cancelar la invitación.');
+      return false;
+    } finally {
+      setInvitationSaving('');
+    }
+  }
 
   async function loadManagerRequests() {
     if (!session?.token || session.role !== 'Gerente') {
@@ -1065,6 +1194,8 @@ function App() {
       loadMisEmpresas();
       loadManagerRequests();
       loadManagerUsers();
+      loadManagerInvitations();
+      loadMiAcceso();
     }
   }, [session?.type, session?.token, session?.role]);
   useEffect(() => {
@@ -1718,6 +1849,25 @@ function App() {
     }
   }
 
+  // Enlace de invitacion de empleado: http://.../?unirse=CODIGO&otp=OTP&correo=...
+  // Abre "Solicitar acceso" con los datos precargados y los quita de la URL.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const codigo = params.get('unirse');
+    if (!codigo) return;
+
+    setJoinPrefill({
+      grupoGestionCodigo: codigo.trim().toUpperCase(),
+      otp: (params.get('otp') ?? '').trim().toUpperCase(),
+      correoElectronico: (params.get('correo') ?? '').trim().toLowerCase()
+    });
+    setAuthView('join');
+
+    ['unirse', 'otp', 'correo'].forEach((clave) => params.delete(clave));
+    const query = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+  }, []);
+
   // Enlace del correo de invitacion: http://.../?activar=TOKEN
   // Se lee una sola vez al abrir la app y se quita de la URL (no queda en el historial).
   useEffect(() => {
@@ -2048,6 +2198,7 @@ function App() {
       <main className={`auth-shell text-size-${textSize}`} onChangeCapture={handleTextCaseCapture}>
         {authView === 'join' ? (
           <JoinTeamPage
+            initialValues={joinPrefill}
             error={loginError}
             status={joinRequestStatus}
             onSubmit={handleJoinTeamRequest}
@@ -2226,9 +2377,31 @@ function App() {
               <CheckCircle2 size={15} />
               <span>{status}</span>
             </div>
-            <button className="icon-button" type="button" aria-label="Notificaciones">
-              <Bell size={18} />
-            </button>
+            {(() => {
+              // Campanita: para el Gerente, solicitudes de acceso pendientes de aprobar.
+              const pendientes = session?.role === 'Gerente' ? managerRequests.length : 0;
+              const etiqueta = pendientes === 0
+                ? 'Notificaciones: no hay novedades'
+                : `Notificaciones: ${pendientes} ${pendientes === 1 ? 'solicitud pendiente' : 'solicitudes pendientes'} de aprobación`;
+              return (
+                <button
+                  className="icon-button notification-bell"
+                  type="button"
+                  aria-label={etiqueta}
+                  title={etiqueta.replace('Notificaciones: ', '')}
+                  onClick={() => {
+                    if (pendientes === 0) return;
+                    setActiveModule('users');
+                    setView('list');
+                    setIsMapExpanded(false);
+                    setProfileMenuOpen(false);
+                  }}
+                >
+                  <Bell size={18} />
+                  {pendientes > 0 && <span className="notification-badge">{pendientes > 9 ? '9+' : pendientes}</span>}
+                </button>
+              );
+            })()}
             <UserProfileMenu
               session={session}
               profile={userProfile}
@@ -2264,6 +2437,8 @@ function App() {
             onBack={goToList}
             managerContext={managerContext}
           />
+        ) : activeModule === 'users' && session.role !== 'Gerente' ? (
+          <MyAccessUsersPage acceso={miAcceso} equipo={equipoUsuarios} error={equipoError} />
         ) : activeModule === 'users' ? (
           <ManagerUsersPage
             context={managerContext}
@@ -2280,7 +2455,16 @@ function App() {
             onApproveRequest={handleApproveUserRequest}
             onResolveRequest={handleResolveUserRequest}
             onToggleUserStatus={handleToggleManagerUserStatus}
+            invitations={managerInvitations}
+            invitationSaving={invitationSaving}
+            invitationResult={invitationResult}
+            invitationError={invitationError}
+            onCreateInvitation={handleCreateInvitation}
+            onResendInvitation={handleResendInvitation}
+            onCancelInvitation={handleCancelInvitation}
           />
+        ) : activeModule === 'teams' && session.role !== 'Gerente' ? (
+          <MyCompaniesPage acceso={miAcceso} error={equipoError} />
         ) : activeModule === 'teams' ? (
           <ManagerTeamsPage
             context={managerContext}
@@ -2866,17 +3050,18 @@ function LoginPage({ onLogin, error, onJoin }) {
   );
 }
 
-function JoinTeamPage({ error, status, onSubmit, onBack }) {
+function JoinTeamPage({ initialValues = null, error, status, onSubmit, onBack }) {
   const [form, setForm] = useState({
     nombre: '',
     apellido: '',
     telefono: '',
-    correoElectronico: '',
+    correoElectronico: initialValues?.correoElectronico ?? '',
     password: '',
     repetirPassword: '',
-    grupoGestionCodigo: '',
-    otp: ''
+    grupoGestionCodigo: initialValues?.grupoGestionCodigo ?? '',
+    otp: initialValues?.otp ?? ''
   });
+  const invitedByLink = Boolean(initialValues?.grupoGestionCodigo && initialValues?.otp);
   const [showPassword, setShowPassword] = useState(false);
   const [showRepeatPassword, setShowRepeatPassword] = useState(false);
   const passwordRequirements = useMemo(() => getPasswordRequirements(form.password), [form.password]);
@@ -2956,6 +3141,16 @@ function JoinTeamPage({ error, status, onSubmit, onBack }) {
             <span>El gerente define después tus permisos por empresa.</span>
           </div>
         </div>
+
+        {invitedByLink && (
+          <p className="join-invite-notice" role="status">
+            <CheckCircle2 size={18} />
+            <span>
+              Llegaste desde una invitación: el código del grupo y la OTP ya están cargados.
+              {initialValues?.correoElectronico ? ' Usá el correo en el que la recibiste.' : ''}
+            </span>
+          </p>
+        )}
 
         <div className="join-form-grid">
           <label className="auth-field">
@@ -3937,7 +4132,13 @@ function AccessibilityControl({ open, textSize, onToggle, onClose, onSelectSize 
 }
 
 
-function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp, onGenerateOtp, onCopy, requests = [], users = [], userSaving, actionStatus, onApproveRequest, onResolveRequest, onToggleUserStatus }) {
+function ManagerUsersPage({
+  context, error, generatedOtp, copiedKey, loadingOtp, onGenerateOtp, onCopy,
+  requests = [], users = [], userSaving, actionStatus, onApproveRequest, onResolveRequest, onToggleUserStatus,
+  invitations = [], invitationSaving = '', invitationResult = null, invitationError = '',
+  onCreateInvitation, onResendInvitation, onCancelInvitation
+}) {
+  const [invitationTab, setInvitationTab] = useState('correo');
   const empresas = context?.empresas ?? [];
   const [userFilters, setUserFilters] = useState({
     search: '',
@@ -3981,9 +4182,17 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
           <h1>Usuarios</h1>
           <p>Gestioná accesos, solicitudes y empresas vinculadas a tu grupo de gestión.</p>
         </div>
-        <button className="green-button add-lote-button" type="button" onClick={onGenerateOtp} disabled={loadingOtp || !context?.grupoGestionCodigo}>
-          {loadingOtp ? <LoaderCircle className="spin-icon" size={18} /> : <KeyRound size={18} />}
-          <span>{loadingOtp ? 'Generando...' : 'Generar OTP'}</span>
+        <button
+          className="green-button add-lote-button"
+          type="button"
+          onClick={() => {
+            setInvitationTab('correo');
+            document.getElementById('invitacion-correo')?.focus();
+          }}
+          disabled={!context?.grupoGestionCodigo}
+        >
+          <UserPlus size={18} />
+          <span>Invitar empleado</span>
         </button>
       </div>
 
@@ -3997,35 +4206,23 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
       </div>
 
       <div className="manager-users-grid">
-        <section className="dashboard-card users-card invitation-card">
-          <div className="card-heading">
-            <div className="card-heading-icon"><KeyRound size={18} /></div>
-            <div>
-              <h2>Invitación segura</h2>
-              <p>El empleado se une con el código del grupo y una OTP de un solo uso.</p>
-            </div>
-          </div>
-          <div className="otp-preview-card">
-            <div className="otp-value-row">
-              <div>
-                <span>Código de grupo</span>
-                <strong>{context?.grupoGestionCodigo ?? 'Se carga al completar registro'}</strong>
-              </div>
-              <button className={`otp-copy-button ${copiedKey === context?.grupoGestionCodigo ? 'copy-button-copied' : ''}`} type="button" onClick={() => onCopy(context?.grupoGestionCodigo)} disabled={!context?.grupoGestionCodigo} aria-label="Copiar código de grupo">
-                {copiedKey === context?.grupoGestionCodigo ? <CheckCircle2 size={18} /> : <Copy size={18} />}
-              </button>
-            </div>
-
-            {generatedOtp ? (
-              <div className="otp-generated-box">
-                <OtpSecretCredential value={generatedOtp.otp} copied={copiedKey === generatedOtp.otp} onCopy={onCopy} />
-                <p>Vence el {otpExpiration}. Es de un solo uso y se guarda protegida en la base de datos.</p>
-              </div>
-            ) : (
-              <p>Generá una OTP cuando quieras invitar a un empleado. Se vence a los 7 días y solo puede usarse una vez.</p>
-            )}
-          </div>
-        </section>
+        <EmployeeInvitationCard
+          context={context}
+          tab={invitationTab}
+          onTabChange={setInvitationTab}
+          invitations={invitations}
+          saving={invitationSaving}
+          result={invitationResult}
+          error={invitationError}
+          generatedOtp={generatedOtp}
+          loadingOtp={loadingOtp}
+          copiedKey={copiedKey}
+          onCopy={onCopy}
+          onGenerateOtp={onGenerateOtp}
+          onCreate={onCreateInvitation}
+          onResend={onResendInvitation}
+          onCancel={onCancelInvitation}
+        />
 
         <section className="dashboard-card users-card">
           <div className="card-heading">
@@ -4150,7 +4347,7 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
   );
 }
 
-function ApprovedUserRow({ user, saving, onToggleStatus }) {
+function ApprovedUserRow({ user, saving, onToggleStatus, readOnly = false }) {
   const fullName = `${user.nombre ?? ''} ${user.apellido ?? ''}`.trim() || user.correoElectronico;
   const action = user.activo ? 'deshabilitar' : 'habilitar';
   const isSaving = saving === `${action}-${user.usuarioId}`;
@@ -4184,7 +4381,7 @@ function ApprovedUserRow({ user, saving, onToggleStatus }) {
       </div>
       <div className="approved-user-status-actions">
         <em className={user.activo ? 'company-active' : 'company-disabled'}>{user.activo ? 'Habilitado' : 'Deshabilitado'}</em>
-        <button
+        {!readOnly && <button
           className={'team-action-button ' + (user.activo ? 'team-danger-action' : 'team-enable-action')}
           type="button"
           onClick={() => onToggleStatus(user)}
@@ -4192,9 +4389,205 @@ function ApprovedUserRow({ user, saving, onToggleStatus }) {
         >
           {isSaving ? <LoaderCircle className="spin-icon" size={16} /> : user.activo ? <Trash2 size={16} /> : <CheckCircle2 size={16} />}
           {user.activo ? 'Deshabilitar' : 'Habilitar'}
-        </button>
+        </button>}
       </div>
     </article>
+  );
+}
+
+/**
+ * Empresas para quien NO es Gerente: solo consulta de las empresas en las que tiene acceso.
+ * Crear, editar, deshabilitar o cambiar la principal es exclusivo del Gerente (la API lo valida).
+ */
+function MyCompaniesPage({ acceso, error }) {
+  const grupos = acceso?.grupos ?? [];
+  const empresas = grupos.flatMap((grupo) => grupo.empresas.map((empresa) => ({ ...empresa, grupo })));
+  const principal = empresas.find((empresa) => empresa.esPrincipal) ?? empresas[0];
+
+  return (
+    <section className="content-panel manager-users-panel">
+      <div className="page-heading">
+        <div>
+          <h1>Empresas</h1>
+          <p>Consultá las empresas en las que tenés acceso. Las empresas las administra el Gerente de tu grupo.</p>
+        </div>
+      </div>
+
+      {error && <p className="auth-error">{error}</p>}
+
+      <div className="summary-grid users-summary-grid">
+        <SummaryCard icon={<Building2 size={30} />} label="Empresas asignadas" value={empresas.length} helper="Empresas en las que tenés acceso" />
+        <SummaryCard icon={<Building2 size={30} />} label="Empresa principal" value={principal?.nombre ?? 'Sin empresa'} helper={principal ? `Tu rol: ${formatRole(principal.rol)}` : 'Todavía no tenés empresas asignadas'} />
+        <SummaryCard icon={<Users size={30} />} label="Grupo de gestión" value={grupos[0]?.codigo ?? 'Sin grupo'} helper={grupos[0] ? `Gerente: ${grupos[0].gerente}` : 'Todavía no pertenecés a un grupo'} />
+      </div>
+
+      <section className="dashboard-card users-card my-access-card">
+        <div className="card-heading">
+          <div className="card-heading-icon"><Building2 size={18} /></div>
+          <div>
+            <h2>Tus empresas</h2>
+            <p>Solo consulta: para sumar, editar o deshabilitar empresas, contactá al Gerente.</p>
+          </div>
+          <span className="points-count">{empresas.length} {empresas.length === 1 ? 'empresa' : 'empresas'}</span>
+        </div>
+
+        {empresas.length === 0 ? (
+          <div className="users-inline-empty">
+            <Building2 size={42} />
+            <strong>Todavía no tenés empresas asignadas.</strong>
+            <span>Cuando el Gerente te dé acceso a una empresa, vas a verla acá.</span>
+          </div>
+        ) : (
+          <div className="my-companies-list">
+            {empresas.map((empresa) => (
+              <article className="my-company-row" key={empresa.empresaId}>
+                <span className="my-company-icon"><Building2 size={20} /></span>
+                <div className="my-company-main">
+                  <strong>{empresa.nombre}</strong>
+                  <small>Grupo {empresa.grupo.codigo} · Gerente: {empresa.grupo.gerente}</small>
+                </div>
+                <div className="my-company-tags">
+                  <em className="role-chip">{formatRole(empresa.rol)}</em>
+                  {empresa.esPrincipal && <small className="my-access-principal">Principal</small>}
+                  <em className="company-active">Activa</em>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    </section>
+  );
+}
+
+/**
+ * Usuarios para quien NO es Gerente: solo consulta.
+ *  - Todos ven "Mi acceso": grupo, gerente, empresas y su rol en cada una.
+ *  - El Encargado ademas ve el equipo de las empresas donde es Encargado, sin acciones.
+ */
+function MyAccessUsersPage({ acceso, equipo = [], error }) {
+  const [search, setSearch] = useState('');
+  const grupos = acceso?.grupos ?? [];
+  const empresas = grupos.flatMap((grupo) => grupo.empresas);
+  const principal = empresas.find((empresa) => empresa.esPrincipal) ?? empresas[0];
+  const texto = normalizeSearchText(search.trim());
+  const equipoFiltrado = equipo.filter((user) => !texto || normalizeSearchText([
+    user.nombre, user.apellido, user.correoElectronico, formatRole(user.rolGeneral),
+    ...(user.empresas ?? []).flatMap((empresa) => [empresa.empresaNombre, formatRole(empresa.rol)])
+  ].filter(Boolean).join(' ')).includes(texto));
+
+  return (
+    <section className="content-panel manager-users-panel">
+      <div className="page-heading">
+        <div>
+          <h1>Usuarios</h1>
+          <p>
+            {acceso?.puedeVerEquipo
+              ? 'Consultá tu acceso y el equipo de tus empresas. Los accesos los gestiona el Gerente.'
+              : 'Consultá tu acceso a AgroDigital. Los accesos los gestiona el Gerente de tu grupo.'}
+          </p>
+        </div>
+      </div>
+
+      {error && <p className="auth-error">{error}</p>}
+
+      <div className="summary-grid users-summary-grid">
+        <SummaryCard
+          icon={<Users size={30} />}
+          label="Grupo de gestión"
+          value={grupos[0]?.codigo ?? 'Sin grupo'}
+          helper={grupos.length > 1 ? `y ${grupos.length - 1} grupo(s) más` : grupos[0] ? `Gerente: ${grupos[0].gerente}` : 'Todavía no pertenecés a un grupo'}
+        />
+        <SummaryCard icon={<Building2 size={30} />} label="Empresa principal" value={principal?.nombre ?? 'Sin empresa'} helper={principal ? `Tu rol: ${formatRole(principal.rol)}` : 'Todavía no tenés empresas asignadas'} />
+        <SummaryCard icon={<ShieldCheck size={30} />} label="Empresas asignadas" value={empresas.length} helper="Empresas en las que tenés acceso" />
+      </div>
+
+      <section className="dashboard-card users-card my-access-card">
+        <div className="card-heading">
+          <div className="card-heading-icon"><ShieldCheck size={18} /></div>
+          <div>
+            <h2>Mi acceso</h2>
+            <p>Tu rol puede ser distinto en cada empresa. Si necesitás un cambio, pedíselo al Gerente.</p>
+          </div>
+        </div>
+
+        {grupos.length === 0 ? (
+          <div className="users-inline-empty">
+            <Building2 size={42} />
+            <strong>Todavía no tenés empresas asignadas.</strong>
+            <span>Cuando el Gerente apruebe tu acceso, vas a verlas acá.</span>
+          </div>
+        ) : grupos.map((grupo) => (
+          <div className="my-access-group" key={grupo.grupoGestionId}>
+            <div className="my-access-block">
+              <small className="my-access-label">Tus empresas y tu rol</small>
+              <div className="my-access-companies">
+                {grupo.empresas.map((empresa) => (
+                  <span className="team-role-pill" key={empresa.empresaId}>
+                    <Building2 size={14} />
+                    <strong>{empresa.nombre}</strong>
+                    <em>{formatRole(empresa.rol)}</em>
+                    {empresa.esPrincipal && <small className="my-access-principal">Principal</small>}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="my-access-contact">
+              <span className="approved-user-avatar"><User size={20} /></span>
+              <div>
+                <small className="my-access-label">Tu gerente</small>
+                <strong>{grupo.gerente}</strong>
+                <span className="my-access-contact-text">
+                  Gestiona los accesos de {grupo.empresas.map((empresa) => empresa.nombre).join(', ')}.
+                  {grupo.gerenteCorreo ? ' Escribile si necesitás un cambio:' : ''}
+                </span>
+                {grupo.gerenteCorreo && (
+                  <a href={`mailto:${grupo.gerenteCorreo}`}><Mail size={14} /> {grupo.gerenteCorreo}</a>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </section>
+
+      {acceso?.puedeVerEquipo && (
+        <section className="dashboard-card users-card approved-users-card">
+          <div className="card-heading">
+            <div className="card-heading-icon"><Users size={18} /></div>
+            <div>
+              <h2>Equipo de tus empresas</h2>
+              <p>Solo consulta: invitar, aprobar o deshabilitar usuarios lo hace el Gerente.</p>
+            </div>
+            <span className="points-count">{equipo.length} {equipo.length === 1 ? 'persona' : 'personas'}</span>
+          </div>
+
+          <div className="approved-users-filters">
+            <label className="filter-search-field">
+              <Search size={18} />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar por nombre, correo, empresa o rol"
+                aria-label="Buscar en el equipo"
+              />
+            </label>
+          </div>
+
+          {equipoFiltrado.length === 0 ? (
+            <div className="pending-users-empty-row approved-users-empty-row">
+              <Users size={34} />
+              <strong>{equipo.length === 0 ? 'Todavía no hay otras personas en tus empresas' : 'No hay resultados para esa búsqueda'}</strong>
+            </div>
+          ) : (
+            <div className="approved-users-table">
+              {equipoFiltrado.map((user) => (
+                <ApprovedUserRow key={user.usuarioId} user={user} readOnly />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+    </section>
   );
 }
 
@@ -4579,6 +4972,242 @@ function PendingUserRequestCard({ request, empresas, onApprove, onResolve }) {
     </article>
   );
 }
+const INVITACION_CORREO_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Enlace que abre "Solicitar acceso" con el codigo y la OTP (y el correo) precargados. */
+function buildJoinLink(codigo, otp, correo = '') {
+  const params = new URLSearchParams({ unirse: codigo, otp });
+  if (correo) params.set('correo', correo);
+  return `${window.location.origin}/?${params.toString()}`;
+}
+
+/** Mensaje listo para pegar en WhatsApp u otro medio. */
+function buildInvitationMessage({ codigo, otp, correo = '', vence = null }) {
+  const venceTexto = vence
+    ? new Date(vence).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : null;
+
+  return [
+    '¡Hola! Te invito a sumarte a nuestro equipo en AgroDigital.',
+    '',
+    `1. Entrá a este enlace: ${buildJoinLink(codigo, otp, correo)}`,
+    '2. Completá tus datos y enviá la solicitud. Después la apruebo y te asigno un rol.',
+    '',
+    'Si preferís cargarlos a mano, en "Solicitar acceso":',
+    `Código de grupo: ${codigo}`,
+    `OTP: ${otp}`,
+    correo ? `Usá este correo: ${correo}` : null,
+    venceTexto ? `Es de un solo uso y vence el ${venceTexto}.` : 'Es de un solo uso.'
+  ].filter((linea) => linea !== null).join('\n');
+}
+
+function ShareInvitationActions({ message, copiedKey, onCopy }) {
+  return (
+    <div className="invite-share-actions">
+      <button className={`invite-share-button ${copiedKey === message ? 'invite-share-button-copied' : ''}`} type="button" onClick={() => onCopy(message)}>
+        {copiedKey === message ? <CheckCircle2 size={16} /> : <Copy size={16} />}
+        {copiedKey === message ? 'Mensaje copiado' : 'Copiar mensaje'}
+      </button>
+      <a className="invite-share-button" href={`https://wa.me/?text=${encodeURIComponent(message)}`} target="_blank" rel="noreferrer">
+        <MessageCircle size={16} />
+        Compartir por WhatsApp
+      </a>
+    </div>
+  );
+}
+
+function EmployeeInvitationCard({
+  context, tab, onTabChange, invitations, saving, result, error,
+  generatedOtp, loadingOtp, copiedKey, onCopy, onGenerateOtp, onCreate, onResend, onCancel
+}) {
+  const [form, setForm] = useState({ correoElectronico: '', nombre: '' });
+  const [confirmCancelId, setConfirmCancelId] = useState(null);
+  const codigo = context?.grupoGestionCodigo ?? '';
+  const correo = form.correoElectronico.trim();
+  const correoInvalido = correo.length > 0 && !INVITACION_CORREO_REGEX.test(correo);
+  const creating = saving === 'crear';
+  const canSend = Boolean(codigo) && INVITACION_CORREO_REGEX.test(correo) && !creating;
+
+  async function submit(event) {
+    event.preventDefault();
+    if (!canSend) return;
+    const ok = await onCreate({ correoElectronico: correo, nombre: form.nombre.trim() || null });
+    if (ok) setForm({ correoElectronico: '', nombre: '' });
+  }
+
+  async function confirmCancel(id) {
+    const ok = await onCancel(id);
+    if (ok) setConfirmCancelId(null);
+  }
+
+  const fallbackMessage = result && !result.envio?.enviado
+    ? buildInvitationMessage({ codigo: result.grupoGestionCodigo, otp: result.otp, correo: result.invitacion?.correoElectronico, vence: result.invitacion?.fechaVencimiento })
+    : '';
+  const manualMessage = generatedOtp
+    ? buildInvitationMessage({ codigo: generatedOtp.grupoGestionCodigo ?? codigo, otp: generatedOtp.otp, vence: generatedOtp.fechaVencimiento })
+    : '';
+
+  return (
+    <section className="dashboard-card users-card invitation-card">
+      <div className="card-heading">
+        <div className="card-heading-icon"><KeyRound size={18} /></div>
+        <div>
+          <h2>Invitación segura</h2>
+          <p>Invitá a una persona por correo o compartí el código manualmente.</p>
+        </div>
+      </div>
+
+      <div className="invite-tabs" role="tablist" aria-label="Forma de invitar">
+        <button type="button" role="tab" aria-selected={tab === 'correo'} className={tab === 'correo' ? 'active' : ''} onClick={() => onTabChange('correo')}>
+          <Mail size={16} /> Por correo
+        </button>
+        <button type="button" role="tab" aria-selected={tab === 'manual'} className={tab === 'manual' ? 'active' : ''} onClick={() => onTabChange('manual')}>
+          <Copy size={16} /> Compartir manualmente
+        </button>
+      </div>
+
+      {tab === 'correo' ? (
+        <div className="invite-panel" role="tabpanel">
+          <form className="invite-form" onSubmit={submit}>
+            <label className="invite-field">
+              <span>Correo electrónico *</span>
+              <input
+                id="invitacion-correo"
+                type="email"
+                value={form.correoElectronico}
+                onChange={(event) => setForm((current) => ({ ...current, correoElectronico: event.target.value }))}
+                placeholder="juan.perez@correo.com"
+                aria-invalid={correoInvalido}
+                autoComplete="off"
+              />
+            </label>
+            <label className="invite-field">
+              <span>Nombre (opcional)</span>
+              <input
+                type="text"
+                value={form.nombre}
+                onChange={(event) => setForm((current) => ({ ...current, nombre: event.target.value }))}
+                placeholder="Para saludarlo en el correo"
+                maxLength={150}
+              />
+            </label>
+            <p className={`invite-help ${correoInvalido ? 'invite-help-error' : ''}`}>
+              {correoInvalido
+                ? 'Revisá el formato del correo (ej: nombre@empresa.com).'
+                : 'Le llega el código del grupo y una OTP que solo sirve con este correo. Vence en 7 días.'}
+            </p>
+            <button className="green-button invite-send-button" type="submit" disabled={!canSend}>
+              {creating ? <LoaderCircle className="spin-icon" size={18} /> : <Send size={18} />}
+              <span>{creating ? 'Enviando...' : 'Enviar invitación'}</span>
+            </button>
+          </form>
+
+          {error && <p className="auth-error">{error}</p>}
+
+          {result?.envio && (
+            <div className={`invite-result ${result.envio.enviado ? 'invite-result-ok' : 'invite-result-error'}`} role="status">
+              <p>
+                {result.envio.enviado ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+                <span>{result.envio.mensaje}</span>
+              </p>
+              {!result.envio.enviado && (
+                <>
+                  <small>Compartí este mensaje por otro medio. La OTP no se vuelve a mostrar.</small>
+                  <ShareInvitationActions message={fallbackMessage} copiedKey={copiedKey} onCopy={onCopy} />
+                </>
+              )}
+            </div>
+          )}
+
+          <div className="invite-list-heading">
+            <strong>Invitaciones enviadas</strong>
+            <span>{invitations.length}</span>
+          </div>
+
+          {invitations.length === 0 ? (
+            <p className="invite-empty">Todavía no hay invitaciones pendientes.</p>
+          ) : (
+            <ul className="invite-list">
+              {invitations.map((inv) => {
+                const vencida = inv.estado === 'Vencida';
+                const chip = vencida ? 'vencida' : inv.estadoEnvio === 'Error' ? 'error' : inv.estadoEnvio === 'Enviado' ? 'ok' : 'pendiente';
+                const chipText = vencida ? 'Vencida' : inv.estadoEnvio === 'Error' ? 'No se pudo enviar' : inv.estadoEnvio === 'Enviado' ? 'Enviada' : 'Sin enviar';
+                const vence = new Date(inv.fechaVencimiento).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+                const resending = saving === `reenviar-${inv.id}`;
+                const cancelling = saving === `cancelar-${inv.id}`;
+
+                return (
+                  <li key={inv.id}>
+                    <div className="invite-item-main">
+                      <strong>{inv.nombre || inv.correoElectronico}</strong>
+                      {inv.nombre && <small>{inv.correoElectronico}</small>}
+                      <small>
+                        {vencida ? `Venció el ${vence}` : `Vence el ${vence}`}
+                        {inv.cantidadEnvios > 1 ? ` · ${inv.cantidadEnvios} envíos` : ''}
+                      </small>
+                    </div>
+                    <span className={`invite-chip invite-chip-${chip}`}>{chipText}</span>
+                    {confirmCancelId === inv.id ? (
+                      <div className="invite-item-actions">
+                        <span className="invite-confirm-text">¿Cancelar?</span>
+                        <button type="button" className="invite-action invite-action-danger" onClick={() => confirmCancel(inv.id)} disabled={cancelling}>
+                          {cancelling ? <LoaderCircle className="spin-icon" size={14} /> : null} Sí
+                        </button>
+                        <button type="button" className="invite-action" onClick={() => setConfirmCancelId(null)} disabled={cancelling}>No</button>
+                      </div>
+                    ) : (
+                      <div className="invite-item-actions">
+                        <button type="button" className="invite-action" onClick={() => onResend(inv.id)} disabled={Boolean(saving)}>
+                          {resending ? <LoaderCircle className="spin-icon" size={14} /> : <RotateCcw size={14} />}
+                          {resending ? 'Enviando...' : 'Reenviar'}
+                        </button>
+                        <button type="button" className="invite-action invite-action-danger" onClick={() => setConfirmCancelId(inv.id)} disabled={Boolean(saving)}>
+                          <XCircle size={14} /> Cancelar
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      ) : (
+        <div className="invite-panel" role="tabpanel">
+          <div className="otp-preview-card">
+            <div className="otp-value-row">
+              <div>
+                <span>Código de grupo</span>
+                <strong>{codigo || 'Se carga al completar registro'}</strong>
+              </div>
+              <button className={`otp-copy-button ${copiedKey === codigo ? 'copy-button-copied' : ''}`} type="button" onClick={() => onCopy(codigo)} disabled={!codigo} aria-label="Copiar código de grupo">
+                {copiedKey === codigo ? <CheckCircle2 size={18} /> : <Copy size={18} />}
+              </button>
+            </div>
+
+            {generatedOtp ? (
+              <div className="otp-generated-box">
+                <OtpSecretCredential value={generatedOtp.otp} copied={copiedKey === generatedOtp.otp} onCopy={onCopy} />
+                <p>
+                  Vence el {new Date(generatedOtp.fechaVencimiento).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}.
+                  Es de un solo uso y no está asociada a ningún correo: compartila solo con la persona que querés sumar.
+                </p>
+                <ShareInvitationActions message={manualMessage} copiedKey={copiedKey} onCopy={onCopy} />
+              </div>
+            ) : (
+              <p>Generá una OTP para compartirla por WhatsApp u otro medio. Vence a los 7 días y solo puede usarse una vez.</p>
+            )}
+          </div>
+          <button className="invite-generate-button" type="button" onClick={onGenerateOtp} disabled={loadingOtp || !codigo}>
+            {loadingOtp ? <LoaderCircle className="spin-icon" size={16} /> : <KeyRound size={16} />}
+            {loadingOtp ? 'Generando...' : generatedOtp ? 'Generar otra OTP' : 'Generar OTP'}
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function OtpSecretCredential({ value, copied, onCopy }) {
   const [isVisible, setIsVisible] = useState(false);
   const displayValue = isVisible ? value : '••••••••••••';

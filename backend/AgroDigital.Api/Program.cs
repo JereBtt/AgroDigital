@@ -32,10 +32,12 @@ builder.Services.AddScoped<ISeguimientoRepository, SeguimientoRepository>();
 builder.Services.AddScoped<ICosechaRepository, CosechaRepository>();
 builder.Services.AddScoped<IAuthRepository, AuthRepository>();
 builder.Services.AddScoped<IAdminRepository, AdminRepository>();
+builder.Services.AddScoped<IInvitacionEmpleadoRepository, InvitacionEmpleadoRepository>();
 builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
 builder.Services.AddSingleton<IAuthTokenService, HmacAuthTokenService>();
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection(EmailSettings.Seccion));
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
+builder.Services.AddScoped<INotificacionesSolicitudService, NotificacionesSolicitudService>();
 
 var connectionString = builder.Configuration.GetConnectionString("AgroDigital");
 if (!string.IsNullOrWhiteSpace(connectionString))
