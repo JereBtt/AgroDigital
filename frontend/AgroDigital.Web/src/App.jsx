@@ -2559,6 +2559,7 @@ function App() {
             session={session}
             lotes={parentFilteredLotes}
             parentFilters={parentFiltersForEmpresaCampania}
+            selectedEmpresaId={selectedParentEmpresaId}
             selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
             selectedCampaniaName={selectedParentCampania?.campaniaNombre || ''}
           />

@@ -30,6 +30,7 @@ builder.Services.AddScoped<IInicioRepository, InicioRepository>();
 builder.Services.AddScoped<ISiembraRepository, SiembraRepository>();
 builder.Services.AddScoped<ISeguimientoRepository, SeguimientoRepository>();
 builder.Services.AddScoped<ICosechaRepository, CosechaRepository>();
+builder.Services.AddScoped<IGranoParametroCosechaRepository, GranoParametroCosechaRepository>();
 builder.Services.AddScoped<IAuthRepository, AuthRepository>();
 builder.Services.AddScoped<IAdminRepository, AdminRepository>();
 builder.Services.AddScoped<IInvitacionEmpleadoRepository, InvitacionEmpleadoRepository>();

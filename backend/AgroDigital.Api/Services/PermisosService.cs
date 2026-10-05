@@ -11,7 +11,7 @@ namespace AgroDigital.Api.Services;
     Matriz:
       Estructura        Lotes, Campañas, Siembras, Cosechas, Silos, parámetros de grano,
                         finalizar etapas y bajas ............... Gerente, Encargado
-      RegistroCampo     Seguimiento de siembra, tirada de aros y control de silo
+      RegistroCampo     Seguimiento de siembra, tirada de aros, partes de cosecha y control de silo
                         ........................................ Gerente, Encargado, Empleado de campo
                         (el Empleado de campo solo edita o elimina lo que cargó él)
       MovimientoGrano   Almacenamiento y Distribución .......... Gerente, Encargado, Empleado administrativo
@@ -38,6 +38,7 @@ public enum RecursoOperativo
     Seguimiento,
     Cosecha,
     TiradaAros,
+    ParteCosecha,
     Silo,
     ControlSilo,
     Almacenamiento,
@@ -121,6 +122,7 @@ public sealed class PermisosService(IConfiguration configuration) : IPermisosSer
         {
             RecursoOperativo.Seguimiento => "SELECT CreadoPorUsuarioId FROM dbo.SiembraSeguimientos WHERE SiembraSeguimientoId = @Id;",
             RecursoOperativo.TiradaAros => "SELECT CreadoPorUsuarioId FROM dbo.CosechaTiradaAros WHERE CosechaTiradaAroId = @Id;",
+            RecursoOperativo.ParteCosecha => "SELECT CreadoPorUsuarioId FROM dbo.CosechaPartes WHERE CosechaParteId = @Id;",
             RecursoOperativo.ControlSilo => "SELECT CreadoPorUsuarioId FROM dbo.SiloControles WHERE SiloControlId = @Id;",
             _ => throw new ArgumentOutOfRangeException(nameof(recurso), "Solo aplica a registros de campo.")
         };
@@ -200,6 +202,12 @@ public sealed class PermisosService(IConfiguration configuration) : IPermisosSer
                 INNER JOIN dbo.Cosechas AS c ON c.CosechaId = t.CosechaId
                 INNER JOIN dbo.Lotes AS l ON l.LoteId = c.LoteId
                 WHERE t.CosechaTiradaAroId = @Id;
+                """,
+            RecursoOperativo.ParteCosecha => """
+                SELECT l.EmpresaId FROM dbo.CosechaPartes AS p
+                INNER JOIN dbo.Cosechas AS c ON c.CosechaId = p.CosechaId
+                INNER JOIN dbo.Lotes AS l ON l.LoteId = c.LoteId
+                WHERE p.CosechaParteId = @Id;
                 """,
             RecursoOperativo.Silo => """
                 SELECT COALESCE(s.EmpresaId, l.EmpresaId) FROM dbo.Silos AS s

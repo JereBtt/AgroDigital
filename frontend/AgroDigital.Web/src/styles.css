@@ -11134,3 +11134,192 @@ textarea::placeholder {
 .my-company-main small { color: #607067; font-size: calc(12.5px * var(--text-scale)); font-weight: 800; }
 
 .my-company-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* =====================================================================
+   Modulo Cosechas (cos-*). Reutiliza las clases de Siembras y agrega:
+   avance, chips de estado, modal de cierre, partes y Tirada de Aros.
+   ===================================================================== */
+
+.cos-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.cos-sub { display: block; margin-top: 4px; color: #5a665e; font-size: calc(12px * var(--text-scale, 1)); font-weight: 600; }
+.cos-muted { color: #7b867f; }
+.cos-hint { color: #56625a; font-size: calc(12.5px * var(--text-scale, 1)); font-weight: 600; line-height: 1.4; margin: 0; }
+.cos-cell-wrap { white-space: normal; min-width: 180px; max-width: 320px; }
+
+.cos-mensaje { margin: 0; padding: 12px 16px; border-radius: 12px; font-weight: 800; line-height: 1.4; }
+.cos-mensaje-error { background: #fff1f0; border: 1px solid #f5c2bd; color: #a8231a; }
+.cos-mensaje-ok { background: #eef8f1; border: 1px solid #bfe3ca; color: #145a31; }
+
+/* Avance */
+.cos-progress { width: 120px; height: 8px; border-radius: 999px; background: #e2e8e0; overflow: hidden; }
+.cos-progress > span { display: block; height: 100%; border-radius: 999px; background: #2e8b4e; transition: width 0.3s ease; }
+.cos-progress-wide { width: 100%; margin: 8px 0 4px; }
+.cos-progress-big { width: 100%; height: 14px; }
+
+/* Chips */
+.cos-chip { display: inline-flex; align-items: center; gap: 6px; width: fit-content; padding: 3px 10px; border-radius: 999px; border: 1px solid transparent; font-size: calc(12px * var(--text-scale, 1)); font-weight: 800; white-space: nowrap; }
+.cos-chip-lg { padding: 7px 14px; font-size: calc(13px * var(--text-scale, 1)); }
+.cos-chip-ok { background: #e3f3e8; color: #145a31; }
+.cos-chip-warn { background: #fff0d6; color: #7a4300; border-color: #f0d29b; }
+.cos-chip-info { background: #e3eefb; color: #1c4e80; border-color: #c4dbf3; }
+.cos-chip-muted { background: #eef1ed; color: #4f5b53; border-color: #dce3da; }
+.cos-chip-done { background: #ddf1e3; color: #145a31; border-color: #bfe3ca; }
+.cos-chip-button { cursor: pointer; font-family: inherit; }
+.cos-chip-button:hover { filter: brightness(0.96); box-shadow: 0 4px 10px rgba(20, 49, 31, 0.1); }
+
+/* Severidad de la Tirada de Aros (letra + color: no depende solo del color) */
+.cos-sev { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: calc(12px * var(--text-scale, 1)); font-weight: 800; }
+.cos-sev.cos-sev-baja { background: #ddf1e3; color: #145a31; }
+.cos-sev.cos-sev-media { background: #ffebc7; color: #7a4300; }
+.cos-sev.cos-sev-alta { background: #fbe0dd; color: #8e1f14; }
+.cos-sev-dot { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 999px; color: #fff; font-size: 11px; font-style: normal; font-weight: 900; }
+.cos-sev-dot.cos-sev-baja { background: #1f7a43; }
+.cos-sev-dot.cos-sev-media { background: #b86b00; }
+.cos-sev-dot.cos-sev-alta { background: #b42318; }
+
+/* Banners */
+.cos-banner { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px 16px; border-radius: 14px; font-weight: 700; line-height: 1.4; }
+.cos-banner svg { flex: 0 0 auto; }
+.cos-banner span { flex: 1 1 280px; }
+.cos-banner-info { background: #eef5fc; border: 1px solid #c4dbf3; color: #1c4e80; }
+.cos-banner-warn { background: #fffaf0; border: 1px solid #f0d29b; color: #6d4b13; }
+
+/* Formularios */
+.cos-grid-auto { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.cos-grid-partes { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); align-items: start; }
+.cos-field-wide { grid-column: 1 / -1; margin-top: 14px; }
+.cos-field-wide textarea, .cos-card textarea, .cos-modal textarea { min-height: 76px; resize: vertical; border: 1px solid #cfd8cd; border-radius: 12px; padding: 10px 14px; font: inherit; }
+.cos-radio-group { display: flex; flex-wrap: wrap; gap: 10px; border: 0; padding: 0; margin: 0 0 14px; }
+.cos-radio-group legend { width: 100%; margin-bottom: 8px; padding: 0; font-weight: 800; color: #2b3830; }
+.cos-radio { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; border: 1.5px solid #cfd8cd; border-radius: 12px; background: #fff; font-weight: 700; cursor: pointer; }
+.cos-radio-on { border-color: #18883b; background: #edf8ef; color: #145a31; }
+.cos-checkbox { display: flex; align-items: center; gap: 10px; font-weight: 700; color: #2b3830; }
+.cos-checkbox input { width: 18px; height: 18px; }
+.cos-inline-info { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin: 12px 0; }
+.cos-upload { display: grid; place-items: center; min-height: 86px; margin-bottom: 14px; border: 1.5px dashed #b9cbbd; border-radius: 14px; color: #4f5b53; font-weight: 700; cursor: pointer; position: relative; }
+.cos-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.cos-upload:hover { background: #f4f8f4; }
+.cos-input-small { width: 96px; height: 36px; border: 1px solid #cfd8cd; border-radius: 10px; padding: 0 10px; }
+.cos-button-small { min-height: 34px; padding: 0 12px; font-size: calc(13px * var(--text-scale, 1)); }
+.cos-button-danger { background: #b42318 !important; border-color: #b42318 !important; }
+.cos-link-button { border: 0; background: none; padding: 0; color: #17663a; font-weight: 800; text-decoration: underline; cursor: pointer; }
+.cos-icon-button { width: 40px; height: 40px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #dce3da; border-radius: 12px; background: #fff; color: #2f3d35; }
+.cos-icon-button:hover { background: #eef5ef; }
+
+/* Tarjetas genericas */
+.cos-card { display: flex; flex-direction: column; gap: 14px; padding: 22px; }
+.cos-section-title { display: flex; align-items: center; gap: 10px; margin: 0; color: #17663a; font-size: calc(16px * var(--text-scale, 1)); font-weight: 900; }
+.cos-section-title::after { content: ""; flex: 1; height: 1px; background: #dce4da; }
+.cos-section-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.cos-section-row .cos-section-title { flex: 1 1 200px; }
+.cos-heading-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cos-row-highlight td { background: #f2f8f3 !important; }
+.cos-total-row td { font-weight: 900; background: #f4f7f3; }
+
+/* Modal de cierre y de tolerancias */
+.cos-modal { width: min(880px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding: 26px 28px; border-radius: 22px; background: #fff; color: #18241c; box-shadow: 0 24px 64px rgba(10, 31, 18, 0.28); }
+.cos-modal-header { display: flex; align-items: flex-start; gap: 14px; }
+.cos-modal-header > div:nth-child(2) { flex: 1; }
+.cos-modal-header h2 { margin: 0; font-size: calc(22px * var(--text-scale, 1)); }
+.cos-modal-header p { margin: 4px 0 0; color: #4f5b53; }
+.cos-modal-icon { width: 48px; height: 48px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 14px; background: #e3f3e8; color: #17663a; }
+.cos-modal-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 14px 16px; border-radius: 16px; background: #f4f7f3; }
+.cos-modal-summary div, .cos-dato { display: flex; flex-direction: column; gap: 2px; }
+.cos-modal-summary span, .cos-dato span { color: #56625a; font-size: calc(12px * var(--text-scale, 1)); font-weight: 700; }
+.cos-modal-summary strong, .cos-dato strong { font-size: calc(15px * var(--text-scale, 1)); }
+.cos-modal-grid { display: grid; gap: 14px; align-items: start; }
+.cos-modal-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cos-modal-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* Partes diarios */
+.cos-hero { display: flex; flex-direction: column; gap: 18px; padding: 24px; }
+.cos-hero-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.cos-hero-head h1 { margin: 0; color: #17663a; }
+.cos-hero-head p { margin: 6px 0 0; color: #4f5b53; }
+.cos-hero-progress-label { display: flex; justify-content: space-between; margin-bottom: 8px; font-weight: 800; }
+.cos-hero-progress-label strong { color: #17663a; }
+.cos-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
+.cos-stats div { display: flex; flex-direction: column; gap: 4px; }
+.cos-stats span { color: #4f5b53; font-size: calc(13px * var(--text-scale, 1)); font-weight: 700; }
+.cos-stats strong { font-size: calc(22px * var(--text-scale, 1)); font-weight: 900; }
+
+/* Tirada de Aros */
+.cos-tirada-grid { display: flex; flex-wrap: wrap; gap: 18px; align-items: stretch; }
+.cos-tirada-grid > .cos-card { flex: 1 1 440px; min-width: 0; }
+.cos-map-wrap { position: relative; }
+.cos-map-box { position: relative; border-radius: 16px; overflow: hidden; }
+.cos-map-hint { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 500; display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.94); font-size: calc(12px * var(--text-scale, 1)); font-weight: 700; white-space: nowrap; }
+.cos-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 10px; padding: 10px 14px; border-radius: 12px; background: #f4f7f3; font-size: calc(12.5px * var(--text-scale, 1)); font-weight: 700; }
+.cos-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.cos-map-pin { background: none; border: 0; }
+.cos-map-pin span { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 2.5px solid #fff; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35); }
+.cos-map-pin b { transform: rotate(45deg); color: #fff; font-size: 12px; font-weight: 900; }
+.cos-map-pin-pending span { background: #fff; border: 2.5px dashed #17663a; }
+.cos-map-pin-pending b { color: #17663a; }
+.cos-aros { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.cos-aro input { height: 58px; text-align: center; font-size: calc(22px * var(--text-scale, 1)); font-weight: 900; }
+.cos-live-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.cos-live-card { display: flex; flex-direction: column; gap: 4px; padding: 14px; border-radius: 16px; background: #f4f7f3; }
+.cos-live-card span { color: #4f5b53; font-size: calc(12.5px * var(--text-scale, 1)); font-weight: 800; }
+.cos-live-card strong { font-size: calc(26px * var(--text-scale, 1)); font-weight: 900; }
+.cos-live-card small { color: #56625a; font-size: calc(12px * var(--text-scale, 1)); font-weight: 600; }
+.cos-live-card-total { background: #4f5b53; }
+.cos-live-card-total span, .cos-live-card-total strong, .cos-live-card-total small { color: #fff; }
+.cos-live-card-total.cos-sev-baja { background: #1f7a43; }
+.cos-live-card-total.cos-sev-media { background: #a35d00; }
+.cos-live-card-total.cos-sev-alta { background: #b42318; }
+.cos-close-block { flex-direction: row; flex-wrap: wrap; justify-content: space-between; align-items: center; }
+.cos-close-block p { margin: 4px 0 0; color: #4f5b53; max-width: 640px; }
+
+/* Detalle */
+.cos-detalle-grid { display: flex; flex-wrap: wrap; gap: 18px; }
+.cos-detalle-grid > .cos-card { flex: 1 1 420px; min-width: 0; }
+.cos-datos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
+.cos-justificacion { margin: 0; padding: 12px 14px; border-radius: 12px; background: #fffaf0; color: #6d4b13; line-height: 1.45; }
+
+@media (max-width: 760px) {
+  .cos-modal { padding: 20px; }
+  .cos-modal-summary,
+  .cos-modal-grid-2,
+  .cos-modal-grid-3,
+  .cos-live-cards,
+  .cos-datos { grid-template-columns: 1fr; }
+  .cos-aros { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cos-map-hint { white-space: normal; width: calc(100% - 24px); }
+}
+
+/* Cosechas: ajustes de grilla y tarjeta de pérdida total */
+.cos-aros .field,
+.cos-modal-grid .field,
+.cos-grid-partes .field,
+.cos-grid-auto .field { min-width: 0; }
+.cos-aros .field input,
+.cos-modal-grid .field input,
+.cos-modal-grid .field select,
+.cos-grid-partes .field input,
+.cos-grid-partes .field select { width: 100%; min-width: 0; box-sizing: border-box; }
+.cos-aros .field input { height: 58px; padding: 0 8px; text-align: center; font-size: calc(22px * var(--text-scale, 1)); font-weight: 900; }
+
+.cos-live-card-total { background: #f4f7f3; border: 1.5px dashed #c9d4c8; }
+.cos-live-card-total span, .cos-live-card-total small { color: #56625a; }
+.cos-live-card-total strong { color: #18241c; }
+.cos-live-card-total.cos-sev-baja,
+.cos-live-card-total.cos-sev-media,
+.cos-live-card-total.cos-sev-alta { border-style: solid; border-color: transparent; }
+.cos-live-card-total.cos-sev-baja { background: #1f7a43; }
+.cos-live-card-total.cos-sev-media { background: #a35d00; }
+.cos-live-card-total.cos-sev-alta { background: #b42318; }
+.cos-live-card-total.cos-sev-baja span, .cos-live-card-total.cos-sev-baja strong, .cos-live-card-total.cos-sev-baja small,
+.cos-live-card-total.cos-sev-media span, .cos-live-card-total.cos-sev-media strong, .cos-live-card-total.cos-sev-media small,
+.cos-live-card-total.cos-sev-alta span, .cos-live-card-total.cos-sev-alta strong, .cos-live-card-total.cos-sev-alta small { color: #fff; }
+
+/* Cosechas: espacio uniforme entre bloques y aire para los botones flotantes */
+.cos-page { display: flex; flex-direction: column; gap: 22px; padding-bottom: 120px; }
+.cos-page > * { margin-top: 0; margin-bottom: 0; }
+.cos-page > h2 { margin-top: 8px; margin-bottom: -8px; }
+.cos-page > .table-shell { padding-top: 6px; padding-bottom: 6px; }
+.cos-close-block { gap: 16px; }
+.cos-close-block .form-actions { margin: 0; flex-wrap: wrap; }
+
+   /* Cosechas: acciones de la cabecera (Parámetros + Registrar) */
+   .cos-heading-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }

@@ -456,6 +456,92 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
         return almacenamientoId;
     }
 
+    /// <summary>
+    /// Ingreso automatico desde un parte diario de Cosechas (Origen = Cosecha). Corre DENTRO
+    /// de la transaccion del parte (la abre CosechaRepository), para que el parte y su
+    /// ingreso se guarden juntos o no se guarde ninguno. Abre una partida vinculada a la
+    /// cosecha y actualiza el silo. El control de acceso ya lo hizo el modulo de Cosechas.
+    /// </summary>
+    public async Task<int> RegistrarIngresoCosechaAsync(
+        SqlConnection connection, SqlTransaction transaction,
+        int siloId, int? empresaId, DateOnly fecha, decimal cantidad, int cosechaId, string producto,
+        string? campaniaNombre, string cosechaNombre, decimal? humedadIngreso, string? observaciones, int usuarioId)
+    {
+        var silo = await BloquearSiloAsync(connection, transaction, siloId, usuarioId, incluirTodos: true)
+            ?? throw new InvalidOperationException("El silo de destino no existe.");
+
+        if (silo.EmpresaId != empresaId)
+        {
+            throw new InvalidOperationException("El silo de destino no pertenece a la empresa de la cosecha.");
+        }
+
+        await ValidarFechaAsync(connection, transaction, siloId, fecha, excluirAlmacenamientoId: null);
+
+        var motivo = MotivoNoApto(silo.EstadoOperativo, silo.Stock, silo.CapacidadMax, silo.Producto, producto, cantidad);
+        if (motivo is not null)
+        {
+            throw new InvalidOperationException($"El silo {silo.Nombre} no puede recibir el grano: {motivo}");
+        }
+
+        int? campaniaId = null;
+        if (!string.IsNullOrWhiteSpace(campaniaNombre))
+        {
+            const string campaniaSql = """
+                SELECT TOP (1) CampaniaId
+                FROM dbo.Campanias
+                WHERE Nombre = @Nombre
+                ORDER BY CASE WHEN EmpresaId = @EmpresaId THEN 0 ELSE 1 END, CampaniaId;
+                """;
+
+            await using var campaniaCommand = new SqlCommand(campaniaSql, connection, transaction);
+            campaniaCommand.Parameters.AddWithValue("@Nombre", campaniaNombre.Trim());
+            campaniaCommand.Parameters.AddWithValue("@EmpresaId", (object?)empresaId ?? DBNull.Value);
+            if (await campaniaCommand.ExecuteScalarAsync() is int encontrada)
+            {
+                campaniaId = encontrada;
+            }
+        }
+
+        var stockResultante = silo.Stock + cantidad;
+
+        const string insertSql = """
+            INSERT INTO dbo.Almacenamientos
+                (SiloId, EmpresaId, Fecha, TipoMovimiento, Cantidad, StockAnterior, StockResultante, Origen,
+                 Observaciones, Campania, Cosecha, Producto, CosechaId, CampaniaId, HumedadIngreso, Impurezas, CreadoPorUsuarioId, Motivo)
+            OUTPUT INSERTED.AlmacenamientoId
+            VALUES
+                (@SiloId, @EmpresaId, @Fecha, N'Ingreso', @Cantidad, @StockAnterior, @StockResultante, N'Cosecha',
+                 @Observaciones, @Campania, @Cosecha, @Producto, @CosechaId, @CampaniaId, @HumedadIngreso, NULL, @CreadoPorUsuarioId, NULL);
+            """;
+
+        int almacenamientoId;
+        await using (var insert = new SqlCommand(insertSql, connection, transaction))
+        {
+            insert.Parameters.AddWithValue("@SiloId", siloId);
+            insert.Parameters.AddWithValue("@EmpresaId", (object?)silo.EmpresaId ?? DBNull.Value);
+            insert.Parameters.AddWithValue("@Fecha", fecha);
+            insert.Parameters.AddWithValue("@Cantidad", cantidad);
+            insert.Parameters.AddWithValue("@StockAnterior", silo.Stock);
+            insert.Parameters.AddWithValue("@StockResultante", stockResultante);
+            insert.Parameters.AddWithValue("@Observaciones", TextoONull(observaciones));
+            insert.Parameters.AddWithValue("@Campania", TextoONull(campaniaNombre));
+            insert.Parameters.AddWithValue("@Cosecha", TextoONull(cosechaNombre));
+            insert.Parameters.AddWithValue("@Producto", TextoONull(producto));
+            insert.Parameters.AddWithValue("@CosechaId", cosechaId);
+            insert.Parameters.AddWithValue("@CampaniaId", (object?)campaniaId ?? DBNull.Value);
+            insert.Parameters.AddWithValue("@HumedadIngreso", (object?)humedadIngreso ?? DBNull.Value);
+            insert.Parameters.AddWithValue("@CreadoPorUsuarioId", usuarioId > 0 ? usuarioId : DBNull.Value);
+
+            almacenamientoId = (int)(await insert.ExecuteScalarAsync()
+                ?? throw new InvalidOperationException("No se pudo registrar el ingreso al silo."));
+        }
+
+        await CrearPartidaAsync(connection, transaction, silo.EmpresaId, siloId, almacenamientoId,
+            cosechaId, campaniaId, producto, fecha, cantidad);
+        await ActualizarSiloAsync(connection, transaction, siloId, stockResultante, producto);
+        return almacenamientoId;
+    }
+
     private sealed record MovimientoNuevo(
         int SiloId, DateOnly Fecha, string Tipo, decimal Cantidad, string Origen, string? Observaciones,
         int? CosechaId, string? Producto, string? CampaniaTexto, string? CosechaTexto,

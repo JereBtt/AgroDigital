@@ -1,27 +1,59 @@
-# AgroDigital
+# Base de datos - AgroDigital
 
-Proyecto de tesis para digitalizar y centralizar la gestion de campanias agricolas.
+Esta carpeta contiene los scripts y notas de la base de datos relacional de AgroDigital.
 
-## Estructura
+## Script madre
 
-- `backend/`: API y backend en C# / ASP.NET Core.
-- `frontend/`: aplicacion web en React.
-- `database/`: scripts SQL, documentacion y recursos de base de datos.
-- `docs/`: documentacion tecnica y funcional versionada que corresponda.
+- `scripts/00_master_create_database.sql`
 
-## Base de datos
+Este archivo debe conservar la creacion completa de la base de datos. A medida que se agreguen nuevos modulos, el script madre debe actualizarse para poder reconstruir la estructura completa desde cero.
 
-El script madre de creacion de base de datos se mantiene en:
+## Actualizacion incremental de Almacenamiento
 
-- `database/scripts/00_master_create_database.sql`
+En una base existente, ejecutar `scripts/09_almacenamiento.sql` y luego
+`scripts/10_almacenamiento_campania_cosecha.sql`, una vez disponibles Silos y Usuarios.
+Ambos agregan estructura sin reasignar empresas ni modificar los registros operativos existentes.
+El script madre tambien incluye esta estructura para instalaciones nuevas.
 
-Cada integrante debe configurar su propia instancia SQL Server local. La API lee la cadena de conexion desde `ConnectionStrings:AgroDigital`.
+Los prefijos 09 y 10 estan compartidos con Cosechas y Campanias: usar el nombre
+completo del archivo, no solo su numero. No ejecutar todos los scripts automaticamente;
+`13_campanias_periodo_empresa.sql` contiene una reasignacion especifica a ElSauceSA.
 
-Recomendado para desarrollo local:
+Almacenamiento conserva por ahora referencias textuales a campaña/cosecha y esta
+pendiente su migracion a relaciones y separacion por empresa.
 
-```powershell
-dotnet user-secrets set "ConnectionStrings:AgroDigital" "Server=TU_SERVIDOR_SQL;Database=AgroDigital;Trusted_Connection=True;TrustServerCertificate=True;" --project backend/AgroDigital.Api/AgroDigital.Api.csproj
-dotnet user-secrets set "Auth:SigningKey" "CAMBIAR-POR-UNA-CLAVE-LARGA-LOCAL" --project backend/AgroDigital.Api/AgroDigital.Api.csproj
-```
+## Rediseño de Cosechas
 
-No subir cadenas de conexion reales, usuarios, contrasenias ni claves de firma al repositorio.
+En una base existente, ejecutar `scripts/29_cosechas_rediseno.sql` despues de
+`28_permisos_autor_seguimientos.sql`. Es idempotente y no borra datos. Agrega:
+
+- En `dbo.Cosechas`: `EmpresaId` (completado desde el lote), `HectareasHora`,
+  `EstadoControl` (control de perdidas separado del estado de la cosecha),
+  datos de maquinaria y la foto del rinde seco al finalizar.
+- Indice unico filtrado `UX_Cosechas_SiembraId`: una cosecha por siembra. Si ya
+  hay duplicados, el script no lo crea y lista los casos a corregir.
+- `dbo.GranoToleranciasCosecha`: tolerancias de perdida de referencia INTA PRECOP
+  y PMG de referencia por grano (global, solo lectura).
+- `dbo.GranoParametrosCosecha`: ajuste opcional de tolerancia y factor de
+  severidad por empresa. Sin fila para la empresa se usa la referencia global.
+- En `dbo.CosechaTiradaAros`: perdida de precosecha y foto de los parametros
+  con los que se clasifico cada tirada.
+- `dbo.CosechaPartes` y la vista `dbo.vw_CosechasAvance`: partes diarios de
+  avance. El origen `Cosecha` se suma a `CK_Almacenamientos_Origen` para los
+  ingresos a silo generados por un parte.
+
+El script madre todavia no incluye Siembras ni Cosechas: en una instalacion
+nueva, ejecutar los incrementales de esos modulos en orden.
+
+## Alcance inicial de Lotes
+
+El primer modulo modelado es Lotes, tomando como referencia funcional el Manual de Usuario:
+
+- Nombre.
+- Pais.
+- Provincia.
+- Ciudad.
+- Condicion: Propio o Alquilado.
+- Hectareas.
+- Superficie total.
+- Coordenadas de las esquinas del lote marcadas en el mapa.

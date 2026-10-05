@@ -51,6 +51,16 @@ public interface IAlmacenamientoRepository
         SqlConnection connection, SqlTransaction transaction,
         int siloId, int empresaId, DateOnly fecha, decimal cantidad, string observaciones, int usuarioId);
 
+    /// <summary>
+    /// Ingreso automatico de un parte diario de Cosechas con destino silo, dentro de la
+    /// transaccion del parte. No exige que la cosecha este finalizada: el grano entra
+    /// mientras se cosecha. Devuelve el AlmacenamientoId para vincularlo al parte.
+    /// </summary>
+    Task<int> RegistrarIngresoCosechaAsync(
+        SqlConnection connection, SqlTransaction transaction,
+        int siloId, int? empresaId, DateOnly fecha, decimal cantidad, int cosechaId, string producto,
+        string? campaniaNombre, string cosechaNombre, decimal? humedadIngreso, string? observaciones, int usuarioId);
+
     /// <summary>Solo el ultimo movimiento manual de cada silo. No cambia el tipo ni la cosecha.</summary>
     Task<bool> ActualizarAsync(int almacenamientoId, ActualizarAlmacenamientoRequest request, int usuarioId, bool incluirTodos);
 }
