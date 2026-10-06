@@ -165,6 +165,7 @@ AgroBot esta disponible para los cuatro roles, pero sus respuestas deben respeta
 ## Reglas funcionales destacadas
 
 - En la consulta de Siembras, Desde/Hasta se ocultan inicialmente y el boton Mas filtros alterna su visibilidad. Ocultarlos conserva el rango aplicado; Limpiar restablece sus valores.
+- En Editar Siembra, el boton final dice Guardar cambios y permanece deshabilitado hasta que cambie algun dato editable del formulario. Volver al valor original lo deshabilita otra vez; los insumos y documentos que se guardan inmediatamente no cuentan como cambios pendientes del formulario.
 
 - La tabla de consulta de Siembras muestra Hectareas (CantidadHectareasTrabajadas, en ha) en lugar de Cantidad de Semillas. Semillas totales se calcula y muestra en el registro, la revisión y el detalle.
 - La tabla de consulta de Siembras omite Siniestro, Semilla total (kg), Urea total (kg) y Hectáreas hora para conservar una vista legible; esos datos técnicos siguen disponibles en el detalle. Tampoco muestra casillas de selección ni la acción de exportación sin implementar. Las siembras deshabilitadas permanecen atenuadas y solo ofrecen arrepentimiento cuando la última baja es restaurable.

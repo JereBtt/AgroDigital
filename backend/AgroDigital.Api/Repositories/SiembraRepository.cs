@@ -262,7 +262,7 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
             DECLARE @Actualizada INT = @@ROWCOUNT;
             IF @Actualizada = 1
             BEGIN
-            """ + LoteCultivoEstadoSql.Recalcular.Replace("@LoteId", "@LoteAnteriorId") + LoteCultivoEstadoSql.Recalcular + """
+            """ + "\n" + LoteCultivoEstadoSql.Recalcular.Replace("@LoteId", "@LoteAnteriorId") + "\n" + LoteCultivoEstadoSql.Recalcular + "\n" + """
             END;
             COMMIT TRANSACTION;
             SELECT @Actualizada;
