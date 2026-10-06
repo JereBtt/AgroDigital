@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import AlignedTableNumber from './AlignedTableNumber';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -99,7 +100,7 @@ function getEmptyTiradaForm() {
   };
 }
 
-export default function Cosechas({ session, lotes, parentFilters, selectedEmpresaName = '', selectedCampaniaName = '' }) {
+export default function Cosechas({ session, lotes, parentFilters, selectedEmpresaName = '', selectedCampaniaName = '', onLotesChanged, onCampaniasChanged }) {
   const [view, setView] = useState('list');
   const [cosechas, setCosechas] = useState([]);
   const [siembras, setSiembras] = useState([]);
@@ -356,6 +357,7 @@ export default function Cosechas({ session, lotes, parentFilters, selectedEmpres
           body: JSON.stringify(buildBody())
         });
         if (!response.ok) throw new Error(`al guardar los cambios (status ${response.status}): ${await response.text()}`);
+        await Promise.all([onLotesChanged?.(), onCampaniasChanged?.()]);
         goToList();
         return;
       }
@@ -366,6 +368,7 @@ export default function Cosechas({ session, lotes, parentFilters, selectedEmpres
         body: JSON.stringify(buildBody())
       });
       if (!response.ok) throw new Error(`al crear la cosecha (status ${response.status}): ${await response.text()}`);
+      await Promise.all([onLotesChanged?.(), onCampaniasChanged?.()]);
       goToList();
     } catch (err) {
       setError(`No se pudo guardar la cosecha: ${err.message}`);
@@ -392,6 +395,7 @@ export default function Cosechas({ session, lotes, parentFilters, selectedEmpres
         body: JSON.stringify(buildFinalizeBody())
       });
       if (!response.ok) throw new Error(`al finalizar la cosecha (status ${response.status}): ${await response.text()}`);
+      await Promise.all([onLotesChanged?.(), onCampaniasChanged?.()]);
       goToList();
     } catch (err) {
       setError(`No se pudo finalizar la cosecha: ${err.message}`);
@@ -515,7 +519,7 @@ export default function Cosechas({ session, lotes, parentFilters, selectedEmpres
         nombre={selectedCosecha?.nombre}
         estado={selectedCosecha?.estado}
         lotes={lotes ?? []}
-        siembras={siembras}
+        siembras={siembras.filter((siembra) => !siembra.deshabilitada)}
         usuarios={usuarios}
         form={form}
         documentos={documentos}
@@ -849,8 +853,8 @@ function CosechasList({ cosechas, lotes, parentFilters, selectedEmpresaName, sel
                   <td>{formatFecha(cosecha.fechaFinReal)}</td>
                   <td>{cosecha.producto}</td>
                   <td>{cosecha.loteNombre}</td>
-                  <td>{formatNumber(getHectareas(cosecha), ' ha')}</td>
-                  <td>{formatNumber(cosecha.rindeKgHa, ' kg/ha')}</td>
+                  <td className="aligned-table-number-cell"><AlignedTableNumber value={getHectareas(cosecha)} unit="ha" /></td>
+                  <td className="aligned-table-number-cell"><AlignedTableNumber value={cosecha.rindeKgHa} unit="kg/ha" /></td>
                   <td><CosechaEstadoButton estado={cosecha.estado} onFinalize={() => onFinalize(cosecha)} /></td>
                   <td className="compact-actions-cell">
                     <div className="actions-cell actions-cell-center">
@@ -914,7 +918,7 @@ function InitialFields({ modoEdicion, nombre, estado, lotes, siembras, form, onF
           </select>
         </label>
         <label className="field">
-          Fecha de Inicio <b>*</b>
+          <span className="field-label">Fecha de Inicio <b>*</b></span>
           <input type="date" min={OPERATION_DATE_MIN} max={OPERATION_DATE_MAX} required value={form.fechaInicio} onChange={(e) => onFieldChange('fechaInicio', e.target.value)} />
           {fechaInicioFueraDeRangoOperativo && (
             <span className="field-error">
@@ -923,7 +927,7 @@ function InitialFields({ modoEdicion, nombre, estado, lotes, siembras, form, onF
           )}
         </label>
         <label className="field">
-          Fecha tentativa de Fin <b>*</b>
+          <span className="field-label">Fecha tentativa de Fin <b>*</b></span>
           <input type="date" min={OPERATION_DATE_MIN} max={OPERATION_DATE_MAX} required value={form.fechaFin} onChange={(e) => onFieldChange('fechaFin', e.target.value)} />
           {form.fechaInicio && form.fechaFin && form.fechaFin < form.fechaInicio && (
             <span className="field-error">La fecha de fin no puede ser anterior a la fecha de inicio.</span>
@@ -939,14 +943,14 @@ function InitialFields({ modoEdicion, nombre, estado, lotes, siembras, form, onF
           <input value={form.campaniaNombre} readOnly={hasInheritedData} onChange={(e) => onFieldChange('campaniaNombre', e.target.value)} placeholder="Opcional" />
         </label>
         <label className="field">
-          Lote <b>*</b>
+          <span className="field-label">Lote <b>*</b></span>
           <select required value={form.loteId} disabled={hasInheritedData} onChange={(e) => onFieldChange('loteId', e.target.value)}>
             <option value="">Seleccionar</option>
             {lotes.map((lote) => <option key={lote.loteId} value={lote.loteId}>{lote.nombre}</option>)}
           </select>
         </label>
         <label className="field">
-          Grano <b>*</b>
+          <span className="field-label">Grano <b>*</b></span>
           <input required value={form.producto} readOnly={hasInheritedData} onChange={(e) => onFieldChange('producto', e.target.value)} />
         </label>
         <label className="field">
@@ -972,20 +976,20 @@ function ResultFields({ usuarios, form, onFieldChange, showRealDate = false }) {
       <div className="create-grid">
         {showRealDate && (
           <label className="field">
-            Fecha real de finalizacion <b>*</b>
+            <span className="field-label">Fecha real de finalizacion <b>*</b></span>
             <input type="date" min={fechaRealMinima} max={fechaRealMaxima} required value={form.fechaFinReal} onChange={(e) => onFieldChange('fechaFinReal', e.target.value)} />
           </label>
         )}
         <label className="field">
-          Cantidad de grano cosechado (kg) <b>*</b>
+          <span className="field-label">Cantidad de grano cosechado (kg) <b>*</b></span>
           <input type="number" min="0" step="0.01" required value={form.cantidadGranoCosechado} onChange={(e) => onFieldChange('cantidadGranoCosechado', e.target.value)} />
         </label>
         <label className="field">
-          Cant. Hectareas Trabajadas <b>*</b>
+          <span className="field-label">Cant. Hectareas Trabajadas <b>*</b></span>
           <input type="number" min="0" step="0.01" required value={form.cantidadHectareasTrabajadas} onChange={(e) => onFieldChange('cantidadHectareasTrabajadas', e.target.value)} />
         </label>
         <label className="field">
-          Rinde (kg/ha) <b>*</b>
+          <span className="field-label">Rinde (kg/ha) <b>*</b></span>
           <input type="number" min="0" step="0.01" required value={form.rindeKgHa} onChange={(e) => onFieldChange('rindeKgHa', e.target.value)} />
           <span style={{ fontSize: 12, color: '#6b7280' }}>Se calcula solo y podes ajustarlo si hace falta.</span>
         </label>
@@ -1009,7 +1013,7 @@ function ResultFields({ usuarios, form, onFieldChange, showRealDate = false }) {
         </label>
         {showRealDate && requiereJustificacion && (
           <label className="field" style={{ gridColumn: '1 / -1' }}>
-            Justificacion del desvio <b>*</b>
+            <span className="field-label">Justificacion del desvio <b>*</b></span>
             <textarea value={form.justificacionDesvioFin} onChange={(e) => onFieldChange('justificacionDesvioFin', e.target.value)} placeholder="Explica por que la fecha real se alejo de la fecha tentativa." />
           </label>
         )}
@@ -1179,14 +1183,14 @@ function TiradaArosSection({ tiradas, form, editingTiradaId, saving, fechaInicio
   return (
     <div className="create-form-card dashboard-card">
       <div className="create-grid">
-        <label className="field">Fecha del control <b>*</b><input type="date" min={fechaInicio || undefined} max={fechaFin || undefined} value={form.fecha} onChange={(e) => onFieldChange('fecha', e.target.value)} /></label>
-        <label className="field">PMG <b>*</b><input type="number" min="0" step="0.01" value={form.pmg} onChange={(e) => onFieldChange('pmg', e.target.value)} placeholder="Peso de mil granos" /></label>
+        <label className="field"><span className="field-label">Fecha del control <b>*</b></span><input type="date" min={fechaInicio || undefined} max={fechaFin || undefined} value={form.fecha} onChange={(e) => onFieldChange('fecha', e.target.value)} /></label>
+        <label className="field"><span className="field-label">PMG <b>*</b></span><input type="number" min="0" step="0.01" value={form.pmg} onChange={(e) => onFieldChange('pmg', e.target.value)} placeholder="Peso de mil granos" /></label>
         <label className="field">Latitud<input type="number" step="0.000001" value={form.latitud} onChange={(e) => onFieldChange('latitud', e.target.value)} /></label>
         <label className="field">Longitud<input type="number" step="0.000001" value={form.longitud} onChange={(e) => onFieldChange('longitud', e.target.value)} /></label>
-        <label className="field">Aro Cabezal <b>*</b><input type="number" min="0" value={form.aroCabezal} onChange={(e) => onFieldChange('aroCabezal', e.target.value)} /></label>
-        <label className="field">Aro Cola 1 <b>*</b><input type="number" min="0" value={form.aroCola1} onChange={(e) => onFieldChange('aroCola1', e.target.value)} /></label>
-        <label className="field">Aro Cola 2 <b>*</b><input type="number" min="0" value={form.aroCola2} onChange={(e) => onFieldChange('aroCola2', e.target.value)} /></label>
-        <label className="field">Aro Cola 3 <b>*</b><input type="number" min="0" value={form.aroCola3} onChange={(e) => onFieldChange('aroCola3', e.target.value)} /></label>
+        <label className="field"><span className="field-label">Aro Cabezal <b>*</b></span><input type="number" min="0" value={form.aroCabezal} onChange={(e) => onFieldChange('aroCabezal', e.target.value)} /></label>
+        <label className="field"><span className="field-label">Aro Cola 1 <b>*</b></span><input type="number" min="0" value={form.aroCola1} onChange={(e) => onFieldChange('aroCola1', e.target.value)} /></label>
+        <label className="field"><span className="field-label">Aro Cola 2 <b>*</b></span><input type="number" min="0" value={form.aroCola2} onChange={(e) => onFieldChange('aroCola2', e.target.value)} /></label>
+        <label className="field"><span className="field-label">Aro Cola 3 <b>*</b></span><input type="number" min="0" value={form.aroCola3} onChange={(e) => onFieldChange('aroCola3', e.target.value)} /></label>
         <label className="field"><span>Ajusto maquinaria</span><input type="checkbox" checked={form.ajustoMaquinaria} onChange={(e) => onFieldChange('ajustoMaquinaria', e.target.checked)} /></label>
         <label className="field" style={{ gridColumn: '1 / -1' }}>Observaciones<textarea value={form.observaciones} onChange={(e) => onFieldChange('observaciones', e.target.value)} /></label>
       </div>
@@ -1214,8 +1218,8 @@ function TiradaArosSection({ tiradas, form, editingTiradaId, saving, fechaInicio
               <tr key={tirada.cosechaTiradaAroId}>
                 <td>{formatFecha(tirada.fecha)}</td>
                 <td>Cabezal {tirada.aroCabezal} / Cola {tirada.aroCola1}, {tirada.aroCola2}, {tirada.aroCola3}</td>
-                <td>{formatNumber(tirada.pmg)}</td>
-                <td>{formatNumber(tirada.perdidaTotalKgHa, ' kg/ha')}</td>
+                <td className="aligned-table-number-cell"><AlignedTableNumber value={tirada.pmg} /></td>
+                <td className="aligned-table-number-cell"><AlignedTableNumber value={tirada.perdidaTotalKgHa} unit="kg/ha" /></td>
                 <td>{tirada.severidad}</td>
                 <td className="actions-cell">
                   <button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label="Editar Tirada de Aros" onClick={() => onEdit(tirada)}><Edit size={18} /></button>
@@ -1304,9 +1308,9 @@ function TiradasReadonly({ tiradas }) {
             {tiradas.map((tirada) => (
               <tr key={tirada.cosechaTiradaAroId}>
                 <td>{formatFecha(tirada.fecha)}</td>
-                <td>{formatNumber(tirada.perdidaCabezalKgHa, ' kg/ha')}</td>
-                <td>{formatNumber(tirada.perdidaColaKgHa, ' kg/ha')}</td>
-                <td>{formatNumber(tirada.perdidaTotalKgHa, ' kg/ha')}</td>
+                <td className="aligned-table-number-cell"><AlignedTableNumber value={tirada.perdidaCabezalKgHa} unit="kg/ha" /></td>
+                <td className="aligned-table-number-cell"><AlignedTableNumber value={tirada.perdidaColaKgHa} unit="kg/ha" /></td>
+                <td className="aligned-table-number-cell"><AlignedTableNumber value={tirada.perdidaTotalKgHa} unit="kg/ha" /></td>
                 <td>{tirada.severidad}</td>
               </tr>
             ))}

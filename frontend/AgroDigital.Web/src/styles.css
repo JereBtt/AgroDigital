@@ -1960,6 +1960,39 @@ button {
   vertical-align: middle;
 }
 
+.siembras-list-table .siembra-decimal-cell {
+  font-variant-numeric: tabular-nums;
+}
+
+.siembra-decimal-value {
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr) 3ch auto;
+  width: 100%;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.siembra-decimal-integer { text-align: right; }
+.siembra-decimal-fraction { text-align: left; }
+.siembra-decimal-unit { padding-left: 3px; }
+
+.lotes-table td.aligned-table-number-cell {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.aligned-table-number {
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr) 3ch auto;
+  width: 100%;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.aligned-table-number-integer { text-align: right; }
+.aligned-table-number-fraction { text-align: left; }
+.aligned-table-number-unit { padding-left: 3px; }
+
 .check-cell {
   width: 42px;
   text-align: center;
@@ -2063,6 +2096,35 @@ button {
 .table-action-tooltip:focus-visible::after {
   opacity: 1;
   transform: translate(-50%, 0);
+}
+
+/* Las acciones del extremo derecho muestran avisos cortos dentro de la tabla. */
+.lote-actions-cell .status-action-button::before,
+.lote-actions-cell .status-action-button::after,
+.compact-actions-cell .table-action-tooltip:last-child::before,
+.compact-actions-cell .table-action-tooltip:last-child::after,
+.lotes-table td.actions-cell > .table-action-tooltip::before,
+.lotes-table td.actions-cell > .table-action-tooltip::after {
+  left: auto;
+  right: 10px;
+  top: auto;
+  transform: none;
+}
+
+.lote-actions-cell .status-action-button::after,
+.compact-actions-cell .table-action-tooltip:last-child::after,
+.lotes-table td.actions-cell > .table-action-tooltip::after {
+  right: 0;
+  bottom: calc(100% + 12px);
+  max-width: min(180px, calc(100vw - 32px));
+}
+
+.lote-actions-cell .status-action-button::before,
+.compact-actions-cell .table-action-tooltip:last-child::before,
+.lotes-table td.actions-cell > .table-action-tooltip::before {
+  bottom: calc(100% + 1px);
+  border-bottom-color: transparent;
+  border-top-color: rgba(24, 136, 59, 0.97);
 }
 
 .actions-cell .danger-icon-button {
@@ -2526,54 +2588,59 @@ button {
   grid-row: 1;
 }
 
-.siembra-wizard-grid-reseeding .siembra-reseed-lote {
+.siembra-wizard-grid-reseeding .siembra-ciclo-field {
   grid-column: 1 / span 4;
   grid-row: 2;
+}
+
+.siembra-wizard-grid-reseeding .siembra-reseed-lote {
+  grid-column: 1 / span 4;
+  grid-row: 3;
 }
 
 .siembra-wizard-grid-reseeding .siembra-reseed-hectareas {
   grid-column: 5 / span 4;
-  grid-row: 2;
+  grid-row: 3;
 }
 
 .siembra-wizard-grid-reseeding .siembra-reseed-afectado {
   grid-column: 9 / span 4;
-  grid-row: 2;
+  grid-row: 3;
 }
 
 .siembra-wizard-grid-reseeding .siembra-reseed-data-divider {
   grid-column: 1 / -1;
-  grid-row: 3;
+  grid-row: 4;
 }
 
 .siembra-wizard-grid-reseeding .siembra-reseed-cultivo {
   grid-column: 1 / span 4;
-  grid-row: 4;
+  grid-row: 5;
 }
 
 .siembra-wizard-grid-reseeding .siembra-reseed-tipo {
   grid-column: 5 / span 4;
-  grid-row: 4;
+  grid-row: 5;
 }
 
 .siembra-wizard-grid-reseeding .siembra-reseed-siniestro {
   grid-column: 9 / span 4;
-  grid-row: 4;
+  grid-row: 5;
 }
 
 .siembra-wizard-grid-reseeding .siembra-reseed-divider {
   grid-column: 1 / -1;
-  grid-row: 5;
+  grid-row: 6;
 }
 
 .siembra-wizard-grid-reseeding .siembra-reseed-fecha-inicio {
   grid-column: 1 / span 6;
-  grid-row: 6;
+  grid-row: 7;
 }
 
 .siembra-wizard-grid-reseeding .siembra-reseed-fecha-fin {
   grid-column: 7 / span 6;
-  grid-row: 6;
+  grid-row: 7;
 }
 
 .siembra-group-divider {
@@ -2748,6 +2815,7 @@ button {
   }
 
   .siembra-wizard-grid-reseeding .siembra-reseed-lote-divider,
+  .siembra-wizard-grid-reseeding .siembra-ciclo-field,
   .siembra-wizard-grid-reseeding .siembra-reseed-lote,
   .siembra-wizard-grid-reseeding .siembra-reseed-hectareas,
   .siembra-wizard-grid-reseeding .siembra-reseed-afectado,
@@ -2911,6 +2979,123 @@ button {
 
 .field-error {
   color: #c0392b;
+}
+
+.field-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 7px;
+  padding: 9px 11px;
+  border: 1px solid #efcf8c;
+  border-radius: 10px;
+  background: #fff8e9;
+  color: #805400;
+  font-size: calc(12px * var(--text-scale, 1));
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.field-warning svg {
+  flex: 0 0 auto;
+}
+
+.siembra-detail-groups {
+  display: grid;
+  gap: 14px;
+}
+
+.siembra-detail-group {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid #e2eee7;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(20, 65, 38, 0.035);
+}
+
+.siembra-detail-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 18px;
+}
+
+.siembra-detail-group-heading h3 {
+  margin: 0;
+  color: #103c23;
+  font-size: calc(17px * var(--text-scale, 1));
+}
+
+.siembra-detail-group-heading p {
+  margin: 2px 0 0;
+  color: #667384;
+  font-size: calc(13px * var(--text-scale, 1));
+}
+
+.siembra-detail-group-letter {
+  display: grid;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 50%;
+  background: #1c9c4b;
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.siembra-detail-group-line {
+  flex: 1;
+  min-width: 24px;
+  height: 1px;
+  background: #86cda0;
+}
+
+.siembra-detail-group .siembra-wizard-grid + .siembra-wizard-grid {
+  margin-top: 18px;
+}
+
+.siembra-detail-group .field {
+  min-width: 0;
+}
+
+.siembra-calculated-output {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #dce3e9;
+  border-radius: 9px;
+  background: #f1f4f6;
+  color: #40536a;
+}
+
+.siembra-calculated-output strong {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.siembra-calculated-output svg:last-child {
+  color: #8c99a8;
+}
+
+.siembra-detail-responsable .siembra-wizard-grid > .field {
+  grid-column: 2;
+}
+
+@media (max-width: 900px) {
+  .siembra-detail-group .siembra-wizard-grid,
+  .siembra-detail-group .siembra-wizard-grid-three {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .siembra-detail-responsable .siembra-wizard-grid > .field {
+    grid-column: 1;
+  }
 }
 
 .grain-change-field {
@@ -3395,11 +3580,71 @@ button {
   color: #294b36;
 }
 
+.campania-stage-pending {
+  border-color: #f0ddb6;
+  background: #fffaf0;
+  color: #7a4d00;
+}
+
+.campania-stage-grown {
+  border-color: #cdebd4;
+  background: #edf8ef;
+  color: #18883b;
+}
+
+.campania-stage-harvested {
+  border-color: #bdd7f0;
+  background: #f1f7fd;
+  color: #1d5f96;
+}
+
 .campaign-grain-builder {
   display: grid;
   grid-template-columns: minmax(220px, 320px) minmax(220px, 320px) auto;
   gap: 16px;
   align-items: end;
+}
+
+.campaign-season-field {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  margin-bottom: 20px;
+  color: #173b25;
+  font-size: calc(14px * var(--text-scale, 1));
+  font-weight: 850;
+}
+
+.campaign-season-options {
+  width: min(100%, 430px);
+}
+
+.campaign-season-options button {
+  cursor: pointer;
+  padding: 10px 14px;
+}
+
+.campaign-observations-field textarea {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  border: 1px solid #d8e7da;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #fff;
+  color: #193b27;
+  font: inherit;
+  font-weight: 600;
+  box-shadow: inset 0 1px 2px rgba(30, 73, 43, 0.04);
+}
+
+.campaign-observations-field textarea:focus {
+  outline: 2px solid rgba(24, 136, 59, 0.24);
+  border-color: #18883b;
+}
+
+.campaign-observations-field textarea::placeholder {
+  color: #91a397;
 }
 
 .campaign-select-lotes-button {
@@ -7814,6 +8059,21 @@ button {
   grid-template-columns: minmax(280px, 1.7fr) minmax(180px, 0.8fr) minmax(180px, 0.8fr) minmax(140px, 0.65fr);
 }
 
+.campaign-detail-filters {
+  grid-template-columns: minmax(240px, 1.4fr) repeat(3, minmax(140px, 0.8fr)) minmax(120px, 0.65fr);
+  margin-bottom: 18px;
+}
+
+@media (max-width: 1100px) {
+  .campaign-detail-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .campaign-detail-filters .search-field {
+    grid-column: 1 / -1;
+  }
+}
+
 .campaign-master-table .lotes-table {
   min-width: 1180px;
 }
@@ -7854,6 +8114,10 @@ button {
 
 @media (max-width: 720px) {
   .campaign-list-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .campaign-detail-filters {
     grid-template-columns: 1fr;
   }
 
@@ -8072,6 +8336,74 @@ button {
   max-height: calc(100dvh - 48px);
   overflow: auto;
 }
+
+.lote-disable-modal {
+  width: min(540px, calc(100vw - 32px));
+  display: grid;
+  gap: 18px;
+}
+.lote-disable-backdrop { z-index: 9100; }
+
+.lote-disable-options {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.lote-disable-options legend {
+  margin-bottom: 8px;
+  font-weight: 800;
+  color: #153d28;
+}
+
+.lote-disable-options label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid #dce9df;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.lote-disable-options label.selected {
+  background: #eef8f0;
+  border-color: #28a34b;
+}
+
+.lote-disable-options input { accent-color: #229946; }
+.lote-disable-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; }
+.lote-disable-fields > .field { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.lote-disable-fields > .field > input,
+.lote-disable-fields > .field > select { width: 100%; min-width: 0; }
+.lote-disable-modal .field textarea {
+  width: 100%;
+  min-height: 90px;
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid #dddddd;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #1b1b1b;
+  font: inherit;
+  font-weight: 600;
+  resize: vertical;
+}
+.lote-disable-modal .field textarea::placeholder { color: #aab7af; }
+.lote-disable-modal .field textarea:focus {
+  outline: 2px solid rgba(24, 136, 59, 0.24);
+  border-color: #18883b;
+}
+.lote-disable-block { padding: 14px; border-radius: 12px; background: #fff2e8; border: 1px solid #f3be97; color: #8a3a17; font-weight: 700; }
+
+.siembra-disabled-lote-row > td { background: #f5f7f6; color: #607069; }
+.siembra-disabled-lote-row > td:first-child { box-shadow: inset 3px 0 #9ba9a1; }
+.siembra-disabled-lote-badge { display: block; width: fit-content; margin-top: 4px; padding: 2px 7px; border: 1px solid #cdd6d1; border-radius: 999px; color: #53645b; background: #e9eeeb; font-size: 11px; font-weight: 750; white-space: nowrap; }
+.lote-disabled-reason { display: block; margin-top: 3px; color: #69766e; font-size: 11px; font-weight: 700; }
+
+@media (max-width: 620px) { .lote-disable-fields { grid-template-columns: 1fr; } }
 /* Los datos de la siembra dependen del lote elegido. */
 .siembra-fields-require-lote {
   display: contents;
@@ -8111,39 +8443,44 @@ textarea::placeholder {
   grid-row: 1;
 }
 
-.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-lote {
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-ciclo-field {
   grid-column: 1;
   grid-row: 2;
+}
+
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-lote {
+  grid-column: 1;
+  grid-row: 3;
 }
 
 .siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-hectareas {
   grid-column: 2;
-  grid-row: 2;
+  grid-row: 3;
 }
 
 .siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-afectado {
   grid-column: 1;
-  grid-row: 3;
+  grid-row: 4;
 }
 
 .siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-cultivo {
   grid-column: 2;
-  grid-row: 3;
+  grid-row: 4;
 }
 
 .siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-normal-divider {
   grid-column: 1 / -1;
-  grid-row: 4;
+  grid-row: 5;
 }
 
 .siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-fecha-inicio {
   grid-column: 1;
-  grid-row: 5;
+  grid-row: 6;
 }
 
 .siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-fecha-fin {
   grid-column: 2;
-  grid-row: 5;
+  grid-row: 6;
 }
 
 .field .readonly-output input::placeholder {
@@ -8174,3 +8511,93 @@ textarea::placeholder {
 .catalogo-select-menu > button, .catalogo-select-menu > span { display: flex; width: 100%; align-items: center; gap: 8px; padding: 10px; border: 0; border-radius: 8px; color: #244332; background: transparent; text-align: left; font: inherit; }
 .catalogo-select-menu > button:hover { background: #edf8ef; }
 .catalogo-select-menu .catalogo-select-add { color: #177b37; font-weight: 800; }
+.enable-lote-history-modal {
+  width: min(100%, 560px);
+  border-color: #d9e9dc;
+}
+
+.enable-lote-history-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.enable-lote-history-current {
+  display: grid;
+  gap: 4px;
+  padding: 13px 16px;
+  border: 1px solid #d9e9dc;
+  border-radius: 13px;
+  background: #f4faf5;
+  color: #173522;
+}
+
+.enable-lote-history-current span {
+  font-size: calc(12px * var(--text-scale, 1));
+  color: #607066;
+}
+
+.enable-lote-history-current strong {
+  font-size: calc(14px * var(--text-scale, 1));
+}
+
+.enable-lote-history-modal .enable-lote-history-notice {
+  padding: 12px 14px;
+  border: 1px solid #f2d6a7;
+  border-radius: 12px;
+  background: #fff9ed;
+  color: #805000;
+}
+
+.enable-lote-history-option {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 13px;
+  padding: 15px;
+  border: 1px solid #cfe3d3;
+  border-radius: 14px;
+  background: #fff;
+  color: #18883b;
+  text-align: left;
+  cursor: pointer;
+}
+
+.enable-lote-history-option:hover:not(:disabled),
+.enable-lote-history-option:focus-visible {
+  border-color: #1f963f;
+  background: #f1faf3;
+}
+
+.enable-lote-history-option > span {
+  display: grid;
+  gap: 3px;
+}
+
+.enable-lote-history-option strong {
+  color: #173522;
+  font-size: calc(14px * var(--text-scale, 1));
+}
+
+.enable-lote-history-option small {
+  color: #607066;
+  font-size: calc(12px * var(--text-scale, 1));
+  line-height: 1.4;
+}
+
+.enable-lote-history-option:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+.enable-lote-history-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.enable-lote-history-footer button {
+  min-height: 42px;
+  padding: 0 18px;
+  border-radius: 12px;
+  font-weight: 800;
+}

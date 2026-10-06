@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import AlignedTableNumber from './AlignedTableNumber';
 import {
   ArrowDownCircle,
   ArrowUpCircle,
@@ -138,10 +139,10 @@ export default function Almacenamiento({ session }) {
     if (form.tipoMovimiento === 'Ingreso') {
       const disponible = Number(silo.capacidadMax) - stockActual;
       if (cantidad > disponible) {
-        return `La cantidad a almacenar supera la capacidad disponible del silo. Disponible: ${disponible.toLocaleString('es-AR')} kg (capacidad max ${Number(silo.capacidadMax).toLocaleString('es-AR')} kg, stock actual ${stockActual.toLocaleString('es-AR')} kg).`;
+        return `La cantidad a almacenar supera la capacidad disponible del silo. Disponible: ${disponible.toLocaleString('es-AR', { maximumFractionDigits: 2 })} kg (capacidad max ${Number(silo.capacidadMax).toLocaleString('es-AR', { maximumFractionDigits: 2 })} kg, stock actual ${stockActual.toLocaleString('es-AR', { maximumFractionDigits: 2 })} kg).`;
       }
     } else if (cantidad > stockActual) {
-      return `La cantidad a retirar supera el stock actual del silo (${stockActual.toLocaleString('es-AR')} kg).`;
+      return `La cantidad a retirar supera el stock actual del silo (${stockActual.toLocaleString('es-AR', { maximumFractionDigits: 2 })} kg).`;
     }
 
     return null;
@@ -367,8 +368,8 @@ function MovimientosList({ movimientos, loading, error, editableIds, onAdd, onVi
                       {movimiento.tipoMovimiento}
                     </span>
                   </td>
-                  <td>{Number(movimiento.cantidad).toLocaleString('es-AR')} kg</td>
-                  <td>{Number(movimiento.stockResultante).toLocaleString('es-AR')} kg</td>
+                  <td className="aligned-table-number-cell"><AlignedTableNumber value={movimiento.cantidad} unit="kg" /></td>
+                  <td className="aligned-table-number-cell"><AlignedTableNumber value={movimiento.stockResultante} unit="kg" /></td>
                   <td>{movimiento.siloProducto || '-'}</td>
                   <td>{movimiento.campania || '-'}</td>
                   <td>{movimiento.cosecha || '-'}</td>
@@ -415,11 +416,11 @@ function MovimientoForm({
     <div className="create-form-card dashboard-card">
       <div className="create-grid">
         <label className="field">
-          Fecha <b>*</b>
+          <span className="field-label">Fecha <b>*</b></span>
           <input type="date" value={form.fecha} readOnly={readOnly} onChange={(e) => onFieldChange('fecha', e.target.value)} />
         </label>
         <label className="field">
-          Silo <b>*</b>
+          <span className="field-label">Silo <b>*</b></span>
           <select
             value={form.siloId}
             disabled={readOnly || !isCreate}
@@ -432,7 +433,7 @@ function MovimientoForm({
           </select>
         </label>
         <label className="field">
-          Tipo de Movimiento <b>*</b>
+          <span className="field-label">Tipo de Movimiento <b>*</b></span>
           <select value={form.tipoMovimiento} disabled={readOnly} onChange={(e) => onFieldChange('tipoMovimiento', e.target.value)}>
             <option value="Ingreso">Ingreso</option>
             <option value="Egreso">Egreso</option>
@@ -440,18 +441,18 @@ function MovimientoForm({
         </label>
         <label className="field">
           Cant. grano actual
-          <input value={siloSeleccionado ? `${Number(siloSeleccionado.cantidadGranoAlmacenado).toLocaleString('es-AR')} kg` : '-'} readOnly disabled />
+          <input value={siloSeleccionado ? `${Number(siloSeleccionado.cantidadGranoAlmacenado).toLocaleString('es-AR', { maximumFractionDigits: 2 })} kg` : '-'} readOnly disabled />
           {siloSeleccionado && (
             <small style={{ fontWeight: 600, color: '#637168' }}>
-              Capacidad max: {Number(siloSeleccionado.capacidadMax).toLocaleString('es-AR')} kg
+              Capacidad max: {Number(siloSeleccionado.capacidadMax).toLocaleString('es-AR', { maximumFractionDigits: 2 })} kg
               {form.tipoMovimiento === 'Ingreso'
-                ? ` · Disponible: ${(Number(siloSeleccionado.capacidadMax) - Number(siloSeleccionado.cantidadGranoAlmacenado)).toLocaleString('es-AR')} kg`
+                ? ` · Disponible: ${(Number(siloSeleccionado.capacidadMax) - Number(siloSeleccionado.cantidadGranoAlmacenado)).toLocaleString('es-AR', { maximumFractionDigits: 2 })} kg`
                 : ''}
             </small>
           )}
         </label>
         <label className="field">
-          Cant. grano a {form.tipoMovimiento === 'Egreso' ? 'retirar' : 'almacenar'} <b>*</b>
+          <span className="field-label">Cant. grano a {form.tipoMovimiento === 'Egreso' ? 'retirar' : 'almacenar'} <b>*</b></span>
           <input type="number" min="0" value={form.cantidad} readOnly={readOnly} onChange={(e) => onFieldChange('cantidad', e.target.value)} />
         </label>
         <label className="field">

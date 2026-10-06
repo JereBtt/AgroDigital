@@ -7,7 +7,7 @@ namespace AgroDigital.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class CosechasController(ICosechaRepository cosechaRepository, IAuthTokenService authTokenService, IWebHostEnvironment environment) : ControllerBase
+public class CosechasController(ICosechaRepository cosechaRepository, ISiembraRepository siembraRepository, IAuthTokenService authTokenService, IWebHostEnvironment environment) : ControllerBase
 {
     private readonly string _uploadsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "cosechas");
 
@@ -32,6 +32,8 @@ public class CosechasController(ICosechaRepository cosechaRepository, IAuthToken
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
         var validation = ValidarCosecha(request);
         if (validation is not null) return validation;
+        if (request.SiembraId is int siembraId && (await siembraRepository.ObtenerPorIdAsync(siembraId))?.Deshabilitada == true)
+            return Conflict("La siembra deshabilitada se conserva como historial y no puede cosecharse.");
 
         var cosecha = await cosechaRepository.CrearAsync(request, usuario.UsuarioId);
         return CreatedAtAction(nameof(ObtenerPorId), new { cosechaId = cosecha.CosechaId }, cosecha);

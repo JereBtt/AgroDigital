@@ -51,6 +51,18 @@ if (!string.IsNullOrWhiteSpace(connectionString))
             ALTER TABLE dbo.Siembras ADD TipoImplantacion NVARCHAR(20) NULL;
         END;
 
+        IF OBJECT_ID(N'dbo.LoteDeshabilitaciones', N'U') IS NOT NULL
+        BEGIN
+            IF COL_LENGTH(N'dbo.Siembras', N'DeshabilitacionId') IS NULL
+                ALTER TABLE dbo.Siembras ADD DeshabilitacionId INT NULL;
+            IF COL_LENGTH(N'dbo.LoteDeshabilitaciones', N'EstadoSeguimientoAnterior') IS NULL
+                ALTER TABLE dbo.LoteDeshabilitaciones ADD EstadoSeguimientoAnterior NVARCHAR(20) NULL;
+            IF COL_LENGTH(N'dbo.LoteDeshabilitaciones', N'SeguimientoAutomaticoId') IS NULL
+                ALTER TABLE dbo.LoteDeshabilitaciones ADD SeguimientoAutomaticoId INT NULL;
+            IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_Siembras_Deshabilitaciones')
+                EXEC(N'ALTER TABLE dbo.Siembras ADD CONSTRAINT FK_Siembras_Deshabilitaciones FOREIGN KEY (DeshabilitacionId) REFERENCES dbo.LoteDeshabilitaciones(LoteDeshabilitacionId)');
+        END;
+
         IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Siembras_CicloCultivo' AND parent_object_id = OBJECT_ID(N'dbo.Siembras'))
         BEGIN
             EXEC(N'ALTER TABLE dbo.Siembras

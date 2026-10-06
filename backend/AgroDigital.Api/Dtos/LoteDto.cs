@@ -20,6 +20,23 @@ public class LoteDto
     public DateTime? FechaModificacion { get; set; }
     public List<LoteCoordenadaDto> Coordenadas { get; set; } = [];
     public List<LoteCultivoHistorialDto> HistorialCultivos { get; set; } = [];
+    public List<LoteDeshabilitacionDto> HistorialDeshabilitaciones { get; set; } = [];
+}
+
+public class LoteDeshabilitacionDto
+{
+    public int LoteDeshabilitacionId { get; set; }
+    public string RegistroId { get; set; } = string.Empty;
+    public string TipoRegistro { get; set; } = "Lote";
+    public string? CicloEstacional { get; set; }
+    public string? Producto { get; set; }
+    public bool LoteDeshabilitado { get; set; }
+    public int? SiembraId { get; set; }
+    public string Motivo { get; set; } = string.Empty;
+    public string? Detalle { get; set; }
+    public string? Siniestro { get; set; }
+    public DateTime? FechaSiniestro { get; set; }
+    public DateTime FechaCreacion { get; set; }
 }
 
 public class LoteCultivoHistorialDto

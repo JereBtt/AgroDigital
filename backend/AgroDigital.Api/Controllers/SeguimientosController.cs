@@ -61,6 +61,7 @@ public class SeguimientosController(
         {
             return NotFound();
         }
+        if (siembra.Deshabilitada) return Conflict("La siembra deshabilitada se conserva como historial y no admite nuevos seguimientos.");
 
         if (!string.Equals(siembra.EstadoSiembra, "Finalizado", StringComparison.OrdinalIgnoreCase))
         {
@@ -83,6 +84,7 @@ public class SeguimientosController(
 
         var siembra = await siembraRepository.ObtenerPorIdAsync(siembraId);
         if (siembra is null) return NotFound();
+        if (siembra.Deshabilitada) return Conflict("La siembra deshabilitada se conserva como historial y no admite cambios.");
 
         var lote = await loteRepository.ObtenerPorIdAsync(siembra.LoteId, usuario.UsuarioId, usuario.Rol == "Admin");
         if (lote is null) return NotFound();
@@ -97,6 +99,7 @@ public class SeguimientosController(
     public async Task<IActionResult> Eliminar(int siembraId, int seguimientoId)
     {
         if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (await SiembraDeshabilitadaAsync(siembraId)) return Conflict("La siembra deshabilitada se conserva como historial y no admite cambios.");
 
         var rutas = await seguimientoRepository.ObtenerRutasDocumentosDeSeguimientoAsync(seguimientoId);
         var eliminado = await seguimientoRepository.EliminarAsync(siembraId, seguimientoId);
@@ -119,6 +122,7 @@ public class SeguimientosController(
     public async Task<IActionResult> Finalizar(int siembraId)
     {
         if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (await SiembraDeshabilitadaAsync(siembraId)) return Conflict("La siembra deshabilitada se conserva como historial y no admite cambios.");
         var finalizado = await seguimientoRepository.FinalizarAsync(siembraId);
         return finalizado ? NoContent() : NotFound();
     }
@@ -137,6 +141,7 @@ public class SeguimientosController(
     public async Task<ActionResult<SeguimientoInsumoDto>> AgregarInsumo(int siembraId, int seguimientoId, CrearSeguimientoInsumoRequest request)
     {
         if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (await SiembraDeshabilitadaAsync(siembraId)) return Conflict("La siembra deshabilitada se conserva como historial y no admite cambios.");
 
         if (!TiposInsumoValidos.Contains(request.Tipo ?? string.Empty))
         {
@@ -153,6 +158,7 @@ public class SeguimientosController(
     public async Task<IActionResult> EliminarInsumo(int siembraId, int seguimientoId, int insumoId)
     {
         if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (await SiembraDeshabilitadaAsync(siembraId)) return Conflict("La siembra deshabilitada se conserva como historial y no admite cambios.");
         var eliminado = await seguimientoRepository.EliminarInsumoAsync(seguimientoId, insumoId);
         return eliminado ? NoContent() : NotFound();
     }
@@ -172,6 +178,7 @@ public class SeguimientosController(
     public async Task<ActionResult<SeguimientoDocumentoDto>> SubirDocumento(int siembraId, int seguimientoId, IFormFile archivo)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        if (await SiembraDeshabilitadaAsync(siembraId)) return Conflict("La siembra deshabilitada se conserva como historial y no admite cambios.");
 
         if (archivo is null || archivo.Length == 0)
         {
@@ -213,6 +220,7 @@ public class SeguimientosController(
     public async Task<IActionResult> EliminarDocumento(int siembraId, int seguimientoId, int documentoId)
     {
         if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (await SiembraDeshabilitadaAsync(siembraId)) return Conflict("La siembra deshabilitada se conserva como historial y no admite cambios.");
 
         var ruta = await seguimientoRepository.ObtenerRutaDocumentoAsync(seguimientoId, documentoId);
         var eliminado = await seguimientoRepository.EliminarDocumentoAsync(seguimientoId, documentoId);
@@ -224,6 +232,9 @@ public class SeguimientosController(
 
         return eliminado ? NoContent() : NotFound();
     }
+
+    private async Task<bool> SiembraDeshabilitadaAsync(int siembraId) =>
+        (await siembraRepository.ObtenerPorIdAsync(siembraId))?.Deshabilitada == true;
 
     private bool TryGetAuthenticatedUser(out AuthenticatedUser usuario, out ActionResult error)
     {

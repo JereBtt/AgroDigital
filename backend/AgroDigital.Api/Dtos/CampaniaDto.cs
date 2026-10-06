@@ -13,6 +13,7 @@ public class CampaniaDto
     public DateTime FechaCreacion { get; set; }
     public DateTime? FechaModificacion { get; set; }
     public List<CampaniaCombinacionDto> Combinaciones { get; set; } = [];
+    public List<int> LotesConOmisionVerano { get; set; } = [];
 }
 
 public class CampaniaCombinacionDto
@@ -25,10 +26,12 @@ public class CampaniaCombinacionDto
     public string? LoteZona { get; set; }
     public string? CultivoAntecesor { get; set; }
     public string Producto { get; set; } = string.Empty;
+    public string CicloEstacional { get; set; } = "Verano";
     public DateTime FechaInicio { get; set; }
     public DateTime FechaFin { get; set; }
     public string Estado { get; set; } = "Pendiente";
     public string EtapaActual { get; set; } = "Sin etapa";
+    public string EtapaProductiva { get; set; } = "Pendiente";
 }
 
 public class CampaniaConsultaDto : CampaniaCombinacionDto
@@ -46,12 +49,19 @@ public class CrearCampaniaRequest
     public DateTime FechaFin { get; set; }
     public string? Observaciones { get; set; }
     public List<CrearCampaniaCombinacionRequest> Combinaciones { get; set; } = [];
+    public List<OmisionVeranoRequest> OmisionesVerano { get; set; } = [];
+}
+
+public class OmisionVeranoRequest : DeshabilitarLoteRequest
+{
+    public int LoteId { get; set; }
 }
 
 public class CrearCampaniaCombinacionRequest
 {
     public int LoteId { get; set; }
     public string Producto { get; set; } = string.Empty;
+    public string CicloEstacional { get; set; } = string.Empty;
     public DateTime FechaInicio { get; set; }
     public DateTime FechaFin { get; set; }
 }

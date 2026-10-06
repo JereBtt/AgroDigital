@@ -22,18 +22,7 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
         "Nematicidas", "Raticidas", "Bactericidas", "Molusquicidas"
     ];
 
-    private static readonly string[] SiniestrosResiembraValidos =
-    [
-        "Granizo",
-        "Sequia / Estres hidrico",
-        "Helada tardia",
-        "Anegamiento / Inundacion",
-        "Plagas de implantacion",
-        "Fitotoxicidad por agroquimicos",
-        "Encostramiento del suelo",
-        "Falla de germinacion",
-        "Incendio"
-    ];
+    private static readonly string[] SiniestrosResiembraValidos = SiniestroCatalogo.Valores;
 
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<SiembraDto>>> ObtenerTodos()
@@ -62,6 +51,7 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
 
         var lote = await loteRepository.ObtenerPorIdAsync(request.LoteId, usuario.UsuarioId, usuario.Rol == "Admin");
         if (lote is null) return NotFound("Lote no disponible.");
+        if (!lote.Activo) return Conflict("El lote está deshabilitado. Habilitalo antes de registrar una siembra.");
         if (request.TipoRegistro == "Resiembra")
         {
             var resiembraValidation = await ValidarResiembraNuevaAsync(request);
@@ -83,6 +73,8 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
     public async Task<IActionResult> Actualizar(int siembraId, ActualizarSiembraRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        var registroActual = await siembraRepository.ObtenerPorIdAsync(siembraId);
+        if (registroActual?.Deshabilitada == true) return Conflict("La siembra deshabilitada se conserva como historial y no puede editarse.");
 
         NormalizarDetalleAgronomico(request);
         var validation = ValidarSiembra(request);
@@ -93,8 +85,9 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
         if (request.TipoRegistro == "Resiembra")
         {
             var anterior = await siembraRepository.ObtenerPorIdAsync(request.SiembraOriginalId!.Value);
-            if (anterior is null || anterior.EstadoSiembra != "Finalizado" || anterior.Estado != "Finalizado"
+            if (anterior is null || anterior.Deshabilitada || anterior.EstadoSiembra != "Finalizado" || anterior.Estado != "Finalizado"
                 || anterior.LoteId != request.LoteId
+                || anterior.CicloEstacional != request.CicloEstacional
                 || !string.Equals(anterior.CampaniaNombre?.Trim(), request.CampaniaNombre?.Trim(), StringComparison.OrdinalIgnoreCase))
                 return BadRequest("La resiembra requiere que la siembra anterior y su seguimiento estén finalizados, dentro del mismo lote y campaña.");
             if (anterior.FechaFinReal is null)
@@ -120,6 +113,36 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
         }
     }
 
+    [HttpPost("{siembraId:int}/deshabilitar")]
+    public async Task<IActionResult> Deshabilitar(int siembraId, DeshabilitarSiembraRequest request)
+    {
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        if (request.Motivo is not ("Fin de alquiler" or "Siniestro" or "Otro motivo")) return BadRequest("Seleccioná un motivo válido.");
+        if (request.Motivo == "Otro motivo" && string.IsNullOrWhiteSpace(request.Detalle)) return BadRequest("Describí el motivo.");
+        if (request.Motivo != "Otro motivo" && !string.IsNullOrWhiteSpace(request.Detalle)) return BadRequest("El detalle solo corresponde a Otro motivo.");
+        if (request.Motivo == "Siniestro" && (request.FechaSiniestro is null || request.Siniestro is null || !SiniestroCatalogo.Valores.Contains(request.Siniestro)))
+            return BadRequest("Completá el tipo y la fecha del siniestro.");
+        if (request.Motivo != "Siniestro" && (request.FechaSiniestro is not null || request.Siniestro is not null)) return BadRequest("Los datos del siniestro solo corresponden al motivo Siniestro.");
+        try
+        {
+            return await loteRepository.DeshabilitarSiembraAsync(siembraId, request, usuario.UsuarioId, usuario.Rol == "Admin") ? NoContent() : NotFound();
+        }
+        catch (LoteDeshabilitacionBloqueadaException ex) { return Conflict(ex.Message); }
+        catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 50001) { return Conflict(ex.Message); }
+    }
+
+    [HttpPost("{siembraId:int}/habilitar")]
+    public async Task<IActionResult> Habilitar(int siembraId)
+    {
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        try
+        {
+            return await loteRepository.HabilitarSiembraAsync(siembraId, usuario.UsuarioId, usuario.Rol == "Admin") ? NoContent() : NotFound();
+        }
+        catch (LoteDeshabilitacionBloqueadaException ex) { return Conflict(ex.Message); }
+        catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 50001) { return Conflict(ex.Message); }
+    }
+
     [HttpPost("{siembraId:int}/finalizar")]
     public async Task<IActionResult> FinalizarSiembra(int siembraId, FinalizarSiembraRequest request)
     {
@@ -127,6 +150,7 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
 
         var siembra = await siembraRepository.ObtenerPorIdAsync(siembraId);
         if (siembra is null) return NotFound();
+        if (siembra.Deshabilitada) return Conflict("La siembra deshabilitada se conserva como historial y no puede finalizarse.");
 
         var validation = ValidarFinalizacionSiembra(siembra, request);
         if (validation is not null) return validation;
@@ -247,7 +271,7 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
 
     private async Task<ActionResult?> ValidarResiembraNuevaAsync(CrearSiembraRequest request)
     {
-        var anterior = await siembraRepository.ObtenerUltimaDelLoteEnCampaniaAsync(request.LoteId, request.CampaniaNombre);
+        var anterior = await siembraRepository.ObtenerUltimaDelLoteEnCampaniaAsync(request.LoteId, request.CampaniaNombre, request.CicloEstacional);
 
         if (anterior is null || anterior.SiembraId != request.SiembraOriginalId)
             return BadRequest("La resiembra debe vincularse al último registro del lote dentro de la campaña.");
@@ -276,6 +300,7 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
     private ActionResult? ValidarSiembra(CrearSiembraRequest request)
     {
         if (request.LoteId <= 0) return BadRequest("El Lote es obligatorio.");
+        if (request.CicloEstacional is not ("Verano" or "Invierno")) return BadRequest("Seleccioná un ciclo estacional válido.");
         if (string.IsNullOrWhiteSpace(request.Producto)) return BadRequest("El Grano es obligatorio.");
         var cultivo = NormalizarTexto(request.Producto);
         if (cultivo is "soja" or "maiz")
@@ -299,7 +324,7 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
         if (request.FechaMuestreo is not null && request.FechaAnalisis is not null && request.FechaAnalisis < request.FechaMuestreo) return BadRequest("La Fecha de Analisis no puede ser anterior a la Fecha de Muestreo.");
         if (request.UreaKgHa is < 0) return BadRequest("La Urea por hectarea no puede ser negativa.");
         if (request.PMG is < 0 || request.DensidadSiembra is < 0 || request.Profundidad is < 0
-            || request.CantidadHectareasTrabajadas is < 0 || request.CantidadSemillas is < 0)
+            || request.CantidadHectareasTrabajadas is < 0)
             return BadRequest("Los valores numericos del detalle de siembra no pueden ser negativos.");
         if (request.CantidadMuestras is < 0) return BadRequest("La Cantidad de Muestras no puede ser negativa.");
 

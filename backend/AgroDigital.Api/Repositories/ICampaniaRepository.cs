@@ -8,4 +8,5 @@ public interface ICampaniaRepository
     Task<CampaniaDto?> ObtenerPorIdAsync(int campaniaId, int usuarioId, bool incluirTodos = false);
     Task<CampaniaDto> CrearAsync(CrearCampaniaRequest request, int usuarioId, bool incluirTodos = false);
     Task<bool> ActualizarAsync(int campaniaId, ActualizarCampaniaRequest request, int usuarioId, bool incluirTodos = false);
+    Task<bool> RetirarPlanificacionAsync(int campaniaId, int combinacionId, RetirarPlanificacionRequest request, int usuarioId, bool incluirTodos = false);
 }

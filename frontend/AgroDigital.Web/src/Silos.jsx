@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import AlignedTableNumber from './AlignedTableNumber';
 import {
   CheckCircle2,
   Download,
@@ -805,9 +806,9 @@ function SilosList({ silos, loading, error, onAdd, onView, onEdit, onControl }) 
                 <tr key={silo.siloId}>
                   <td>{silo.nombre}</td>
                   <td>{silo.tipoSilo === 'Bolson' ? 'Bolson' : 'Chapa'}</td>
-                  <td>{Number(silo.capacidadMax).toLocaleString('es-AR')} kg</td>
+                  <td className="aligned-table-number-cell"><AlignedTableNumber value={silo.capacidadMax} unit="kg" /></td>
                   <td>{silo.producto || '-'}</td>
-                  <td>{Number(silo.cantidadGranoAlmacenado).toLocaleString('es-AR')} kg</td>
+                  <td className="aligned-table-number-cell"><AlignedTableNumber value={silo.cantidadGranoAlmacenado} unit="kg" /></td>
                   <td>
                     <span className={`ocupacion-chip ocupacion-${ocupacionSeveridad(silo.nivelOcupacionPorcentaje)}`}>
                       {silo.nivelOcupacionPorcentaje}%
@@ -920,18 +921,18 @@ function SiloForm({
     <div className="create-form-card dashboard-card">
       <div className="create-grid">
         <label className="field">
-          Nombre <b>*</b>
+          <span className="field-label">Nombre <b>*</b></span>
           <input value={form.nombre} readOnly={readOnly} onChange={(e) => onFieldChange('nombre', e.target.value)} />
         </label>
         <label className="field">
-          Tipo de Silo <b>*</b>
+          <span className="field-label">Tipo de Silo <b>*</b></span>
           <select value={form.tipoSilo} disabled={readOnly} onChange={(e) => onFieldChange('tipoSilo', e.target.value)}>
             <option value="Chapa">Chapa</option>
             <option value="Bolson">Bolson</option>
           </select>
         </label>
         <label className="field">
-          Capacidad Max (kg) <b>*</b>
+          <span className="field-label">Capacidad Max (kg) <b>*</b></span>
           <input type="number" min="0" value={form.capacidadMax} readOnly={readOnly} onChange={(e) => onFieldChange('capacidadMax', e.target.value)} />
         </label>
         <label className="field">
@@ -1136,19 +1137,19 @@ function SiloControlForm({
       <div className="create-form-card dashboard-card">
         <div className="create-grid">
           <label className="field">
-            Fecha <b>*</b>
+            <span className="field-label">Fecha <b>*</b></span>
             <input type="date" required value={controlForm.fecha} onChange={(e) => onControlFieldChange('fecha', e.target.value)} />
           </label>
           <label className="field">
-            Humedad Grano (%) <b>*</b>
+            <span className="field-label">Humedad Grano (%) <b>*</b></span>
             <input type="number" step="0.01" required value={controlForm.humedadGrano} onChange={(e) => onControlFieldChange('humedadGrano', e.target.value)} />
           </label>
           <label className="field">
-            Temperatura (C) <b>*</b>
+            <span className="field-label">Temperatura (C) <b>*</b></span>
             <input type="number" step="0.01" required value={controlForm.temperatura} onChange={(e) => onControlFieldChange('temperatura', e.target.value)} />
           </label>
           <label className="field">
-            Estado del grano <b>*</b>
+            <span className="field-label">Estado del grano <b>*</b></span>
             <select value={controlForm.estadoGrano} onChange={(e) => onControlFieldChange('estadoGrano', e.target.value)}>
               <option value="Bueno">Bueno</option>
               <option value="Regular">Regular</option>
@@ -1200,7 +1201,7 @@ function SiloControlForm({
           <form onSubmit={onAgregarIncidencia}>
             <div className="create-grid">
               <label className="field">
-                Tipo de Plaga <b>*</b>
+                <span className="field-label">Tipo de Plaga <b>*</b></span>
                 <select required value={incidenciaForm.tipoPlaga} onChange={(e) => onIncidenciaFieldChange('tipoPlaga', e.target.value)}>
                   {TIPOS_PLAGA.map((tipo) => (
                     <option key={tipo} value={tipo}>{tipo}</option>
@@ -1208,7 +1209,7 @@ function SiloControlForm({
                 </select>
               </label>
               <label className="field">
-                Observaciones <b>*</b>
+                <span className="field-label">Observaciones <b>*</b></span>
                 <input required value={incidenciaForm.observaciones} onChange={(e) => onIncidenciaFieldChange('observaciones', e.target.value)} />
               </label>
             </div>
@@ -1275,15 +1276,15 @@ function SiloControlForm({
           <form onSubmit={onAgregarInsumo}>
             <div className="create-grid">
               <label className="field">
-                Fecha de aplicacion <b>*</b>
+                <span className="field-label">Fecha de aplicacion <b>*</b></span>
                 <input type="date" value={insumoForm.fechaAplicacion} onChange={(e) => onInsumoFieldChange('fechaAplicacion', e.target.value)} />
               </label>
               <label className="field">
-                Marca <b>*</b>
+                <span className="field-label">Marca <b>*</b></span>
                 <input value={insumoForm.marca} onChange={(e) => onInsumoFieldChange('marca', e.target.value)} />
               </label>
               <label className="field">
-                Tipo <b>*</b>
+                <span className="field-label">Tipo <b>*</b></span>
                 <select value={insumoForm.tipo} onChange={(e) => onInsumoFieldChange('tipo', e.target.value)}>
                   <option value="">Seleccionar</option>
                   {TIPOS_INSUMO.map((tipo) => (
@@ -1292,7 +1293,7 @@ function SiloControlForm({
                 </select>
               </label>
               <label className="field">
-                Cantidad Aplicada <b>*</b>
+                <span className="field-label">Cantidad Aplicada <b>*</b></span>
                 <input type="number" step="0.01" value={insumoForm.cantidadAplicada} onChange={(e) => onInsumoFieldChange('cantidadAplicada', e.target.value)} />
               </label>
             </div>
@@ -1320,7 +1321,7 @@ function SiloControlForm({
                 <td>{insumo.fechaAplicacion || '-'}</td>
                 <td>{insumo.marca || '-'}</td>
                 <td>{insumo.tipo || '-'}</td>
-                <td>{insumo.cantidadAplicada ?? '-'}</td>
+                <td className="aligned-table-number-cell"><AlignedTableNumber value={insumo.cantidadAplicada} /></td>
                 <td className="actions-cell">
                   <button className="table-action-tooltip" data-tooltip="Eliminar" type="button" aria-label="Eliminar insumo" onClick={() => onEliminarInsumo(insumo)}>
                     <Trash2 size={18} />
@@ -1463,7 +1464,7 @@ function SiloControlDetalle({ silo, control, incidencias, insumos, documentos, o
                 <td>{insumo.fechaAplicacion || '-'}</td>
                 <td>{insumo.marca || '-'}</td>
                 <td>{insumo.tipo || '-'}</td>
-                <td>{insumo.cantidadAplicada ?? '-'}</td>
+                <td className="aligned-table-number-cell"><AlignedTableNumber value={insumo.cantidadAplicada} /></td>
               </tr>
             ))}
             {insumos.length === 0 && (

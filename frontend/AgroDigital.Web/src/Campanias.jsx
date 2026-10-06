@@ -1,13 +1,17 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import DisableLoteModal from './DisableLoteModal';
+import AlignedTableNumber from './AlignedTableNumber';
 import {
   AlertTriangle,
+  Ban,
   BarChart3,
   ArrowLeft,
   CalendarDays,
   CheckCircle2,
   Edit,
   Eye,
+  Info,
   Leaf,
   LoaderCircle,
   Package,
@@ -24,6 +28,7 @@ import {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
 const commonGrains = ['Soja', 'Maiz', 'Sorgo', 'Trigo', 'Girasol', 'Otro'];
+const seasonalCycles = [{ value: 'Verano', label: 'Cultivo de verano' }, { value: 'Invierno', label: 'Cultivo de invierno' }];
 const rotationHierarchy = {
   soja: ['maiz', 'sorgo', 'trigo', 'girasol', 'soja'],
   maiz: ['soja', 'girasol', 'trigo', 'sorgo', 'maiz'],
@@ -33,6 +38,7 @@ const rotationHierarchy = {
 };
 
 const emptyCombo = {
+  cicloEstacional: 'Verano',
   producto: '',
   grainMode: ''
 };
@@ -47,6 +53,11 @@ function formatNumber(value, suffix = '') {
   return `${Number(value).toLocaleString('es-AR', { maximumFractionDigits: 2 })}${suffix}`;
 }
 
+function getEtapaProductiva(item) {
+  if (item.etapaProductiva) return item.etapaProductiva;
+  return item.estado === 'Finalizado' ? 'Cosechado' : 'Pendiente';
+}
+
 function normalizeSearchText(value) {
   return String(value ?? '')
     .toLowerCase()
@@ -57,6 +68,16 @@ function normalizeSearchText(value) {
 function toDateInput(value) {
   if (!value) return '';
   return String(value).slice(0, 10);
+}
+
+function addCalendarMonths(value, months) {
+  if (!value) return '';
+  const [year, month, day] = value.split('-').map(Number);
+  const target = new Date(Date.UTC(year, month - 1 + months, 1));
+  const targetYear = target.getUTCFullYear();
+  const targetMonth = target.getUTCMonth();
+  const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  return `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
 }
 
 function getCampaignDateLimits(referenceDate = new Date()) {
@@ -97,18 +118,26 @@ function getLatestCultivoFromHistory(lote) {
   return latest || lote?.cultivoActual || lote?.cultivoAnterior || '';
 }
 
+function getRotationAntecesor(lote, cicloEstacional, combinaciones) {
+  if (cicloEstacional === 'Invierno') {
+    const verano = combinaciones.find((item) => Number(item.loteId) === Number(lote.loteId) && (item.cicloEstacional || 'Verano') === 'Verano');
+    if (verano) return verano.producto;
+  }
+  return lote?.historialCultivos?.[0]?.cultivo || lote?.cultivoAnterior || '';
+}
+
 function campaignFormSignature(form) {
   return JSON.stringify({
     fechaInicio: form.fechaInicio || '',
     fechaFin: form.fechaFin || '',
     observaciones: (form.observaciones || '').trim(),
     combinaciones: form.combinaciones
-      .map((item) => ({ loteId: Number(item.loteId), producto: item.producto, fechaInicio: item.fechaInicio, fechaFin: item.fechaFin }))
-      .sort((left, right) => `${left.loteId}-${left.producto}`.localeCompare(`${right.loteId}-${right.producto}`, 'es'))
+      .map((item) => ({ loteId: Number(item.loteId), producto: item.producto, cicloEstacional: item.cicloEstacional || 'Verano', fechaInicio: item.fechaInicio, fechaFin: item.fechaFin }))
+      .sort((left, right) => `${left.loteId}-${left.cicloEstacional}`.localeCompare(`${right.loteId}-${right.cicloEstacional}`, 'es'))
   });
 }
 
-export default function Campanias({ session, lotes, parentFilters, selectedEmpresaId, onLotesChanged, onCampaniasChanged, onRegisterSiembra, requestedEditCampaniaId, onCampaignEditRequestHandled }) {
+export default function Campanias({ session, lotes, parentFilters, selectedEmpresaId, onLotesChanged, onCampaniasChanged, onRegisterSiembra, requestedEditCampaniaId, onCampaignEditRequestHandled, pendingReactivation, onPendingReactivationDone, pendingNewCampaignLot, onPendingNewCampaignLotResolved }) {
   const [view, setView] = useState('list');
   const [campanias, setCampanias] = useState([]);
   const [selectedCampania, setSelectedCampania] = useState(null);
@@ -119,7 +148,10 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
   const [loteSelectorSortMode, setLoteSelectorSortMode] = useState('all');
   const [missingLots, setMissingLots] = useState([]);
   const [missingLotsAction, setMissingLotsAction] = useState('save');
+  const [disableQueue, setDisableQueue] = useState([]);
+  const [summerOmissionReasons, setSummerOmissionReasons] = useState({});
   const [periodConflict, setPeriodConflict] = useState('');
+  const [planPendingDisable, setPlanPendingDisable] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -148,6 +180,7 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
   }, []);
 
   function goToList() {
+    onPendingReactivationDone?.();
     setView('list');
     setSelectedCampania(null);
     setForm({ fechaInicio: '', fechaFin: '', observaciones: '', combinaciones: [] });
@@ -156,6 +189,7 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
     setSelectorOpen(false);
     setLoteSelectorSortMode('all');
     setMissingLots([]);
+    setSummerOmissionReasons({});
     setMissingLotsAction('save');
     setPeriodConflict('');
     setError('');
@@ -167,6 +201,7 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
     setSelectedCampania(null);
     setForm({ fechaInicio: '', fechaFin: '', observaciones: '', combinaciones: [] });
     setInitialForm(null);
+    setSummerOmissionReasons({});
     setComboForm(emptyCombo);
     setLoteSelectorSortMode('all');
     setError('');
@@ -192,18 +227,44 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
           loteHectareas: item.loteHectareas,
           cultivoAntecesor: item.cultivoAntecesor,
           producto: item.producto,
+          cicloEstacional: item.cicloEstacional || 'Verano',
           fechaInicio: toDateInput(item.fechaInicio),
           fechaFin: toDateInput(item.fechaFin),
           estado: item.estado,
-          etapaActual: item.etapaActual
+          etapaActual: item.etapaActual,
+          etapaProductiva: item.etapaProductiva
         }))
       };
       setForm(nextForm);
       setInitialForm(nextForm);
+      setSummerOmissionReasons({});
       setComboForm(emptyCombo);
       setView(nextView);
     } catch (err) {
       setError(`No se pudo abrir la campania: ${err.message}`);
+    }
+  }
+
+  async function confirmRetirarPlanificacion(request) {
+    if (!planPendingDisable || !selectedCampania) return;
+    setSaving(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/campanias/${selectedCampania.campaniaId}/combinaciones/${planPendingDisable.campaniaCombinacionId}/retirar`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(request)
+      });
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(body || `API ${response.status}`);
+      }
+      setPlanPendingDisable(null);
+      await openCampania(selectedCampania.campaniaId, 'detail');
+      await loadCampanias();
+      await onLotesChanged?.();
+      await onCampaniasChanged?.();
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -217,7 +278,7 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
   }, [requestedEditCampaniaId]);
 
   function updateGrain(value) {
-    setComboForm({ grainMode: value, producto: value === 'Otro' ? '' : value });
+    setComboForm((current) => ({ ...current, grainMode: value, producto: value === 'Otro' ? '' : value }));
   }
 
   function updateCustomGrain(value) {
@@ -230,8 +291,8 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
       setError('Completa Fecha de Inicio y Fecha tentativa de Fin antes de elegir lotes.');
       return;
     }
-    if (form.fechaFin < form.fechaInicio) {
-      setError('La Fecha tentativa de Fin no puede ser anterior a la Fecha de Inicio.');
+    if (form.fechaFin < addCalendarMonths(form.fechaInicio, 4)) {
+      setError('La Fecha tentativa de Fin debe estar al menos cuatro meses después de la Fecha de Inicio.');
       return;
     }
     if (!isWithinCampaignDateLimits(form.fechaInicio) || !isWithinCampaignDateLimits(form.fechaFin)) {
@@ -246,25 +307,26 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
   }
 
   function addSelectedLotes(selectedLotes) {
-    const existingKeys = new Set(form.combinaciones.map((item) => `${item.loteId}-${normalizeSearchText(item.producto)}`));
+    const existingKeys = new Set(form.combinaciones.map((item) => `${item.loteId}-${item.cicloEstacional || 'Verano'}`));
     const producto = comboForm.producto.trim();
     const newItems = selectedLotes
-      .filter((lote) => !existingKeys.has(`${lote.loteId}-${normalizeSearchText(producto)}`))
+      .filter((lote) => !existingKeys.has(`${lote.loteId}-${comboForm.cicloEstacional}`))
       .map((lote) => ({
         tempId: `tmp-${lote.loteId}-${Date.now()}`,
         loteId: Number(lote.loteId),
         loteNombre: lote.nombre,
         loteZona: lote.ciudad,
         loteHectareas: lote.hectareas,
-        cultivoAntecesor: getLatestCultivoFromHistory(lote),
+        cultivoAntecesor: getRotationAntecesor(lote, comboForm.cicloEstacional, form.combinaciones),
         producto,
+        cicloEstacional: comboForm.cicloEstacional,
         fechaInicio: form.fechaInicio,
         fechaFin: form.fechaFin,
         estado: 'Pendiente',
         etapaActual: 'Sin etapa'
       }));
 
-    setForm((current) => ({ ...current, combinaciones: [...current.combinaciones, ...newItems] }));
+    setForm((current) => ({ ...current, combinaciones: [...newItems, ...current.combinaciones] }));
     setSelectorOpen(false);
   }
 
@@ -275,12 +337,19 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
     }));
   }
 
-  function getMissingEnabledLots() {
-    const assignedLoteIds = new Set(form.combinaciones.map((item) => Number(item.loteId)));
-    return lotes.filter((lote) => lote.activo && !assignedLoteIds.has(Number(lote.loteId)));
+  function getMissingEnabledLots(combinaciones = form.combinaciones, requireSummer = true) {
+    const assignedLoteIds = new Set(combinaciones.map((item) => Number(item.loteId)));
+    const summerLoteIds = new Set(combinaciones.filter((item) => (item.cicloEstacional || 'Verano') === 'Verano').map((item) => Number(item.loteId)));
+    const firstAssignedLote = lotes.find((lote) => Number(lote.loteId) === Number(combinaciones[0]?.loteId));
+    const empresaId = selectedCampania?.empresaId ?? firstAssignedLote?.empresaId ?? selectedEmpresaId;
+    return lotes.filter((lote) => {
+      const id = Number(lote.loteId);
+      return lote.activo && (empresaId == null || Number(lote.empresaId) === Number(empresaId))
+        && (requireSummer ? !summerLoteIds.has(id) && (!assignedLoteIds.has(id) || (!summerOmissionReasons[id] && !selectedCampania?.lotesConOmisionVerano?.includes(id))) : !assignedLoteIds.has(id));
+    }).map((lote) => ({ ...lote, hasWinterPlan: assignedLoteIds.has(Number(lote.loteId)) }));
   }
 
-  async function handleSave({ force = false } = {}) {
+  async function handleSave({ force = false, omissionReasons = summerOmissionReasons } = {}) {
     if (!force) {
       const missing = getMissingEnabledLots();
       if (missing.length > 0) {
@@ -297,9 +366,11 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
         fechaInicio: form.fechaInicio,
         fechaFin: form.fechaFin,
         observaciones: form.observaciones || null,
+        omisionesVerano: Object.entries(omissionReasons).filter(([loteId]) => form.combinaciones.some((item) => Number(item.loteId) === Number(loteId) && (item.cicloEstacional || 'Verano') === 'Invierno') && !form.combinaciones.some((item) => Number(item.loteId) === Number(loteId) && (item.cicloEstacional || 'Verano') === 'Verano')).map(([loteId, motivo]) => ({ loteId: Number(loteId), ...motivo })),
         combinaciones: form.combinaciones.map((item) => ({
           loteId: Number(item.loteId),
           producto: item.producto,
+          cicloEstacional: item.cicloEstacional || 'Verano',
           fechaInicio: form.fechaInicio,
           fechaFin: form.fechaFin
         }))
@@ -314,8 +385,19 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
         body: JSON.stringify(body)
       });
       if (!response.ok) throw new Error(await response.text());
+      if (pendingReactivation && form.combinaciones.some((item) => Number(item.loteId) === Number(pendingReactivation.loteId))) {
+        const enableResponse = await fetch(`${API_BASE_URL}/api/lotes/${pendingReactivation.loteId}/habilitar`, {
+          method: 'POST',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ modo: pendingReactivation.modo })
+        });
+        if (!enableResponse.ok) throw new Error(`La campaña se guardó, pero el lote sigue deshabilitado: ${(await enableResponse.text()).replace(/^"|"$/g, '')}`);
+      }
       await onLotesChanged?.();
       await onCampaniasChanged?.();
+      if (pendingNewCampaignLot && form.combinaciones.some((item) => Number(item.loteId) === Number(pendingNewCampaignLot.loteId))) {
+        onPendingNewCampaignLotResolved?.();
+      }
       goToList();
     } catch (err) {
       const message = err.message.replace(/^"|"$/g, '');
@@ -335,43 +417,58 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
   }
 
   async function disableMissingLotsAndSave() {
+    setDisableQueue([...missingLots]);
+  }
+
+  async function disableMissingLotsAndExit() {
+    setDisableQueue([...missingLots]);
+  }
+
+  async function confirmDisableMissingLote(deshabilitacion) {
+    const lote = disableQueue[0];
+    if (!lote) return;
     setSaving(true);
     setError('');
     try {
-      await Promise.all(missingLots.map(async (lote) => {
-        const response = await fetch(`${API_BASE_URL}/api/lotes/${lote.loteId}/deshabilitar`, {
-          method: 'POST',
-          headers: authHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
-      }));
+      const persistedPlan = selectedCampania?.combinaciones.find((item) => Number(item.loteId) === Number(lote.loteId));
+      const url = persistedPlan
+        ? `${API_BASE_URL}/api/campanias/${selectedCampania.campaniaId}/combinaciones/${persistedPlan.campaniaCombinacionId}/retirar`
+        : `${API_BASE_URL}/api/lotes/${lote.loteId}/deshabilitar`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(persistedPlan ? { ...deshabilitacion, afectarOtroCiclo: true } : deshabilitacion)
+      });
+      if (!response.ok) throw new Error((await response.text()).replace(/^"|"$/g, ''));
       await onLotesChanged?.();
-      setMissingLots([]);
-      await handleSave({ force: true });
+      if (Number(lote.loteId) === Number(pendingNewCampaignLot?.loteId)) onPendingNewCampaignLotResolved?.();
+      const rest = disableQueue.slice(1);
+      setMissingLots((current) => current.filter((item) => item.loteId !== lote.loteId));
+      setDisableQueue(rest);
+      if (rest.length === 0) {
+        setMissingLots([]);
+        if (missingLotsAction === 'exit') goToList();
+        else await handleSave({ force: true });
+      }
     } catch (err) {
-      setError(`No se pudieron deshabilitar los lotes pendientes: ${err.message}`);
+      setError(`No se pudo deshabilitar ${lote.nombre}: ${err.message}`);
+      throw err;
+    } finally {
       setSaving(false);
     }
   }
 
-  async function disableMissingLotsAndExit() {
-    setSaving(true);
-    setError('');
-    try {
-      await Promise.all(missingLots.map(async (lote) => {
-        const response = await fetch(`${API_BASE_URL}/api/lotes/${lote.loteId}/deshabilitar`, {
-          method: 'POST',
-          headers: authHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
-      }));
-      await onLotesChanged?.();
+  async function confirmSummerOmission(motivo) {
+    const lote = disableQueue[0];
+    if (!lote || !motivo?.motivo) return;
+    const nextReasons = { ...summerOmissionReasons, [lote.loteId]: motivo };
+    setSummerOmissionReasons(nextReasons);
+    const rest = disableQueue.slice(1);
+    setMissingLots((current) => current.filter((item) => item.loteId !== lote.loteId));
+    setDisableQueue(rest);
+    if (rest.length === 0) {
       setMissingLots([]);
-      goToList();
-    } catch (err) {
-      setError(`No se pudieron deshabilitar los lotes pendientes: ${err.message}`);
-    } finally {
-      setSaving(false);
+      await handleSave({ force: true, omissionReasons: nextReasons });
     }
   }
 
@@ -381,7 +478,7 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
       return;
     }
 
-    const missing = getMissingEnabledLots();
+    const missing = getMissingEnabledLots(initialForm?.combinaciones ?? [], false);
     if (missing.length === 0) {
       goToList();
       return;
@@ -404,6 +501,7 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
           hasChanges={campaignFormSignature(form) !== campaignFormSignature(initialForm ?? form)}
           onFormChange={(field, value) => setForm((current) => ({ ...current, [field]: value }))}
           onGrainChange={updateGrain}
+          onCycleChange={(cicloEstacional) => { setComboForm((current) => ({ ...current, cicloEstacional, grainMode: '', producto: '' })); setError(''); }}
           onCustomGrainChange={updateCustomGrain}
           onOpenLoteSelector={openLoteSelector}
           onRemoveCombo={removeCombo}
@@ -413,15 +511,18 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
         {selectorOpen && (
           <LoteSelectorModal
             lotes={lotes}
+            allowedInactiveLoteId={pendingReactivation?.loteId}
             producto={comboForm.producto}
-            excludedLoteIds={form.combinaciones.map((item) => Number(item.loteId))}
+            cicloEstacional={comboForm.cicloEstacional}
+            combinaciones={form.combinaciones}
+            excludedLoteIds={form.combinaciones.filter((item) => (item.cicloEstacional || 'Verano') === comboForm.cicloEstacional).map((item) => Number(item.loteId))}
             sortMode={loteSelectorSortMode}
             onSortModeChange={setLoteSelectorSortMode}
             onClose={() => setSelectorOpen(false)}
             onAdd={addSelectedLotes}
           />
         )}
-        {missingLots.length > 0 && (
+        {missingLots.length > 0 && disableQueue.length === 0 && (
           <MissingLotsModal
             lots={missingLots}
             saving={saving}
@@ -430,6 +531,30 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
             onDisableAndSave={missingLotsAction === 'exit' ? disableMissingLotsAndExit : disableMissingLotsAndSave}
           />
         )}
+        {disableQueue.length > 0 && disableQueue[0].hasWinterPlan && <DisableLoteModal
+          key={disableQueue[0].loteId}
+          summerOmission
+          lote={disableQueue[0]}
+          campaignPeriod={selectedCampania?.periodo || `${getCampaignDateLimits().min.slice(0, 4)}-${getCampaignDateLimits().max.slice(0, 4)}`}
+          saving={saving}
+          onCancel={() => setDisableQueue([])}
+          onConfirm={confirmSummerOmission}
+        />}
+        {disableQueue.length > 0 && !disableQueue[0].hasWinterPlan && <DisableLoteModal
+          key={disableQueue[0].loteId}
+          lote={disableQueue[0]}
+          campaignPeriod={selectedCampania?.periodo || ''}
+          allowRecentlyRented={Number(disableQueue[0].loteId) === Number(pendingNewCampaignLot?.loteId)}
+          allowRecentlyRentedWhenEligible={!selectedCampania?.combinaciones.some((item) => Number(item.loteId) === Number(disableQueue[0].loteId))}
+          saving={saving}
+          onCancel={() => setDisableQueue([])}
+          onConfirm={confirmDisableMissingLote}
+          checkBlock={selectedCampania?.combinaciones.some((item) => Number(item.loteId) === Number(disableQueue[0].loteId)) ? undefined : async (lote) => {
+            const response = await fetch(`${API_BASE_URL}/api/lotes/${lote.loteId}/deshabilitacion`, { headers: authHeaders() });
+            if (!response.ok) throw new Error(await response.text());
+            return await response.json();
+          }}
+        />}
         {periodConflict && (
           <CampaignPeriodConflictModal
             message={periodConflict}
@@ -442,12 +567,25 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
 
   if (view === 'detail') {
     return (
-      <CampaniaDetalle
-        campania={selectedCampania}
-        onBack={goToList}
-        onEdit={() => openCampania(selectedCampania.campaniaId, 'edit')}
-        onRegisterSiembra={onRegisterSiembra}
-      />
+      <>
+        <CampaniaDetalle
+          campania={selectedCampania}
+          onBack={goToList}
+          onEdit={() => openCampania(selectedCampania.campaniaId, 'edit')}
+          onRegisterSiembra={onRegisterSiembra}
+          onDisablePlan={setPlanPendingDisable}
+        />
+        {planPendingDisable && <DisableLoteModal
+          key={planPendingDisable.campaniaCombinacionId}
+          lote={{ loteId: planPendingDisable.loteId, nombre: planPendingDisable.loteNombre }}
+          campaignPeriod={selectedCampania.periodo}
+          planningSelection={planPendingDisable}
+          otherCyclePlan={selectedCampania.combinaciones.find((item) => item.loteId === planPendingDisable.loteId && item.campaniaCombinacionId !== planPendingDisable.campaniaCombinacionId)}
+          saving={saving}
+          onCancel={() => setPlanPendingDisable(null)}
+          onConfirm={confirmRetirarPlanificacion}
+        />}
+      </>
     );
   }
 
@@ -461,17 +599,14 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
       onAdd={startCreate}
       onEdit={(campaniaId) => openCampania(campaniaId, 'edit')}
       onView={(campaniaId) => openCampania(campaniaId, 'detail')}
-      onRegisterSiembra={onRegisterSiembra}
     />
   );
 }
 
-function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFilters, onAdd, onEdit, onView, onRegisterSiembra }) {
+function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFilters, onAdd, onEdit, onView }) {
   const [query, setQuery] = useState('');
   const [productoFilter, setProductoFilter] = useState('');
   const [estadoFilter, setEstadoFilter] = useState('');
-  const [selected, setSelected] = useState({});
-  const [activeCampaniaId, setActiveCampaniaId] = useState(null);
 
   const campaniasPorEmpresa = useMemo(() => (
     selectedEmpresaId
@@ -494,13 +629,13 @@ function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFil
           combinaciones: []
         });
       }
-      groups.get(item.campaniaId).combinaciones.push(item);
+      if (item.campaniaCombinacionId) groups.get(item.campaniaId).combinaciones.push(item);
     });
 
     return [...groups.values()].map((campania) => {
       const cultivos = [...new Set(campania.combinaciones.map((item) => item.producto).filter(Boolean))];
       const estados = campania.combinaciones.map((item) => item.estado || 'Pendiente');
-      const estado = estados.every((value) => value === 'Finalizado')
+      const estado = estados.length === 0 ? 'Sin lotes' : estados.every((value) => value === 'Finalizado')
         ? 'Finalizado'
         : estados.every((value) => value === 'Pendiente')
           ? 'Pendiente'
@@ -527,25 +662,11 @@ function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFil
     return matchesQuery && matchesProducto && matchesEstado;
   }), [resumenes, query, productoFilter, estadoFilter]);
 
-  const activeCampania = resumenes.find((item) => String(item.campaniaId) === String(activeCampaniaId));
-  const filteredCombinaciones = useMemo(() => {
-    if (!activeCampania) return [];
-    const text = normalizeSearchText(query.trim());
-    return activeCampania.combinaciones.filter((item) => {
-      const searchFields = [item.producto, item.loteNombre, item.estado, item.etapaActual];
-      const matchesQuery = !text || searchFields.some((field) => normalizeSearchText(field).includes(text));
-      const matchesProducto = !productoFilter || item.producto === productoFilter;
-      const matchesEstado = !estadoFilter || item.estado === estadoFilter;
-      return matchesQuery && matchesProducto && matchesEstado;
-    });
-  }, [activeCampania, query, productoFilter, estadoFilter]);
-
-  const metricRows = activeCampania ? filteredCombinaciones : filteredResumenes.flatMap((item) => item.combinaciones);
-  const totalCampanias = activeCampania ? 1 : filteredResumenes.length;
+  const metricRows = filteredResumenes.flatMap((item) => item.combinaciones);
+  const totalCampanias = filteredResumenes.length;
   const totalCombinaciones = metricRows.length;
   const totalHectareas = metricRows.reduce((sum, item) => sum + Number(item.loteHectareas || 0), 0);
-  const pendientes = metricRows.filter((item) => (item.estado || 'Pendiente') === 'Pendiente').length;
-  const hayFilasSeleccionadas = Object.values(selected).some(Boolean);
+  const pendientes = metricRows.filter((item) => getEtapaProductiva(item) === 'Pendiente').length;
 
   function clearFilters() {
     setQuery('');
@@ -554,36 +675,17 @@ function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFil
   }
   const hayFiltrosTabla = Boolean(query.trim() || productoFilter || estadoFilter);
 
-  function openCampaniaTable(campaniaId) {
-    setActiveCampaniaId(campaniaId);
-    setSelected({});
-    clearFilters();
-  }
-
-  function closeCampaniaTable() {
-    setActiveCampaniaId(null);
-    setSelected({});
-    clearFilters();
-  }
-
   return (
     <section className="content-panel list-panel">
       <div className="page-heading">
         <div>
-          <h1>{activeCampania ? activeCampania.periodo : 'Campañas'}</h1>
-          <p>{activeCampania ? `Lotes y cultivos planificados para ${activeCampania.empresaNombre}.` : 'Consulta cada campaña y accede al detalle de sus lotes y cultivos.'}</p>
+          <h1>Campañas</h1>
+          <p>Consulta cada campaña y accede al detalle de sus lotes y cultivos.</p>
         </div>
-        {activeCampania ? (
-          <button className="back-button campaign-back-button" type="button" onClick={closeCampaniaTable}>
-            <ArrowLeft size={18} />
-            <span>Volver a campañas</span>
-          </button>
-        ) : (
-          <button className="green-button add-lote-button" type="button" onClick={onAdd}>
-            <PlusCircle size={18} />
-            <span>Registrar Campaña</span>
-          </button>
-        )}
+        <button className="green-button add-lote-button" type="button" onClick={onAdd}>
+          <PlusCircle size={18} />
+          <span>Registrar Campaña</span>
+        </button>
       </div>
       {parentFilters}
 
@@ -615,7 +717,7 @@ function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFil
       <div className="filters-card campaign-list-filters">
         <label className="search-field">
           <Search size={21} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={activeCampania ? 'Buscar por lote, grano o etapa...' : 'Buscar por campaña, periodo, empresa o cultivo...'} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por campaña, periodo, empresa o cultivo..." />
         </label>
         <select value={productoFilter} onChange={(event) => setProductoFilter(event.target.value)}>
           <option value="">Grano</option>
@@ -647,11 +749,11 @@ function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFil
             <span>Registrar Campaña</span>
           </button>
         </section>
-      ) : (activeCampania ? filteredCombinaciones.length : filteredResumenes.length) === 0 ? (
+      ) : filteredResumenes.length === 0 ? (
         <section className="empty-state dashboard-card empty-state-compact">
           <div className="empty-state-icon"><Search size={82} strokeWidth={1.8} /></div>
           <div className="empty-state-copy">
-            <h2>{hayFiltrosTabla ? `No encontramos ${activeCampania ? 'lotes' : 'campañas'} con esos filtros` : 'No hay campañas para la empresa seleccionada'}</h2>
+            <h2>{hayFiltrosTabla ? 'No encontramos campañas con esos filtros' : 'No hay campañas para la empresa seleccionada'}</h2>
             <p>{hayFiltrosTabla ? 'Limpia los filtros para volver a ver los registros disponibles.' : 'Cambia la empresa o registra una campaña para este periodo.'}</p>
           </div>
           {hayFiltrosTabla && (
@@ -661,53 +763,6 @@ function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFil
             </button>
           )}
         </section>
-      ) : activeCampania ? (
-        <div className="table-shell dashboard-card">
-          <table className="lotes-table">
-            <thead>
-              <tr>
-                <th style={{ width: 32 }} />
-                <th>Grano</th>
-                <th>Lote</th>
-                <th>Fecha de Inicio</th>
-                <th>Fecha tentativa de Fin</th>
-                <th>Hectareas</th>
-                <th>Estado</th>
-                <th>Etapa actual</th>
-                <th style={{ textAlign: 'center' }}>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredCombinaciones.map((item) => (
-                <tr key={item.campaniaCombinacionId}>
-                  <td><input type="checkbox" checked={Boolean(selected[item.campaniaCombinacionId])} onChange={() => setSelected((current) => ({ ...current, [item.campaniaCombinacionId]: !current[item.campaniaCombinacionId] }))} /></td>
-                  <td>{item.producto}</td>
-                  <td>{item.loteNombre}</td>
-                  <td>{formatFecha(item.fechaInicio)}</td>
-                  <td>{formatFecha(item.fechaFin)}</td>
-                  <td>{formatNumber(item.loteHectareas, ' ha')}</td>
-                  <td><CampaniaEstadoChip estado={item.estado} /></td>
-                  <td><CampaniaEtapaChip etapa={item.etapaActual} /></td>
-                  <td className="compact-actions-cell">
-                    <div className="actions-cell actions-cell-center">
-                      <button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label={`Editar ${item.campaniaNombre}`} onClick={() => onEdit(item.campaniaId)}><Edit size={18} /></button>
-                      <button className="table-action-tooltip" data-tooltip="Ver detalle" type="button" aria-label={`Ver ${item.campaniaNombre}`} onClick={() => onView(item.campaniaId)}><Eye size={18} /></button>
-                      <button className="table-action-tooltip" data-tooltip="Registrar siembra" type="button" aria-label="Registrar siembra" onClick={() => onRegisterSiembra?.(item.campaniaId)}><Sprout size={18} /></button>
-                      <button className="table-action-tooltip" data-tooltip="Registrar cosecha" type="button" aria-label="Registrar cosecha" disabled={item.estado === 'Pendiente'} onClick={() => alert('La accion quedo preparada para conectar con Registrar Cosecha.')}><Scale size={18} /></button>
-                      <button className="table-action-tooltip" data-tooltip="Almacenamiento" type="button" aria-label="Registrar almacenamiento" disabled={item.estado === 'Pendiente'}><Package size={18} /></button>
-                      <button className="table-action-tooltip" data-tooltip="Distribucion" type="button" aria-label="Registrar distribucion" disabled={item.estado === 'Pendiente'}><Truck size={18} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {hayFilasSeleccionadas && (
-            <div className="form-actions" style={{ justifyContent: 'flex-end', padding: '12px 16px' }}>
-              <button className="green-button" type="button">Exportar Registros</button>
-            </div>
-          )}
-        </div>
       ) : (
         <div className="table-shell dashboard-card campaign-master-table">
           <table className="lotes-table">
@@ -740,11 +795,10 @@ function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFil
                       {item.cultivos.map((cultivo) => <span key={cultivo} className="antecesor-chip">{cultivo}</span>)}
                     </div>
                   </td>
-                  <td>{formatNumber(item.hectareas, ' ha')}</td>
+                  <td className="aligned-table-number-cell"><AlignedTableNumber value={item.hectareas} unit="ha" /></td>
                   <td><CampaniaEstadoChip estado={item.estado} /></td>
                   <td className="compact-actions-cell">
                     <div className="actions-cell actions-cell-center">
-                      <button className="table-action-tooltip" data-tooltip="Ver lotes y cultivos" type="button" aria-label={`Ver lotes y cultivos de ${item.campaniaNombre}`} onClick={() => openCampaniaTable(item.campaniaId)}><Eye size={18} /></button>
                       <button className="table-action-tooltip" data-tooltip="Editar campaña" type="button" aria-label={`Editar ${item.campaniaNombre}`} onClick={() => onEdit(item.campaniaId)}><Edit size={18} /></button>
                       <button className="table-action-tooltip" data-tooltip="Ver ficha" type="button" aria-label={`Ver ficha de ${item.campaniaNombre}`} onClick={() => onView(item.campaniaId)}><CalendarDays size={18} /></button>
                     </div>
@@ -759,19 +813,20 @@ function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFil
   );
 }
 
-function CampaniaForm({ mode, campania, form, comboForm, saving, error, hasChanges, onFormChange, onGrainChange, onCustomGrainChange, onOpenLoteSelector, onRemoveCombo, onSave, onBack }) {
+function CampaniaForm({ mode, campania, form, comboForm, saving, error, hasChanges, onFormChange, onCycleChange, onGrainChange, onCustomGrainChange, onOpenLoteSelector, onRemoveCombo, onSave, onBack }) {
   const readonlyName = mode === 'edit' ? campania?.nombre : '';
   const selectedGrainMode = comboForm.grainMode || (commonGrains.includes(comboForm.producto) ? comboForm.producto : comboForm.producto ? 'Otro' : '');
   const campaignDateLimits = getCampaignDateLimits();
   const inicioOutsideRange = Boolean(form.fechaInicio && !isWithinCampaignDateLimits(form.fechaInicio));
   const finOutsideRange = Boolean(form.fechaFin && !isWithinCampaignDateLimits(form.fechaFin));
-  const finBeforeInicio = Boolean(form.fechaInicio && form.fechaFin && form.fechaFin < form.fechaInicio);
+  const fechaFinMinima = addCalendarMonths(form.fechaInicio, 4);
+  const finDemasiadoCerca = Boolean(fechaFinMinima && form.fechaFin && form.fechaFin < fechaFinMinima);
   const canRegister = Boolean(
     form.fechaInicio
     && form.fechaFin
     && !inicioOutsideRange
     && !finOutsideRange
-    && !finBeforeInicio
+    && !finDemasiadoCerca
     && form.combinaciones.length > 0
   );
 
@@ -793,18 +848,20 @@ function CampaniaForm({ mode, campania, form, comboForm, saving, error, hasChang
             <input readOnly value={readonlyName} placeholder="Se asigna automaticamente al guardar" />
           </label>
           <label className={`field${inicioOutsideRange ? ' field-with-error' : ''}`}>
-            Fecha de Inicio <b>*</b>
+            <span className="field-label">Fecha de Inicio <b>*</b></span>
             <input type="date" min={campaignDateLimits.min} max={campaignDateLimits.max} value={form.fechaInicio} onChange={(event) => onFormChange('fechaInicio', event.target.value)} required />
+            <span className="field-rule"><Info size={13} /><span><strong>Regla:</strong> Es obligatoria y debe estar entre el 01/01 y el 31/12 del período de campaña.</span></span>
             {inicioOutsideRange && <small className="field-error">{campaignDateLimits.label}</small>}
           </label>
-          <label className={`field${finOutsideRange || finBeforeInicio ? ' field-with-error' : ''}`}>
-            Fecha tentativa de Fin <b>*</b>
-            <input type="date" min={campaignDateLimits.min} max={campaignDateLimits.max} value={form.fechaFin} onChange={(event) => onFormChange('fechaFin', event.target.value)} required />
+          <label className={`field${finOutsideRange || finDemasiadoCerca ? ' field-with-error' : ''}`}>
+            <span className="field-label">Fecha tentativa de Fin <b>*</b></span>
+            <input type="date" min={fechaFinMinima || campaignDateLimits.min} max={campaignDateLimits.max} value={form.fechaFin} onChange={(event) => onFormChange('fechaFin', event.target.value)} required />
+            <span className="field-rule"><Info size={13} /><span><strong>Regla:</strong> Es obligatoria. Debe ser al menos cuatro meses posterior al inicio y no superar el fin del período.</span></span>
             {finOutsideRange && <small className="field-error">{campaignDateLimits.label}</small>}
-            {finBeforeInicio && <small className="field-error">La Fecha tentativa de Fin no puede ser anterior a la Fecha de Inicio.</small>}
+            {finDemasiadoCerca && <small className="field-error">La fecha mínima es {formatFecha(`${fechaFinMinima}T12:00:00`)} (cuatro meses desde el inicio).</small>}
           </label>
-          <label className="field" style={{ gridColumn: '1 / -1' }}>
-            Observaciones
+          <label className="field campaign-observations-field" style={{ gridColumn: '1 / -1' }}>
+            <span className="field-label">Observaciones</span>
             <textarea value={form.observaciones} onChange={(event) => onFormChange('observaciones', event.target.value)} placeholder="Notas generales de planificacion de la campaña." />
           </label>
         </div>
@@ -812,9 +869,15 @@ function CampaniaForm({ mode, campania, form, comboForm, saving, error, hasChang
 
       <h2>Armar combinaciones por grano</h2>
       <div className="create-form-card dashboard-card">
+        <div className="campaign-season-field">
+          <span className="field-label">Ciclo estacional <b>*</b></span>
+          <div className="status-segmented campaign-season-options" role="group" aria-label="Ciclo estacional">
+            {seasonalCycles.map(({ value, label }) => <button key={value} type="button" className={comboForm.cicloEstacional === value ? 'status-segmented-active' : ''} aria-pressed={comboForm.cicloEstacional === value} onClick={() => onCycleChange(value)}>{label}</button>)}
+          </div>
+        </div>
         <div className="campaign-grain-builder">
           <label className="field">
-            Grano <b>*</b>
+            <span className="field-label">Grano <b>*</b></span>
             <select value={selectedGrainMode} onChange={(event) => onGrainChange(event.target.value)}>
               <option value="">Seleccionar</option>
               {commonGrains.map((grain) => <option key={grain} value={grain}>{grain}</option>)}
@@ -822,7 +885,7 @@ function CampaniaForm({ mode, campania, form, comboForm, saving, error, hasChang
           </label>
           {selectedGrainMode === 'Otro' && (
             <label className="field">
-              Otro grano <b>*</b>
+              <span className="field-label">Otro grano <b>*</b></span>
               <input maxLength={10} value={comboForm.producto} onChange={(event) => onCustomGrainChange(event.target.value)} placeholder="Max. 10 caracteres" />
             </label>
           )}
@@ -833,7 +896,7 @@ function CampaniaForm({ mode, campania, form, comboForm, saving, error, hasChang
         </div>
       </div>
 
-      <CombinacionesTable combinaciones={form.combinaciones} editable onRemove={onRemoveCombo} />
+      <CombinacionesTable combinaciones={form.combinaciones.filter((item) => (item.cicloEstacional || 'Verano') === comboForm.cicloEstacional)} editable showDates={false} onRemove={onRemoveCombo} emptyMessage={`Todavía no agregaste combinaciones de ${comboForm.cicloEstacional.toLowerCase()}.`} />
 
       <div className="form-actions">
         <button className="green-button" type="button" disabled={saving || !canRegister || (mode === 'edit' && !hasChanges)} onClick={onSave}>
@@ -846,26 +909,26 @@ function CampaniaForm({ mode, campania, form, comboForm, saving, error, hasChang
   );
 }
 
-function LoteSelectorModal({ lotes, producto, excludedLoteIds = [], sortMode, onSortModeChange, onClose, onAdd }) {
+function LoteSelectorModal({ lotes, producto, cicloEstacional, combinaciones = [], excludedLoteIds = [], allowedInactiveLoteId = null, sortMode, onSortModeChange, onClose, onAdd }) {
   const [selected, setSelected] = useState({});
   const [query, setQuery] = useState('');
   const excludedSet = useMemo(() => new Set(excludedLoteIds.map(Number)), [excludedLoteIds]);
   const availableLotes = useMemo(() => (
-    lotes.filter((lote) => lote.activo && !excludedSet.has(Number(lote.loteId))).sort((a, b) => {
+    lotes.filter((lote) => (lote.activo || Number(lote.loteId) === Number(allowedInactiveLoteId)) && !excludedSet.has(Number(lote.loteId))).sort((a, b) => {
       if (sortMode === 'all') return String(a.nombre).localeCompare(String(b.nombre), 'es');
-      const rotationA = getRotationInfo(producto, getLatestCultivoFromHistory(a));
-      const rotationB = getRotationInfo(producto, getLatestCultivoFromHistory(b));
+      const rotationA = getRotationInfo(producto, getRotationAntecesor(a, cicloEstacional, combinaciones));
+      const rotationB = getRotationInfo(producto, getRotationAntecesor(b, cicloEstacional, combinaciones));
       if (rotationA.rank !== rotationB.rank) return rotationA.rank - rotationB.rank;
       return String(a.nombre).localeCompare(String(b.nombre), 'es');
     })
-  ), [excludedSet, lotes, producto, sortMode]);
+  ), [allowedInactiveLoteId, cicloEstacional, combinaciones, excludedSet, lotes, producto, sortMode]);
 
   const filteredLotes = useMemo(() => {
     const text = normalizeSearchText(query.trim());
     if (!text) return availableLotes;
 
     return availableLotes.filter((lote) => {
-      const cultivoAntecesor = getLatestCultivoFromHistory(lote);
+      const cultivoAntecesor = getRotationAntecesor(lote, cicloEstacional, combinaciones);
       const rotation = getRotationInfo(producto, cultivoAntecesor);
       return [
         lote.nombre,
@@ -875,13 +938,13 @@ function LoteSelectorModal({ lotes, producto, excludedLoteIds = [], sortMode, on
         rotation.label
       ].some((field) => normalizeSearchText(field).includes(text));
     });
-  }, [availableLotes, producto, query]);
+  }, [availableLotes, cicloEstacional, combinaciones, producto, query]);
   const groupedLotes = useMemo(() => {
     const groups = [];
     const byCultivo = new Map();
 
     filteredLotes.forEach((lote) => {
-      const cultivoAntecesor = getLatestCultivoFromHistory(lote) || 'Sin dato';
+      const cultivoAntecesor = getRotationAntecesor(lote, cicloEstacional, combinaciones) || 'Sin dato';
       const key = normalizeSearchText(cultivoAntecesor);
       if (!byCultivo.has(key)) {
         const group = { key, cultivoAntecesor, lotes: [] };
@@ -916,7 +979,7 @@ function LoteSelectorModal({ lotes, producto, excludedLoteIds = [], sortMode, on
   }
 
   function renderLoteRow(lote) {
-    const cultivoAntecesor = getLatestCultivoFromHistory(lote);
+    const cultivoAntecesor = getRotationAntecesor(lote, cicloEstacional, combinaciones);
     const rotation = getRotationInfo(producto, cultivoAntecesor);
     return (
       <tr key={lote.loteId} className={selected[lote.loteId] ? 'campaign-lote-row-selected' : ''}>
@@ -925,7 +988,7 @@ function LoteSelectorModal({ lotes, producto, excludedLoteIds = [], sortMode, on
         <td><span className="antecesor-chip">{cultivoAntecesor || 'Sin dato'}</span></td>
         <td><span className={`rotation-chip rotation-chip-${rotation.tone}`}>{rotation.label}</span></td>
         <td>{lote.ciudad || '-'}</td>
-        <td>{formatNumber(lote.hectareas, ' ha')}</td>
+        <td className="aligned-table-number-cell"><AlignedTableNumber value={lote.hectareas} unit="ha" /></td>
       </tr>
     );
   }
@@ -935,8 +998,8 @@ function LoteSelectorModal({ lotes, producto, excludedLoteIds = [], sortMode, on
       <section className="campaign-lote-modal dashboard-card">
         <div className="modal-heading">
           <div>
-            <h2>Seleccionar lotes para {producto}</h2>
-            <p>{sortMode === 'recommended' ? 'Ordenados por rotaciones favorables segun el ultimo cultivo registrado.' : 'Todos los lotes habilitados, ordenados alfabéticamente.'}</p>
+            <h2>Seleccionar lotes para {producto} · {cicloEstacional.toLowerCase()}</h2>
+            <p>{sortMode === 'recommended' ? cicloEstacional === 'Invierno' ? 'Rotaciones según el cultivo planificado en verano o, si no existe, el antecedente anterior.' : 'Ordenados por rotaciones favorables según el cultivo antecesor.' : 'Todos los lotes habilitados, ordenados alfabéticamente.'}</p>
           </div>
           <button className="icon-button table-action-tooltip" data-tooltip="Cerrar" type="button" onClick={onClose} aria-label="Cerrar selector de lotes">
             <X size={18} />
@@ -1030,13 +1093,13 @@ function MissingLotsModal({ lots, saving, action, onContinueLoading, onDisableAn
       <section className="campaign-lote-modal campaign-missing-modal dashboard-card">
         <div className="modal-heading">
           <div>
-            <h2>Lotes habilitados sin grano asociado</h2>
-            <p>Todos los lotes habilitados deben quedar dentro de la campaña antes de {action === 'exit' ? 'salir' : 'guardar'}.</p>
+            <h2>Lotes sin cultivo de verano</h2>
+            <p>Asociá cada lote a Verano o indicá el motivo de su ausencia antes de {action === 'exit' ? 'salir' : 'guardar'}.</p>
           </div>
         </div>
 
         <div className="campaign-lote-summary campaign-missing-summary">
-          <span>{lots.length} lotes pendientes de asociar</span>
+          <span>{lots.length} lotes pendientes de resolver</span>
           <strong>{formatNumber(totalHectareas, ' ha')}</strong>
         </div>
 
@@ -1045,7 +1108,7 @@ function MissingLotsModal({ lots, saving, action, onContinueLoading, onDisableAn
             <article key={lote.loteId} className="missing-lot-item">
               <div>
                 <strong>{lote.nombre}</strong>
-                <span>{lote.ciudad || 'Sin zona'} · {formatNumber(lote.hectareas, ' ha')}</span>
+                <span>{lote.ciudad || 'Sin zona'} · {formatNumber(lote.hectareas, ' ha')}{lote.hasWinterPlan ? ' · Invierno planificado' : ' · Sin planificación'}</span>
               </div>
               <span className="antecesor-chip">{getLatestCultivoFromHistory(lote) || 'Sin dato'}</span>
             </article>
@@ -1059,7 +1122,7 @@ function MissingLotsModal({ lots, saving, action, onContinueLoading, onDisableAn
           </button>
           <button className="danger-soft-button campaign-disable-save-button" type="button" disabled={saving} onClick={onDisableAndSave}>
             {saving ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}
-            <span>{action === 'exit' ? 'Deshabilitar y salir' : 'Deshabilitar y guardar'}</span>
+            <span>{action === 'exit' ? 'Resolver y salir' : 'Resolver y guardar'}</span>
           </button>
         </div>
       </section>
@@ -1095,14 +1158,38 @@ function CampaignPeriodConflictModal({ message, onClose }) {
   , document.body);
 }
 
-function CampaniaDetalle({ campania, onBack, onEdit, onRegisterSiembra }) {
+function CampaniaDetalle({ campania, onBack, onEdit, onRegisterSiembra, onDisablePlan }) {
+  const [query, setQuery] = useState('');
+  const [cicloFilter, setCicloFilter] = useState('');
+  const [productoFilter, setProductoFilter] = useState('');
+  const [etapaFilter, setEtapaFilter] = useState('');
+  const combinaciones = campania?.combinaciones || [];
+  const productos = [...new Set(combinaciones.map((item) => item.producto).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  const etapas = ['Pendiente', 'Cultivado', 'Cosechado'].filter((etapa) => combinaciones.some((item) => getEtapaProductiva(item) === etapa));
+  const busqueda = normalizeSearchText(query.trim());
+  const combinacionesFiltradas = combinaciones.filter((item) => (
+    (!busqueda || [item.loteNombre, item.loteZona].some((value) => normalizeSearchText(value).includes(busqueda)))
+    && (!cicloFilter || (item.cicloEstacional || 'Verano') === cicloFilter)
+    && (!productoFilter || item.producto === productoFilter)
+    && (!etapaFilter || getEtapaProductiva(item) === etapaFilter)
+  ));
+  const totalHectareas = combinacionesFiltradas.reduce((sum, item) => sum + Number(item.loteHectareas || 0), 0);
+  const pendientes = combinacionesFiltradas.filter((item) => getEtapaProductiva(item) === 'Pendiente').length;
+
+  function limpiarFiltros() {
+    setQuery('');
+    setCicloFilter('');
+    setProductoFilter('');
+    setEtapaFilter('');
+  }
+
   if (!campania) return null;
 
   return (
     <section className="content-panel create-panel">
       <div className="page-heading create-heading">
         <div>
-          <h1>Detalle Campaña</h1>
+          <h1>Ficha de campaña</h1>
           <p>{campania.nombre}</p>
         </div>
       </div>
@@ -1116,12 +1203,60 @@ function CampaniaDetalle({ campania, onBack, onEdit, onRegisterSiembra }) {
         </div>
       </div>
 
+      <div className="summary-grid summary-grid-four">
+        <article className="summary-card">
+          <div className="summary-icon"><CalendarDays size={28} /></div>
+          <div><span>Campañas</span><strong>1</strong></div>
+          <p>Ficha de la campaña seleccionada</p>
+        </article>
+        <article className="summary-card">
+          <div className="summary-icon"><BarChart3 size={28} /></div>
+          <div><span>Combinaciones</span><strong>{combinacionesFiltradas.length}</strong></div>
+          <p>Lote + grano según filtros</p>
+        </article>
+        <article className="summary-card">
+          <div className="summary-icon"><Sprout size={28} /></div>
+          <div><span>Pendientes</span><strong>{pendientes}</strong></div>
+          <p>Siembra aún no terminada</p>
+        </article>
+        <article className="summary-card">
+          <div className="summary-icon"><CheckCircle2 size={28} /></div>
+          <div><span>Hectáreas planificadas</span><strong>{formatNumber(totalHectareas, ' ha')}</strong></div>
+          <p>Superficie según filtros</p>
+        </article>
+      </div>
+
       <h2>Combinaciones de campaña</h2>
+      <div className="filters-card campaign-detail-filters">
+        <label className="search-field">
+          <Search size={21} />
+          <input data-text-case="preserve" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por lote o zona..." aria-label="Buscar combinaciones por lote o zona" />
+        </label>
+        <select value={cicloFilter} onChange={(event) => setCicloFilter(event.target.value)} aria-label="Filtrar por ciclo estacional">
+          <option value="">Todos los ciclos</option>
+          {seasonalCycles.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+        </select>
+        <select value={productoFilter} onChange={(event) => setProductoFilter(event.target.value)} aria-label="Filtrar por grano">
+          <option value="">Grano</option>
+          {productos.map((producto) => <option key={producto} value={producto}>{producto}</option>)}
+        </select>
+        <select value={etapaFilter} onChange={(event) => setEtapaFilter(event.target.value)} aria-label="Filtrar por etapa">
+          <option value="">Etapa</option>
+          {etapas.map((etapa) => <option key={etapa} value={etapa}>{etapa}</option>)}
+        </select>
+        <button className="clear-button" type="button" onClick={limpiarFiltros}>
+          <RotateCcw size={17} />
+          <span>Limpiar</span>
+        </button>
+      </div>
       <CombinacionesTable
-        combinaciones={campania.combinaciones}
+        combinaciones={combinacionesFiltradas}
+        emptyMessage={combinaciones.length ? 'No hay combinaciones que coincidan con los filtros.' : undefined}
         showOperationalActions
+        showDates={false}
         onEdit={onEdit}
         onRegisterSiembra={onRegisterSiembra}
+        onDisablePlan={onDisablePlan}
       />
 
       <div className="form-actions">
@@ -1131,8 +1266,8 @@ function CampaniaDetalle({ campania, onBack, onEdit, onRegisterSiembra }) {
   );
 }
 
-function CombinacionesTable({ combinaciones, editable = false, showOperationalActions = false, showAntecesor = editable, onRemove, onEdit, onRegisterSiembra }) {
-  const columnCount = 8 + (showAntecesor ? 1 : 0) + (editable || showOperationalActions ? 1 : 0);
+function CombinacionesTable({ combinaciones, editable = false, showOperationalActions = false, showAntecesor = editable, showDates = true, emptyMessage = 'Todavia no agregaste combinaciones.', onRemove, onEdit, onRegisterSiembra, onDisablePlan }) {
+  const columnCount = 6 + (showAntecesor ? 1 : 0) + (editable || showOperationalActions ? 1 : 0) + (showDates ? 2 : 0);
 
   return (
     <div className="table-shell dashboard-card">
@@ -1141,12 +1276,12 @@ function CombinacionesTable({ combinaciones, editable = false, showOperationalAc
           <tr>
             <th>Lote</th>
             <th>Grano</th>
+            <th>Ciclo</th>
             {showAntecesor && <th>Antecesor</th>}
             <th>Zona</th>
-            <th>Fecha de Inicio</th>
-            <th>Fecha tentativa de Fin</th>
+            {showDates && <th>Fecha de Inicio</th>}
+            {showDates && <th>Fecha tentativa de Fin</th>}
             <th>Hectareas</th>
-            <th>Estado</th>
             <th>Etapa</th>
             {(editable || showOperationalActions) && <th style={{ textAlign: 'center' }}>Acciones</th>}
           </tr>
@@ -1156,16 +1291,16 @@ function CombinacionesTable({ combinaciones, editable = false, showOperationalAc
             <tr key={item.tempId ?? item.campaniaCombinacionId}>
               <td>{item.loteNombre}</td>
               <td><span className="antecesor-chip">{item.producto || '-'}</span></td>
+              <td>{item.cicloEstacional || 'Verano'}</td>
               {showAntecesor && <td><span className="antecesor-chip">{item.cultivoAntecesor || '-'}</span></td>}
               <td>{item.loteZona || '-'}</td>
-              <td>{formatFecha(item.fechaInicio)}</td>
-              <td>{formatFecha(item.fechaFin)}</td>
-              <td>{formatNumber(item.loteHectareas, ' ha')}</td>
-              <td><CampaniaEstadoChip estado={item.estado || 'Pendiente'} /></td>
-              <td><CampaniaEtapaChip etapa={item.etapaActual || 'Sin etapa'} /></td>
+              {showDates && <td>{formatFecha(item.fechaInicio)}</td>}
+              {showDates && <td>{formatFecha(item.fechaFin)}</td>}
+              <td className="aligned-table-number-cell"><AlignedTableNumber value={item.loteHectareas} unit="ha" /></td>
+              <td><CampaniaEtapaChip etapa={getEtapaProductiva(item)} /></td>
               {editable && (
                 <td className="actions-cell">
-                  <button className="table-action-tooltip" data-tooltip="Eliminar" type="button" aria-label="Eliminar combinacion" onClick={() => onRemove(item.tempId)}><Trash2 size={18} /></button>
+                  <button className="table-action-tooltip" data-tooltip={item.estado === 'Pendiente' && item.etapaActual === 'Sin etapa' ? 'Quitar' : 'Siembra iniciada'} type="button" aria-label={`Quitar planificación de ${item.loteNombre} en ${item.cicloEstacional || 'Verano'}`} disabled={item.estado !== 'Pendiente' || item.etapaActual !== 'Sin etapa'} onClick={() => onRemove(item.tempId)}><Trash2 size={18} /></button>
                 </td>
               )}
               {showOperationalActions && (
@@ -1177,13 +1312,14 @@ function CombinacionesTable({ combinaciones, editable = false, showOperationalAc
                     <button className="table-action-tooltip" data-tooltip="Registrar cosecha" type="button" aria-label="Registrar cosecha" disabled={item.estado === 'Pendiente'} onClick={() => alert('La accion quedo preparada para conectar con Registrar Cosecha.')}><Scale size={18} /></button>
                     <button className="table-action-tooltip" data-tooltip="Almacenamiento" type="button" aria-label="Registrar almacenamiento" disabled={item.estado === 'Pendiente'}><Package size={18} /></button>
                     <button className="table-action-tooltip" data-tooltip="Distribucion" type="button" aria-label="Registrar distribucion" disabled={item.estado === 'Pendiente'}><Truck size={18} /></button>
+                    <button className="table-action-tooltip status-action-disable" data-tooltip={item.estado === 'Pendiente' && item.etapaActual === 'Sin etapa' ? 'Deshabilitar' : 'Desde Siembras'} type="button" aria-label={`Deshabilitar planificación de ${item.loteNombre} en ${item.cicloEstacional || 'Verano'}`} disabled={item.estado !== 'Pendiente' || item.etapaActual !== 'Sin etapa'} onClick={() => onDisablePlan?.(item)}><Ban size={18} /></button>
                   </div>
                 </td>
               )}
             </tr>
           ))}
           {combinaciones.length === 0 && (
-            <tr><td colSpan={columnCount} style={{ textAlign: 'center' }}>Todavia no agregaste combinaciones.</td></tr>
+            <tr><td colSpan={columnCount} style={{ textAlign: 'center' }}>{emptyMessage}</td></tr>
           )}
         </tbody>
       </table>
@@ -1203,5 +1339,6 @@ function CampaniaEstadoChip({ estado }) {
 }
 
 function CampaniaEtapaChip({ etapa }) {
-  return <span className="campania-stage-chip">{etapa || 'Sin etapa'}</span>;
+  const className = ['campania-stage-chip', etapa === 'Pendiente' ? 'campania-stage-pending' : '', etapa === 'Cultivado' ? 'campania-stage-grown' : '', etapa === 'Cosechado' ? 'campania-stage-harvested' : ''].filter(Boolean).join(' ');
+  return <span className={className}>{etapa || 'Pendiente'}</span>;
 }

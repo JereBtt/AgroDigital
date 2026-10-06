@@ -86,7 +86,10 @@ public class CosechaRepository(IConfiguration configuration) : ICosechaRepositor
     {
         var rinde = CalcularRinde(request);
 
-        const string sql = """
+        var sql = """
+            SET XACT_ABORT ON;
+            BEGIN TRANSACTION;
+            DECLARE @LoteAnteriorId INT = (SELECT LoteId FROM dbo.Cosechas WHERE CosechaId = @CosechaId);
             UPDATE dbo.Cosechas
             SET SiembraId = @SiembraId, LoteId = @LoteId, CampaniaNombre = @CampaniaNombre,
                 Producto = @Producto, Empresa = @Empresa, FechaInicio = @FechaInicio, FechaFin = @FechaFin,
@@ -97,6 +100,13 @@ public class CosechaRepository(IConfiguration configuration) : ICosechaRepositor
                 ResponsableACargo = @ResponsableACargo, RindeKgHa = @RindeKgHa,
                 FechaModificacion = SYSDATETIME()
             WHERE CosechaId = @CosechaId;
+            DECLARE @Actualizada INT = @@ROWCOUNT;
+            IF @Actualizada = 1
+            BEGIN
+            """ + LoteCultivoEstadoSql.Recalcular.Replace("@LoteId", "@LoteAnteriorId") + LoteCultivoEstadoSql.Recalcular + """
+            END;
+            COMMIT TRANSACTION;
+            SELECT @Actualizada;
             """;
 
         await using var connection = new SqlConnection(_connectionString);
@@ -105,14 +115,16 @@ public class CosechaRepository(IConfiguration configuration) : ICosechaRepositor
         command.Parameters.AddWithValue("@CosechaId", cosechaId);
         AgregarParametros(command, request, rinde);
 
-        return await command.ExecuteNonQueryAsync() > 0;
+        return (int)(await command.ExecuteScalarAsync() ?? 0) == 1;
     }
 
     public async Task<bool> FinalizarAsync(int cosechaId, FinalizarCosechaRequest request)
     {
         var rinde = CalcularRinde(request);
 
-        const string sql = """
+        var sql = """
+            SET XACT_ABORT ON;
+            BEGIN TRANSACTION;
             UPDATE dbo.Cosechas
             SET FechaFinReal = @FechaFinReal,
                 JustificacionDesvioFin = @JustificacionDesvioFin,
@@ -125,16 +137,23 @@ public class CosechaRepository(IConfiguration configuration) : ICosechaRepositor
                 Estado = N'Finalizado',
                 FechaModificacion = SYSDATETIME()
             WHERE CosechaId = @CosechaId;
+            DECLARE @Actualizada INT = @@ROWCOUNT;
+            DECLARE @LoteId INT = (SELECT LoteId FROM dbo.Cosechas WHERE CosechaId = @CosechaId);
 
             UPDATE l
-            SET CultivoActual = c.Producto,
-                CultivoAnterior = c.Producto,
-                EstadoCultivo = N'Cosechado',
+            SET CultivoAnterior = c.Producto,
                 FechaModificacion = SYSDATETIME()
             FROM dbo.Lotes AS l
             INNER JOIN dbo.Cosechas AS c ON c.LoteId = l.LoteId
             WHERE c.CosechaId = @CosechaId
-              AND c.Estado = N'Finalizado';
+              AND c.Estado = N'Finalizado'
+              AND NOT EXISTS (
+                  SELECT 1 FROM dbo.Cosechas AS posterior
+                  WHERE posterior.LoteId = c.LoteId
+                    AND posterior.Estado = N'Finalizado'
+                    AND (posterior.FechaFinReal > c.FechaFinReal
+                         OR (posterior.FechaFinReal = c.FechaFinReal AND posterior.CosechaId > c.CosechaId))
+              );
 
             UPDATE cc
             SET Estado = N'Finalizado',
@@ -144,8 +163,22 @@ public class CosechaRepository(IConfiguration configuration) : ICosechaRepositor
             INNER JOIN dbo.Cosechas AS c ON c.LoteId = cc.LoteId
                 AND c.CampaniaNombre = ca.Nombre
                 AND c.Producto = cc.Producto
+            INNER JOIN dbo.Siembras AS siembraCosechada ON siembraCosechada.SiembraId = c.SiembraId
+                AND siembraCosechada.CicloEstacional = cc.CicloEstacional
             WHERE c.CosechaId = @CosechaId
-              AND c.Estado = N'Finalizado';
+              AND c.Estado = N'Finalizado'
+              AND c.SiembraId = (
+                  SELECT MAX(si.SiembraId)
+                  FROM dbo.Siembras AS si
+                  WHERE si.LoteId = c.LoteId
+                    AND si.DeshabilitacionId IS NULL
+                    AND si.CicloEstacional = cc.CicloEstacional
+                    AND LEFT(LTRIM(RTRIM(ISNULL(si.CampaniaNombre, N''))), 9) =
+                        LEFT(LTRIM(RTRIM(ISNULL(c.CampaniaNombre, N''))), 9)
+              );
+            """ + LoteCultivoEstadoSql.Recalcular + """
+            COMMIT TRANSACTION;
+            SELECT @Actualizada;
             """;
 
         await using var connection = new SqlConnection(_connectionString);
@@ -161,7 +194,7 @@ public class CosechaRepository(IConfiguration configuration) : ICosechaRepositor
         command.Parameters.AddWithValue("@ResponsableACargo", string.IsNullOrWhiteSpace(request.ResponsableACargo) ? DBNull.Value : request.ResponsableACargo.Trim());
         command.Parameters.AddWithValue("@RindeKgHa", rinde);
 
-        return await command.ExecuteNonQueryAsync() > 0;
+        return (int)(await command.ExecuteScalarAsync() ?? 0) == 1;
     }
 
     public async Task<IReadOnlyList<CosechaTiradaAroDto>> ObtenerTiradasAsync(int cosechaId)

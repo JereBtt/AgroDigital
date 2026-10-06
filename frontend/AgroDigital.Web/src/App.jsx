@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import AlignedTableNumber from './AlignedTableNumber';
 import L from 'leaflet';
 import agroDigitalCompactLogo from './assets/agrodigital-compact-logo.png';
 import agroDigitalLogo from './assets/agrodigital-logo.png';
@@ -11,6 +12,7 @@ import Campanias from './Campanias';
 import Siembras from './Siembras';
 import Cosechas from './Cosechas';
 import Almacenamiento from './Almacenamiento';
+import DisableLoteModal from './DisableLoteModal';
 import {
   AlertTriangle,
   BarChart3,
@@ -566,10 +568,13 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [loteStatusSaving, setLoteStatusSaving] = useState('');
   const [lotePendingDisable, setLotePendingDisable] = useState(null);
+  const [loteNewDisableReason, setLoteNewDisableReason] = useState(false);
   const [lotePendingEnable, setLotePendingEnable] = useState(null);
   const [loteActiveCampaignPrompt, setLoteActiveCampaignPrompt] = useState(null);
   const [loteOverlapConflict, setLoteOverlapConflict] = useState('');
   const [campaignEditRequestId, setCampaignEditRequestId] = useState('');
+  const [pendingCampaignReactivation, setPendingCampaignReactivation] = useState(null);
+  const [pendingNewCampaignLot, setPendingNewCampaignLot] = useState(null);
   const [status, setStatus] = useState('Conectando...');
   const [form, setForm] = useState(emptyForm);
   const [loteFieldErrors, setLoteFieldErrors] = useState({});
@@ -634,6 +639,7 @@ function App() {
           campaniaId: item.campaniaId,
           empresaId: item.empresaId,
           nombre: item.campaniaNombre,
+          periodo: item.periodo,
           fechaInicio: item.fechaInicio,
           combinaciones: []
         };
@@ -642,7 +648,7 @@ function App() {
       });
 
     return [...campaigns.values()]
-      .filter((campania) => campania.combinaciones.some((item) => item.estado !== 'Finalizado'))
+      .filter((campania) => campania.combinaciones.some((item) => item.estado !== 'Finalizado' && lotes.some((lote) => String(lote.loteId) === String(item.loteId) && lote.activo)))
       .reduce((result, campania) => {
         const existing = result.get(String(campania.empresaId));
         if (!existing || new Date(campania.fechaInicio) > new Date(existing.fechaInicio)) {
@@ -650,7 +656,7 @@ function App() {
         }
         return result;
       }, new Map());
-  }, [parentCampanias]);
+  }, [parentCampanias, lotes]);
   const activeCampaignForNewLote = useMemo(() => (
     activeCampaignsByEmpresa.get(String(empresaDestinoNuevoLoteId)) ?? null
   ), [activeCampaignsByEmpresa, empresaDestinoNuevoLoteId]);
@@ -963,6 +969,14 @@ function App() {
     loadParentCampanias();
   }, [session?.type, session?.token]);
 
+  const previousActiveModule = useRef(activeModule);
+  useEffect(() => {
+    if (activeModule === 'lotes' && previousActiveModule.current !== 'lotes' && session?.type === 'manager-demo') {
+      loadLotes();
+    }
+    previousActiveModule.current = activeModule;
+  }, [activeModule, session?.type]);
+
   useEffect(() => {
     if (empresasDisponibles.length === 0) {
       setSelectedParentEmpresaId('');
@@ -1184,6 +1198,11 @@ function App() {
   }, []);
 
   function goToList() {
+    if (pendingNewCampaignLot && activeModule === 'campanias') {
+      setStatus('Asociá el lote nuevo a la campaña o deshabilitalo antes de salir.');
+      return;
+    }
+    setPendingCampaignReactivation(null);
     setActiveModule('lotes');
     setView('list');
     setSelectedLote(null);
@@ -1271,14 +1290,15 @@ function App() {
     await saveNewLote();
   }
 
-  async function saveNewLote({ disableAfterRegister = false, editCampaignId = null } = {}) {
+  async function saveNewLote({ disableAfterRegister = false, deshabilitacion = null, editCampaignId = null } = {}) {
 
     setSaving(true);
     setLoteFieldErrors({});
     setStatus('Guardando lote...');
     const payload = {
       ...lotePayloadFromForm(form, areaHa, areaM2),
-      registrarDeshabilitado: disableAfterRegister
+      registrarDeshabilitado: disableAfterRegister,
+      deshabilitacion
     };
 
     try {
@@ -1289,13 +1309,15 @@ function App() {
       });
 
       if (!response.ok) throw new Error(await response.text());
-      await response.json();
+      const createdLote = await response.json();
 
       setForm(emptyForm);
       await loadLotes();
       setLoteActiveCampaignPrompt(null);
+      setLoteNewDisableReason(false);
 
       if (editCampaignId) {
+        setPendingNewCampaignLot({ loteId: createdLote.loteId, campaniaId: Number(editCampaignId) });
         setSelectedLote(null);
         setLoteFieldErrors({});
         setSelectedParentEmpresaId(String(loteActiveCampaignPrompt?.empresaId ?? empresaDestinoNuevoLoteId));
@@ -1304,11 +1326,12 @@ function App() {
         setProfileMenuOpen(false);
         setIsMapExpanded(false);
         setStatus('Lote registrado. Agregalo a la campaña activa o deshabilitalo antes de salir.');
-        return;
+        return true;
       }
 
       goToList();
       setStatus(disableAfterRegister ? 'Lote registrado y deshabilitado correctamente.' : 'Lote registrado correctamente');
+      return true;
     } catch (error) {
       const message = error.message.replace(/^"|"$/g, '');
       if (message.toLowerCase().includes('se superpone')) {
@@ -1321,6 +1344,7 @@ function App() {
       } else {
         setStatus(`No se pudo guardar: ${message}`);
       }
+      return false;
     } finally {
       setSaving(false);
     }
@@ -1374,7 +1398,7 @@ function App() {
     }
   }
 
-  async function handleToggleLoteStatus(lote) {
+  async function handleToggleLoteStatus(lote, deshabilitacion = null, modoHabilitacion = null) {
     if (!session?.token || !lote) return false;
 
     const action = lote.activo ? 'deshabilitar' : 'habilitar';
@@ -1384,7 +1408,8 @@ function App() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/lotes/${lote.loteId}/${action}`, {
         method: 'POST',
-        headers: authHeaders()
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(lote.activo ? deshabilitacion : { modo: modoHabilitacion })
       });
 
       if (!response.ok) throw new Error(await response.text());
@@ -1400,23 +1425,33 @@ function App() {
     }
   }
 
-  function requestToggleLoteStatus(lote) {
+  async function requestToggleLoteStatus(lote) {
     if (lote?.activo) {
+      if (activeCampaignsByEmpresa.has(String(lote.empresaId))) return;
       setLotePendingDisable(lote);
       return;
     }
 
-    setLotePendingEnable({
-      lote,
-      campaign: activeCampaignsByEmpresa.get(String(lote.empresaId)) ?? null
-    });
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/lotes/${lote.loteId}/habilitacion`, { headers: authHeaders() });
+      if (!response.ok) throw new Error(await response.text());
+      const contexto = await response.json();
+      const campaign = contexto.campaniaActiva
+        ? activeCampaignsByEmpresa.get(String(lote.empresaId)) ?? { campaniaId: contexto.campaniaId, empresaId: lote.empresaId, nombre: contexto.campaniaNombre }
+        : null;
+      setLotePendingEnable({ lote, contexto, campaign });
+    } catch (error) {
+      setStatus(`No se pudo consultar la habilitación: ${error.message}`);
+    }
   }
 
-  async function confirmDisableLote() {
+  async function confirmDisableLote(deshabilitacion) {
     if (!lotePendingDisable) return;
 
-    if (await handleToggleLoteStatus(lotePendingDisable)) {
+    if (await handleToggleLoteStatus(lotePendingDisable, deshabilitacion)) {
       setLotePendingDisable(null);
+    } else {
+      throw new Error('No se pudo deshabilitar el lote. Revisá el mensaje de la página.');
     }
   }
 
@@ -1428,18 +1463,31 @@ function App() {
     }
   }
 
+  async function restoreLoteAndSiembras() {
+    if (!lotePendingEnable) return;
+    if (await handleToggleLoteStatus(lotePendingEnable.lote, null, 'Restaurar')) setLotePendingEnable(null);
+  }
+
   async function enableLoteAndAddToCampaign() {
     if (!lotePendingEnable?.campaign) return;
 
     const { lote, campaign } = lotePendingEnable;
-    if (await handleToggleLoteStatus(lote)) {
-      setLotePendingEnable(null);
-      setSelectedParentEmpresaId(String(campaign.empresaId));
-      setCampaignEditRequestId(String(campaign.campaniaId));
-      setActiveModule('campanias');
-      setProfileMenuOpen(false);
-      setStatus('Lote habilitado. Agregalo a la campaña activa antes de salir.');
+    setPendingCampaignReactivation({ loteId: lote.loteId, modo: lotePendingEnable.contexto?.tieneSiembras ? 'Nuevas' : null });
+    setLotePendingEnable(null);
+    setSelectedParentEmpresaId(String(campaign.empresaId));
+    setCampaignEditRequestId(String(campaign.campaniaId));
+    setActiveModule('campanias');
+    setProfileMenuOpen(false);
+    setStatus('Agregá el lote a la campaña. Se habilitará al guardar; si cancelás, conservará su baja.');
+  }
+
+  function navigateModule(nextModule) {
+    if (pendingNewCampaignLot && activeModule === 'campanias' && nextModule !== 'campanias') {
+      setStatus('Asociá el lote nuevo a la campaña o deshabilitalo antes de salir.');
+      return;
     }
+    if (nextModule !== 'campanias') setPendingCampaignReactivation(null);
+    setActiveModule(nextModule);
   }
 
 
@@ -2005,11 +2053,11 @@ function App() {
           <ChevronDown size={22} />
         </button>
         <nav className="nav-icons" aria-label="Modulos principales">
-          <button className={`nav-item ${activeModule === 'users' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('users'); setView('list'); setIsMapExpanded(false); setProfileMenuOpen(false); }}>
+          <button className={`nav-item ${activeModule === 'users' ? 'nav-item-active' : ''}`} type="button" onClick={() => { navigateModule('users'); setView('list'); setIsMapExpanded(false); setProfileMenuOpen(false); }}>
             <Users size={23} />
             <span>Usuarios</span>
           </button>
-          <button className={`nav-item ${activeModule === 'teams' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('teams'); setView('list'); setIsMapExpanded(false); setProfileMenuOpen(false); }}>
+          <button className={`nav-item ${activeModule === 'teams' ? 'nav-item-active' : ''}`} type="button" onClick={() => { navigateModule('teams'); setView('list'); setIsMapExpanded(false); setProfileMenuOpen(false); }}>
             <Building2 size={23} />
             <span>Empresas</span>
           </button>
@@ -2017,23 +2065,23 @@ function App() {
             <Compass size={23} />
             <span>Lotes</span>
           </button>
-          <button className={`nav-item ${activeModule === 'campanias' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('campanias'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
+          <button className={`nav-item ${activeModule === 'campanias' ? 'nav-item-active' : ''}`} type="button" onClick={() => { navigateModule('campanias'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
             <CalendarDays size={23} />
             <span>Campañas</span>
           </button>
-          <button className={`nav-item ${activeModule === 'siembras' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('siembras'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
+          <button className={`nav-item ${activeModule === 'siembras' ? 'nav-item-active' : ''}`} type="button" onClick={() => { navigateModule('siembras'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
             <Sprout size={23} />
             <span>Siembras</span>
           </button>
-          <button className={`nav-item ${activeModule === 'cosechas' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('cosechas'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
+          <button className={`nav-item ${activeModule === 'cosechas' ? 'nav-item-active' : ''}`} type="button" onClick={() => { navigateModule('cosechas'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
             <MapIcon size={23} />
             <span>Cosechas</span>
           </button>
-                    <button className={`nav-item ${activeModule === 'silos' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('silos'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
+                    <button className={`nav-item ${activeModule === 'silos' ? 'nav-item-active' : ''}`} type="button" onClick={() => { navigateModule('silos'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
             <Warehouse size={23} />
             <span>Silos</span>
           </button>
-          <button className={`nav-item ${activeModule === 'almacenamiento' ? 'nav-item-active' : ''}`} type="button" onClick={() => { setActiveModule('almacenamiento'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
+          <button className={`nav-item ${activeModule === 'almacenamiento' ? 'nav-item-active' : ''}`} type="button" onClick={() => { navigateModule('almacenamiento'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
             <Home size={23} />
             <span>Almacenamiento</span>
           </button>
@@ -2098,7 +2146,7 @@ function App() {
               menuRef={userMenuRef}
               onToggle={() => setProfileMenuOpen((current) => !current)}
               onOpenProfile={() => {
-                setActiveModule('profile');
+                navigateModule('profile');
                 setView('list');
                 setIsMapExpanded(false);
                 setProfileMenuOpen(false);
@@ -2169,6 +2217,10 @@ function App() {
             onCampaniasChanged={loadParentCampanias}
             requestedEditCampaniaId={campaignEditRequestId}
             onCampaignEditRequestHandled={() => setCampaignEditRequestId('')}
+            pendingReactivation={pendingCampaignReactivation}
+            onPendingReactivationDone={() => setPendingCampaignReactivation(null)}
+            pendingNewCampaignLot={pendingNewCampaignLot}
+            onPendingNewCampaignLotResolved={() => setPendingNewCampaignLot(null)}
             onRegisterSiembra={(campaniaId) => {
               setSelectedParentCampaniaId(String(campaniaId));
               setActiveModule('siembras');
@@ -2195,6 +2247,8 @@ function App() {
             parentFilters={parentFiltersForEmpresaCampania}
             selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
             selectedCampaniaName={selectedParentCampania?.campaniaNombre || ''}
+            onLotesChanged={loadLotes}
+            onCampaniasChanged={loadParentCampanias}
           />
         ) : activeModule === 'almacenamiento' ? (
           <Almacenamiento session={session} />
@@ -2208,6 +2262,7 @@ function App() {
             onEdit={(lote) => openLote(lote, 'edit')}
             onToggleStatus={requestToggleLoteStatus}
             statusSaving={loteStatusSaving}
+            activeCampaignEmpresaIds={new Set(activeCampaignsByEmpresa.keys())}
           />
         ) : view === 'create' ? (
           <LoteCreate
@@ -2250,15 +2305,29 @@ function App() {
 
       {floatingWidgets}
       {lotePendingDisable && (
-        <DisableLoteConfirmation
+        <DisableLoteModal
           lote={lotePendingDisable}
           saving={loteStatusSaving === `deshabilitar-${lotePendingDisable.loteId}`}
           onCancel={() => setLotePendingDisable(null)}
           onConfirm={confirmDisableLote}
+          checkBlock={async (lote) => {
+            const response = await fetch(`${API_BASE_URL}/api/lotes/${lote.loteId}/deshabilitacion`, { headers: authHeaders() });
+            if (!response.ok) throw new Error(await response.text());
+            return await response.json();
+          }}
         />
       )}
       {lotePendingEnable && (
-        lotePendingEnable.campaign ? (
+        lotePendingEnable.contexto?.tieneSiembras ? (
+          <EnableLoteWithSiembrasConfirmation
+            lote={lotePendingEnable.lote}
+            contexto={lotePendingEnable.contexto}
+            saving={loteStatusSaving === `habilitar-${lotePendingEnable.lote.loteId}`}
+            onCancel={() => setLotePendingEnable(null)}
+            onRestore={restoreLoteAndSiembras}
+            onNewSowing={enableLoteAndAddToCampaign}
+          />
+        ) : lotePendingEnable.campaign ? (
           <EnableLoteWithActiveCampaignConfirmation
             lote={lotePendingEnable.lote}
             campaign={lotePendingEnable.campaign}
@@ -2280,8 +2349,21 @@ function App() {
           campaign={loteActiveCampaignPrompt}
           saving={saving}
           onCancel={() => setLoteActiveCampaignPrompt(null)}
-          onRegisterAndDisable={() => saveNewLote({ disableAfterRegister: true })}
+          onRegisterAndDisable={() => setLoteNewDisableReason(true)}
           onAddToCampaign={() => saveNewLote({ editCampaignId: loteActiveCampaignPrompt.campaniaId })}
+        />
+      )}
+      {loteNewDisableReason && (
+        <DisableLoteModal
+          allowRecentlyRented
+          campaignPeriod={loteActiveCampaignPrompt?.periodo}
+          lote={{ nombre: form.nombre }}
+          saving={saving}
+          onCancel={() => setLoteNewDisableReason(false)}
+          onConfirm={async (deshabilitacion) => {
+            if (!await saveNewLote({ disableAfterRegister: true, deshabilitacion }))
+              throw new Error('No se pudo registrar el lote. Revisá el mensaje de la página.');
+          }}
         />
       )}
       {loteOverlapConflict && (
@@ -4346,25 +4428,32 @@ function OtpSecretCredential({ value, copied, onCopy }) {
     </div>
   );
 }
-function DisableLoteConfirmation({ lote, saving, onCancel, onConfirm }) {
+function EnableLoteWithSiembrasConfirmation({ lote, contexto, saving, onCancel, onRestore, onNewSowing }) {
+  const fechaSiniestro = contexto.fechaSiniestro?.slice(0, 10).split('-').reverse().join('/');
+  const motivo = [contexto.motivo, contexto.siniestro, fechaSiniestro, contexto.detalle].filter(Boolean).join(' · ');
+  const ultimaEtapa = [contexto.ultimaSiembraNombre, contexto.ultimaSiembraTipo, contexto.ultimoCultivo].filter(Boolean).join(' · ');
   return createPortal(
     <div className="confirmation-modal-backdrop" role="presentation">
-      <section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="disable-lote-title" aria-describedby="disable-lote-description">
-        <span className="confirmation-modal-icon" aria-hidden="true"><Ban size={28} /></span>
+      <section className="confirmation-modal enable-lote-history-modal" role="dialog" aria-modal="true" aria-labelledby="enable-history-title" aria-describedby="enable-history-description">
+        <span className="confirmation-modal-icon confirmation-modal-icon-success" aria-hidden="true"><Sprout size={28} /></span>
         <div>
-          <h2 id="disable-lote-title">¿Deshabilitar lote?</h2>
-          <p id="disable-lote-description">Vas a deshabilitar <strong>{lote.nombre}</strong>. El lote dejará de estar disponible para nuevas operaciones, pero se conservará su historial.</p>
+          <h2 id="enable-history-title">Habilitar {lote.nombre}</h2>
+          <p id="enable-history-description">La baja se registró por <strong>{motivo || 'un motivo anterior'}</strong>. Elegí cómo querés continuar.</p>
         </div>
-        <div className="confirmation-modal-actions">
-          <button className="confirmation-cancel-button" type="button" onClick={onCancel} disabled={saving}>Cancelar</button>
-          <button className="confirmation-danger-button" type="button" onClick={onConfirm} disabled={saving} autoFocus>
-            {saving ? <LoaderCircle className="spin" size={18} /> : <Ban size={18} />}
-            {saving ? 'Deshabilitando...' : 'Sí, deshabilitar'}
+        {ultimaEtapa && <div className="enable-lote-history-current"><span>Última etapa antes de la baja</span><strong>{ultimaEtapa}</strong></div>}
+        {!contexto.campaniaActiva && <p className="enable-lote-history-notice">La campaña terminó: no se puede revertir la baja ni iniciar otra siembra en ella.</p>}
+        {contexto.campaniaActiva && !contexto.puedeRestaurar && <p className="enable-lote-history-notice">Esta baja anterior no conserva los datos necesarios para restaurar exactamente el seguimiento. Podés conservar las siembras como historial y empezar una nueva.</p>}
+        <div className="enable-lote-history-actions">
+          <button className="enable-lote-history-option" type="button" onClick={onRestore} disabled={saving || !contexto.puedeRestaurar}>
+            <RotateCcw size={20} aria-hidden="true" /><span><strong>Habilitar lote y sus siembras</strong><small>Recupera la siembra, sus resiembras y la última etapa activa.</small></span>
           </button>
+          <button className="enable-lote-history-option" type="button" onClick={onNewSowing} disabled={saving || !contexto.campaniaActiva}>
+            <Sprout size={20} aria-hidden="true" /><span><strong>Habilitar lote para nuevas siembras</strong><small>Conserva las etapas anteriores como historial y permite comenzar otra siembra.</small></span>
+          </button>
+          <div className="enable-lote-history-footer"><button className="confirmation-cancel-button" type="button" onClick={onCancel} disabled={saving}>Cancelar</button></div>
         </div>
       </section>
-    </div>,
-    document.body
+    </div>, document.body
   );
 }
 
@@ -4541,7 +4630,7 @@ function ParentSearchSelect({ label, value, options, placeholder, onChange }) {
   );
 }
 
-function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onToggleStatus, statusSaving }) {
+function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onToggleStatus, statusSaving, activeCampaignEmpresaIds }) {
   const [query, setQuery] = useState('');
   const [conditionFilter, setConditionFilter] = useState('');
   const [zoneFilter, setZoneFilter] = useState('');
@@ -4735,7 +4824,6 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
                   </th>
                   <th></th>
                   <th>Nombre</th>
-                  <th>Pais</th>
                   <th>Provincia</th>
                   <th>Zona</th>
                   <th>Condicion</th>
@@ -4754,8 +4842,7 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
                     <td className="lote-icon-cell">
                       <span className="lote-row-icon"><Leaf size={22} /></span>
                     </td>
-                    <td>{lote.nombre}</td>
-                    <td>{lote.pais}</td>
+                    <td>{lote.nombre}{!lote.activo && <span className="lote-disabled-reason">{lote.historialDeshabilitaciones?.find((item) => item.tipoRegistro === 'Lote')?.motivo || 'Deshabilitado'}</span>}</td>
                     <td>{lote.provincia}</td>
                     <td>{lote.ciudad}</td>
                     <td>
@@ -4766,17 +4853,17 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
                     </td>
                     <td><CultivoChip value={lote.cultivoActual || lote.cultivoAnterior || '-'} estado={lote.estadoCultivo} /></td>
                     <td><CultivoChip value={lote.estadoCultivo || 'Sin cultivo'} estado={lote.estadoCultivo} /></td>
-                    <td>{Number(lote.hectareas).toLocaleString('es-AR', { maximumFractionDigits: 2 })} ha</td>
+                    <td className="aligned-table-number-cell"><AlignedTableNumber value={lote.hectareas} unit="ha" /></td>
                     <td className="actions-cell lote-actions-cell">
                       <div className="actions-cell-content">
                       <button className="table-action-tooltip" data-tooltip="Ver detalle" type="button" aria-label={`Ver ${lote.nombre}`} onClick={() => onView(lote)}><Eye size={18} /></button>
                       <button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label={`Editar ${lote.nombre}`} onClick={() => onEdit(lote)}><Edit size={18} /></button>
                       <button
                         className={`table-action-tooltip status-action-button ${lote.activo ? 'status-action-disable' : 'status-action-enable'}`}
-                        data-tooltip={lote.activo ? 'Deshabilitar' : 'Habilitar'}
+                        data-tooltip={lote.activo && activeCampaignEmpresaIds?.has(String(lote.empresaId)) ? 'Desde Campañas' : lote.activo ? 'Deshabilitar' : 'Habilitar'}
                         type="button"
                         aria-label={`${lote.activo ? 'Deshabilitar' : 'Habilitar'} ${lote.nombre}`}
-                        disabled={statusSaving === `deshabilitar-${lote.loteId}` || statusSaving === `habilitar-${lote.loteId}`}
+                        disabled={(lote.activo && activeCampaignEmpresaIds?.has(String(lote.empresaId))) || statusSaving === `deshabilitar-${lote.loteId}` || statusSaving === `habilitar-${lote.loteId}`}
                         onClick={() => onToggleStatus(lote)}
                       >
                         {statusSaving === `deshabilitar-${lote.loteId}` || statusSaving === `habilitar-${lote.loteId}`
@@ -5144,6 +5231,23 @@ function LoteDetailEdit({
         </div>
 
         {isDetail && <LoteCultivosHistory historial={lote.historialCultivos ?? []} />}
+        {isDetail && (lote.historialDeshabilitaciones?.length ?? 0) > 0 && (
+          <section className="lote-history-card dashboard-card">
+            <div className="card-heading"><div className="card-heading-icon"><Ban size={18} /></div><div>
+              <h2>Historial de deshabilitaciones</h2>
+              <p>Bajas del lote, de sus planificaciones y motivos para omitir Verano.</p>
+            </div></div>
+            <div className="table-shell table-shell-inner"><table className="lotes-table"><thead><tr><th>Fecha</th><th>Alcance</th><th>Ciclo</th><th>Motivo</th><th>Detalle</th><th>Siniestro</th></tr></thead><tbody>
+              {lote.historialDeshabilitaciones.map((item) => <tr key={item.registroId}>
+                <td>{formatDate(item.fechaCreacion)}</td>
+                <td>{item.tipoRegistro === 'Planificación' ? `Planificación de ${item.producto}` : item.tipoRegistro === 'Omisión de Verano' ? 'Sin planificación de Verano' : item.tipoRegistro === 'Siembra' ? 'Siembra' : 'Lote completo'}</td>
+                <td>{item.cicloEstacional || 'Todos'}</td>
+                <td>{item.motivo}</td><td>{item.detalle || '—'}</td>
+                <td>{item.siniestro ? `${item.siniestro} · ${formatDate(item.fechaSiniestro)}` : '—'}</td>
+              </tr>)}
+            </tbody></table></div>
+          </section>
+        )}
 
         <div className="lote-editor-grid">
           <section className="map-card dashboard-card">

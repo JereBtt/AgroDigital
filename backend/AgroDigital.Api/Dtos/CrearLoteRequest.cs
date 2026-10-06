@@ -44,4 +44,5 @@ public class CrearLoteRequest
     // Se usa exclusivamente al confirmar desde el aviso de una campaña activa.
     // Evita crear por un instante un lote habilitado sin asociación a la campaña.
     public bool RegistrarDeshabilitado { get; set; }
+    public DeshabilitarLoteRequest? Deshabilitacion { get; set; }
 }
