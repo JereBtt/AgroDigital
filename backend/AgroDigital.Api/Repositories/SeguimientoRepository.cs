@@ -63,14 +63,14 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
         return await reader.ReadAsync() ? MapearSeguimiento(reader) : null;
     }
 
-    public async Task<SiembraSeguimientoDto?> CrearAsync(int siembraId, CrearSiembraSeguimientoRequest request)
+    public async Task<SiembraSeguimientoDto?> CrearAsync(int siembraId, CrearSiembraSeguimientoRequest request, int? creadoPorUsuarioId = null)
     {
         const string insertSql = """
             INSERT INTO dbo.SiembraSeguimientos
-                (SiembraId, Fecha, Longitud, Latitud, TipoRegistro, Siniestro, Alcance, Incidencia, PerdidaEconomica, AplicacionAgroquimicos, Observaciones)
+                (SiembraId, Fecha, Longitud, Latitud, TipoRegistro, Siniestro, Alcance, Incidencia, PerdidaEconomica, AplicacionAgroquimicos, Observaciones, CreadoPorUsuarioId)
             OUTPUT INSERTED.SiembraSeguimientoId
             VALUES
-                (@SiembraId, @Fecha, @Longitud, @Latitud, @TipoRegistro, @Siniestro, @Alcance, @Incidencia, @PerdidaEconomica, @AplicacionAgroquimicos, @Observaciones);
+                (@SiembraId, @Fecha, @Longitud, @Latitud, @TipoRegistro, @Siniestro, @Alcance, @Incidencia, @PerdidaEconomica, @AplicacionAgroquimicos, @Observaciones, @CreadoPorUsuarioId);
             """;
 
         await using var connection = new SqlConnection(_connectionString);
@@ -82,6 +82,7 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
         await using (var command = new SqlCommand(insertSql, connection))
         {
             command.Parameters.AddWithValue("@SiembraId", siembraId);
+            command.Parameters.AddWithValue("@CreadoPorUsuarioId", (object?)creadoPorUsuarioId ?? DBNull.Value);
             command.Parameters.AddWithValue("@Fecha", request.Fecha ?? DateTime.Now);
             command.Parameters.AddWithValue("@Longitud", (object?)request.Longitud ?? DBNull.Value);
             command.Parameters.AddWithValue("@Latitud", (object?)request.Latitud ?? DBNull.Value);

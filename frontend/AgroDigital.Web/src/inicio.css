@@ -1,0 +1,606 @@
+/*
+  Pantalla Principal (Inicio) y Agenda.
+  Prefijo .ini- para no chocar con otros modulos. Reutiliza .dashboard-card,
+  .content-panel, .page-heading y .empty-state de styles.css.
+  Los tamanios de letra respetan la escala de accesibilidad (--text-scale).
+*/
+
+.ini-subtitulo { text-transform: none; }
+.ini-capitalizar { text-transform: capitalize; }
+
+.ini-cargando {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 28px;
+  color: #3b4f42;
+  font-weight: 700;
+}
+
+.ini-error {
+  margin: 0;
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: #fdecea;
+  color: #8c1d18;
+  font-weight: 700;
+}
+
+.ini-nota {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #eff9f0;
+  color: #0a4327;
+  font-size: calc(14px * var(--text-scale, 1));
+  font-weight: 600;
+}
+
+.ini-oculto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.ini-ayuda {
+  color: #617168;
+  font-size: calc(12.5px * var(--text-scale, 1));
+  font-weight: 600;
+}
+
+.ini-vacio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 14px 0;
+  color: #617168;
+  font-weight: 600;
+}
+
+/* ---------- Tarjetas ---------- */
+
+.ini-tarjeta {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px;
+  min-width: 0;
+}
+
+.ini-tarjeta-cabecera {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ini-tarjeta-cabecera h2 {
+  margin: 0;
+  color: #0a4327;
+  font-size: calc(17px * var(--text-scale, 1));
+}
+
+.ini-fila {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 22px;
+  align-items: stretch;
+}
+
+.ini-enlace {
+  min-height: 36px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: #18883b;
+  font-weight: 700;
+  font-size: calc(13.5px * var(--text-scale, 1));
+  text-decoration: underline;
+}
+
+.ini-enlace:hover { color: #0a4327; }
+
+.ini-boton-ver {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #c9d8cc;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #0a4327;
+  font-weight: 700;
+  font-size: calc(13px * var(--text-scale, 1));
+  white-space: nowrap;
+}
+
+.ini-boton-ver:hover { border-color: #18883b; background: #eff9f0; }
+
+.ini-aviso {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 22px;
+  color: #0a4327;
+}
+
+.ini-aviso > div { flex: 1 1 320px; }
+.ini-aviso h2 { margin: 0; font-size: calc(17px * var(--text-scale, 1)); }
+.ini-aviso p { margin: 4px 0 0; color: #617168; font-weight: 600; }
+
+/* ---------- KPIs ---------- */
+
+/* KPIs: usan .summary-grid / .summary-card de styles.css.
+   La barra ocupa todo el ancho de la tarjeta, debajo del valor. */
+.ini-kpi-progreso {
+  grid-column: 1 / -1;
+  margin-top: 14px;
+}
+
+.ini-progreso {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #dfe8e1;
+}
+
+.ini-progreso span { display: block; height: 100%; }
+
+/* ---------- Avance ---------- */
+
+.ini-barra-etapas {
+  display: flex;
+  gap: 2px;
+  height: 46px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.ini-barra-etapas button {
+  flex-basis: 0;
+  flex-shrink: 1;
+  min-width: 38px;
+  border: 0;
+  padding: 0;
+  font-weight: 800;
+  font-size: calc(12.5px * var(--text-scale, 1));
+}
+
+.ini-barra-etapas button:hover { filter: brightness(0.95); }
+.ini-barra-etapas button.activo { box-shadow: inset 0 0 0 3px #14311f; }
+
+.ini-leyenda-etapas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+}
+
+.ini-leyenda-etapas > div { display: flex; gap: 8px; align-items: flex-start; }
+.ini-leyenda-etapas > div > div { display: flex; flex-direction: column; line-height: 1.3; }
+.ini-leyenda-etapas small { color: #617168; font-weight: 600; font-size: calc(12px * var(--text-scale, 1)); }
+.ini-leyenda-etapas strong { color: #14311f; }
+
+.ini-muestra {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 3px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(20, 49, 31, 0.18);
+}
+
+.ini-muestra-alerta { background: transparent; box-shadow: inset 0 0 0 3px #b3261e; }
+
+.ini-cultivos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid #edf2ee;
+}
+
+.ini-cultivo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f6f8f5;
+}
+
+.ini-cultivo > small { color: #617168; font-weight: 600; font-size: calc(12px * var(--text-scale, 1)); }
+
+.ini-cultivo-titulo {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ini-cultivo-titulo small { color: #617168; font-weight: 600; font-size: calc(12px * var(--text-scale, 1)); }
+
+/* ---------- Eventos de agenda ---------- */
+
+.ini-eventos { list-style: none; margin: 0; padding: 0; }
+
+.ini-evento {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #edf2ee;
+}
+
+.ini-dia {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  width: 46px;
+  padding: 6px 0;
+  border-radius: 9px;
+  background: #f6f8f5;
+  color: #14311f;
+}
+
+.ini-dia small { font-size: calc(10px * var(--text-scale, 1)); font-weight: 800; text-transform: uppercase; }
+.ini-dia strong { font-size: calc(17px * var(--text-scale, 1)); line-height: 1; }
+.ini-dia.hoy { background: #18883b; color: #ffffff; }
+.ini-dia.vencido { background: #fdecea; color: #8c1d18; }
+
+.ini-evento-texto {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ini-evento-texto small { color: #617168; font-size: calc(12.5px * var(--text-scale, 1)); font-weight: 600; }
+
+.ini-tipo {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: calc(11px * var(--text-scale, 1));
+  font-weight: 800;
+}
+
+.ini-tipo-silo { background: #e6f0f8; color: #0b4f7a; }
+.ini-tipo-siembra { background: #eff9f0; color: #0a4327; }
+.ini-tipo-cosecha { background: #fff3d6; color: #7a4f00; }
+.ini-tipo-distribucion { background: #eef1ef; color: #3b4f42; }
+
+/* ---------- Silos ---------- */
+
+.ini-silos { list-style: none; margin: 0; padding: 0; }
+
+.ini-silos li {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
+  border-top: 1px solid #edf2ee;
+}
+
+.ini-silos small { color: #617168; font-weight: 600; font-size: calc(12.5px * var(--text-scale, 1)); }
+
+.ini-silo-titulo {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  color: #3b4f42;
+}
+
+.ini-silo-titulo strong { color: #14311f; }
+
+.ini-estado {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: calc(12px * var(--text-scale, 1));
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ini-estado-critico { background: #fdecea; color: #8c1d18; }
+.ini-estado-atencion { background: #fff3d6; color: #7a4f00; }
+.ini-estado-normal { background: #eff9f0; color: #0a4327; }
+.ini-estado-info { background: #e6f0f8; color: #0b4f7a; }
+.ini-estado-neutro { background: #f1f4f2; color: #546359; }
+
+/* ---------- Tabla de lotes ---------- */
+
+.ini-herramientas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.ini-buscador {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid #c9d8cc;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #617168;
+}
+
+.ini-buscador input {
+  width: 220px;
+  max-width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #14311f;
+  font-size: calc(13.5px * var(--text-scale, 1));
+}
+
+.ini-segmento {
+  display: flex;
+  border: 1px solid #c9d8cc;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.ini-segmento button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  background: #ffffff;
+  color: #14311f;
+  font-weight: 700;
+  font-size: calc(13px * var(--text-scale, 1));
+}
+
+.ini-segmento button.activo { background: #18883b; color: #ffffff; }
+
+.ini-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ini-chips button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid #c9d8cc;
+  border-radius: 20px;
+  background: #ffffff;
+  color: #14311f;
+  font-weight: 700;
+  font-size: calc(13px * var(--text-scale, 1));
+}
+
+.ini-chips button span { opacity: 0.7; font-weight: 600; }
+.ini-chips button.activo { border-color: #0a4327; background: #0a4327; color: #ffffff; }
+
+.ini-tabla-contenedor {
+  overflow-x: auto;
+  border: 1px solid #edf2ee;
+  border-radius: 12px;
+}
+
+.ini-tabla {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  font-size: calc(13.5px * var(--text-scale, 1));
+}
+
+.ini-tabla th {
+  padding: 11px 14px;
+  background: #f6f8f5;
+  color: #3b4f42;
+  font-weight: 800;
+  text-align: left;
+}
+
+.ini-tabla td {
+  padding: 11px 14px;
+  border-top: 1px solid #edf2ee;
+  color: #14311f;
+  vertical-align: middle;
+}
+
+.ini-tabla td small {
+  display: block;
+  color: #617168;
+  font-weight: 600;
+  font-size: calc(12px * var(--text-scale, 1));
+}
+
+.ini-tabla .ini-num { text-align: right; white-space: nowrap; }
+
+.ini-pasos {
+  display: flex;
+  gap: 3px;
+  min-width: 140px;
+}
+
+.ini-pasos span {
+  flex: 1 1 0;
+  height: 8px;
+  border-radius: 4px;
+  background: #dfe8e1;
+}
+
+.ini-pasos span.actual { background: #83c994; }
+.ini-pasos span.hecho { background: #18883b; }
+
+.ini-tabla .ini-etapa-nombre { margin-top: 5px; color: #3b4f42; font-weight: 700; }
+
+.ini-pie-tabla {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  color: #617168;
+  font-weight: 600;
+  font-size: calc(13px * var(--text-scale, 1));
+}
+
+.ini-paginas { display: flex; align-items: center; gap: 8px; }
+
+.ini-paginas button {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid #c9d8cc;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #14311f;
+}
+
+.ini-paginas button:disabled { opacity: 0.4; cursor: default; }
+
+/* ---------- Mapa ---------- */
+
+.ini-mapa {
+  height: 420px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #edf2ee;
+  background: #e4ebdf;
+}
+
+.ini-leyenda-mapa {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  color: #3b4f42;
+  font-weight: 600;
+  font-size: calc(12.5px * var(--text-scale, 1));
+}
+
+.ini-leyenda-mapa > span { display: inline-flex; align-items: center; gap: 6px; }
+.ini-leyenda-mapa .ini-muestra { margin-top: 0; }
+
+/* ---------- Panel de Agenda ---------- */
+
+.ini-agenda-capa {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+}
+
+.ini-agenda-fondo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  background: rgba(10, 33, 20, 0.45);
+  cursor: default;
+}
+
+.ini-agenda {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  width: 480px;
+  max-width: 100%;
+  background: #ffffff;
+  box-shadow: -8px 0 24px rgba(10, 33, 20, 0.2);
+}
+
+.ini-agenda-cabecera {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid #dfe8e1;
+}
+
+.ini-agenda-titulo {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ini-agenda-titulo h2 { margin: 0; color: #0c351e; font-size: calc(20px * var(--text-scale, 1)); }
+.ini-agenda-titulo p { margin: 4px 0 0; color: #617168; font-weight: 600; font-size: calc(12.5px * var(--text-scale, 1)); }
+
+.ini-agenda-cerrar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #dfe8e1;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #14311f;
+}
+
+.ini-agenda-controles {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.ini-agenda-cuerpo {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 22px 28px;
+}
+
+.ini-agenda-grupo { padding-top: 16px; }
+
+.ini-agenda-grupo-titulo {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 6px;
+}
+
+.ini-agenda-grupo-titulo h3 {
+  margin: 0;
+  color: #3b4f42;
+  font-size: calc(13px * var(--text-scale, 1));
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.ini-agenda-grupo-titulo h3.alerta { color: #8c1d18; }
+
+.ini-agenda-grupo-titulo span {
+  color: #617168;
+  font-weight: 600;
+  font-size: calc(12px * var(--text-scale, 1));
+}
+
+/* ---------- Celular ---------- */
+
+@media (max-width: 720px) {
+  .ini-fila { grid-template-columns: minmax(0, 1fr); }
+  .ini-buscador { flex: 1 1 100%; }
+  .ini-buscador input { width: 100%; }
+  .ini-mapa { height: 320px; }
+}

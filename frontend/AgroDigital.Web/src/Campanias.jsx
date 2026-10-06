@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
+const PERMISOS_TODOS = { estructura: true, movimientoGrano: true };
 const commonGrains = ['Soja', 'Maiz', 'Sorgo', 'Trigo', 'Girasol', 'Otro'];
 const seasonalCycles = [{ value: 'Verano', label: 'Cultivo de verano' }, { value: 'Invierno', label: 'Cultivo de invierno' }];
 const rotationHierarchy = {
@@ -137,7 +138,7 @@ function campaignFormSignature(form) {
   });
 }
 
-export default function Campanias({ session, lotes, parentFilters, selectedEmpresaId, onLotesChanged, onCampaniasChanged, onRegisterSiembra, requestedEditCampaniaId, onCampaignEditRequestHandled, pendingReactivation, onPendingReactivationDone, pendingNewCampaignLot, onPendingNewCampaignLotResolved }) {
+export default function Campanias({ permisos = PERMISOS_TODOS, session, lotes, parentFilters, selectedEmpresaId, onLotesChanged, onCampaniasChanged, onRegisterSiembra, requestedEditCampaniaId, onCampaignEditRequestHandled, pendingReactivation, onPendingReactivationDone, pendingNewCampaignLot, onPendingNewCampaignLotResolved }) {
   const [view, setView] = useState('list');
   const [campanias, setCampanias] = useState([]);
   const [selectedCampania, setSelectedCampania] = useState(null);
@@ -569,6 +570,7 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
     return (
       <>
         <CampaniaDetalle
+          permisos={permisos}
           campania={selectedCampania}
           onBack={goToList}
           onEdit={() => openCampania(selectedCampania.campaniaId, 'edit')}
@@ -591,6 +593,7 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
 
   return (
     <CampaniasList
+      permisos={permisos}
       campanias={campanias}
       selectedEmpresaId={selectedEmpresaId}
       loading={loading}
@@ -603,7 +606,7 @@ export default function Campanias({ session, lotes, parentFilters, selectedEmpre
   );
 }
 
-function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFilters, onAdd, onEdit, onView }) {
+function CampaniasList({ permisos = PERMISOS_TODOS, campanias, selectedEmpresaId, loading, error, parentFilters, onAdd, onEdit, onView }) {
   const [query, setQuery] = useState('');
   const [productoFilter, setProductoFilter] = useState('');
   const [estadoFilter, setEstadoFilter] = useState('');
@@ -682,10 +685,10 @@ function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFil
           <h1>Campañas</h1>
           <p>Consulta cada campaña y accede al detalle de sus lotes y cultivos.</p>
         </div>
-        <button className="green-button add-lote-button" type="button" onClick={onAdd}>
+        {permisos.estructura && <button className="green-button add-lote-button" type="button" onClick={onAdd}>
           <PlusCircle size={18} />
           <span>Registrar Campaña</span>
-        </button>
+        </button>}
       </div>
       {parentFilters}
 
@@ -744,10 +747,10 @@ function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFil
             <h2>Aun no tenes campañas registradas</h2>
             <p>Registra tu primera campaña para agrupar lotes, granos y procesos.</p>
           </div>
-          <button className="green-button empty-state-action" type="button" onClick={onAdd}>
+          {permisos.estructura && <button className="green-button empty-state-action" type="button" onClick={onAdd}>
             <PlusCircle size={18} />
             <span>Registrar Campaña</span>
-          </button>
+          </button>}
         </section>
       ) : filteredResumenes.length === 0 ? (
         <section className="empty-state dashboard-card empty-state-compact">
@@ -799,7 +802,7 @@ function CampaniasList({ campanias, selectedEmpresaId, loading, error, parentFil
                   <td><CampaniaEstadoChip estado={item.estado} /></td>
                   <td className="compact-actions-cell">
                     <div className="actions-cell actions-cell-center">
-                      <button className="table-action-tooltip" data-tooltip="Editar campaña" type="button" aria-label={`Editar ${item.campaniaNombre}`} onClick={() => onEdit(item.campaniaId)}><Edit size={18} /></button>
+                      {permisos.estructura && <button className="table-action-tooltip" data-tooltip="Editar campaña" type="button" aria-label={`Editar ${item.campaniaNombre}`} onClick={() => onEdit(item.campaniaId)}><Edit size={18} /></button>}
                       <button className="table-action-tooltip" data-tooltip="Ver ficha" type="button" aria-label={`Ver ficha de ${item.campaniaNombre}`} onClick={() => onView(item.campaniaId)}><CalendarDays size={18} /></button>
                     </div>
                   </td>
@@ -1158,7 +1161,7 @@ function CampaignPeriodConflictModal({ message, onClose }) {
   , document.body);
 }
 
-function CampaniaDetalle({ campania, onBack, onEdit, onRegisterSiembra, onDisablePlan }) {
+function CampaniaDetalle({ permisos = PERMISOS_TODOS, campania, onBack, onEdit, onRegisterSiembra, onDisablePlan }) {
   const [query, setQuery] = useState('');
   const [cicloFilter, setCicloFilter] = useState('');
   const [productoFilter, setProductoFilter] = useState('');
@@ -1250,6 +1253,7 @@ function CampaniaDetalle({ campania, onBack, onEdit, onRegisterSiembra, onDisabl
         </button>
       </div>
       <CombinacionesTable
+        permisos={permisos}
         combinaciones={combinacionesFiltradas}
         emptyMessage={combinaciones.length ? 'No hay combinaciones que coincidan con los filtros.' : undefined}
         showOperationalActions
@@ -1266,7 +1270,7 @@ function CampaniaDetalle({ campania, onBack, onEdit, onRegisterSiembra, onDisabl
   );
 }
 
-function CombinacionesTable({ combinaciones, editable = false, showOperationalActions = false, showAntecesor = editable, showDates = true, emptyMessage = 'Todavia no agregaste combinaciones.', onRemove, onEdit, onRegisterSiembra, onDisablePlan }) {
+function CombinacionesTable({ permisos = PERMISOS_TODOS, combinaciones, editable = false, showOperationalActions = false, showAntecesor = editable, showDates = true, emptyMessage = 'Todavia no agregaste combinaciones.', onRemove, onEdit, onRegisterSiembra, onDisablePlan }) {
   const columnCount = 6 + (showAntecesor ? 1 : 0) + (editable || showOperationalActions ? 1 : 0) + (showDates ? 2 : 0);
 
   return (
@@ -1306,13 +1310,13 @@ function CombinacionesTable({ combinaciones, editable = false, showOperationalAc
               {showOperationalActions && (
                 <td className="compact-actions-cell">
                   <div className="actions-cell actions-cell-center">
-                    <button className="table-action-tooltip" data-tooltip="Editar campaña" type="button" aria-label="Editar campaña" onClick={onEdit}><Edit size={18} /></button>
+                    {permisos.estructura && <button className="table-action-tooltip" data-tooltip="Editar campaña" type="button" aria-label="Editar campaña" onClick={onEdit}><Edit size={18} /></button>}
                     <button className="table-action-tooltip" data-tooltip="Detalle de campaña" type="button" aria-label="Detalle de campaña" onClick={() => alert('Ya estas consultando el detalle de esta campaña.')}><Eye size={18} /></button>
-                    <button className="table-action-tooltip" data-tooltip="Registrar siembra" type="button" aria-label={`Registrar siembra para ${item.loteNombre}`} onClick={() => onRegisterSiembra?.(item.campaniaId)}><Sprout size={18} /></button>
-                    <button className="table-action-tooltip" data-tooltip="Registrar cosecha" type="button" aria-label="Registrar cosecha" disabled={item.estado === 'Pendiente'} onClick={() => alert('La accion quedo preparada para conectar con Registrar Cosecha.')}><Scale size={18} /></button>
-                    <button className="table-action-tooltip" data-tooltip="Almacenamiento" type="button" aria-label="Registrar almacenamiento" disabled={item.estado === 'Pendiente'}><Package size={18} /></button>
-                    <button className="table-action-tooltip" data-tooltip="Distribucion" type="button" aria-label="Registrar distribucion" disabled={item.estado === 'Pendiente'}><Truck size={18} /></button>
-                    <button className="table-action-tooltip status-action-disable" data-tooltip={item.estado === 'Pendiente' && item.etapaActual === 'Sin etapa' ? 'Deshabilitar' : 'Desde Siembras'} type="button" aria-label={`Deshabilitar planificación de ${item.loteNombre} en ${item.cicloEstacional || 'Verano'}`} disabled={item.estado !== 'Pendiente' || item.etapaActual !== 'Sin etapa'} onClick={() => onDisablePlan?.(item)}><Ban size={18} /></button>
+                    {permisos.estructura && <button className="table-action-tooltip" data-tooltip="Registrar siembra" type="button" aria-label={`Registrar siembra para ${item.loteNombre}`} onClick={() => onRegisterSiembra?.(item.campaniaId)}><Sprout size={18} /></button>}
+                    {permisos.estructura && <button className="table-action-tooltip" data-tooltip="Registrar cosecha" type="button" aria-label="Registrar cosecha" disabled={item.estado === 'Pendiente'} onClick={() => alert('La accion quedo preparada para conectar con Registrar Cosecha.')}><Scale size={18} /></button>}
+                    {permisos.movimientoGrano && <button className="table-action-tooltip" data-tooltip="Almacenamiento" type="button" aria-label="Registrar almacenamiento" disabled={item.estado === 'Pendiente'}><Package size={18} /></button>}
+                    {permisos.movimientoGrano && <button className="table-action-tooltip" data-tooltip="Distribucion" type="button" aria-label="Registrar distribucion" disabled={item.estado === 'Pendiente'}><Truck size={18} /></button>}
+                    {permisos.estructura && <button className="table-action-tooltip status-action-disable" data-tooltip={item.estado === 'Pendiente' && item.etapaActual === 'Sin etapa' ? 'Deshabilitar' : 'Desde Siembras'} type="button" aria-label={`Deshabilitar planificación de ${item.loteNombre} en ${item.cicloEstacional || 'Verano'}`} disabled={item.estado !== 'Pendiente' || item.etapaActual !== 'Sin etapa'} onClick={() => onDisablePlan?.(item)}><Ban size={18} /></button>}
                   </div>
                 </td>
               )}

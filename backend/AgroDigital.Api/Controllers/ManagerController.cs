@@ -8,7 +8,11 @@ namespace AgroDigital.Api.Controllers;
 
 [ApiController]
 [Route("api/manager")]
-public sealed class ManagerController(IConfiguration configuration, IAuthTokenService authTokenService, IPasswordHasher passwordHasher) : ControllerBase
+public sealed class ManagerController(
+    IConfiguration configuration,
+    IAuthTokenService authTokenService,
+    IPasswordHasher passwordHasher,
+    INotificacionesSolicitudService notificaciones) : ControllerBase
 {
     private static readonly HashSet<string> RolesPermitidos = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -651,13 +655,21 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
 
             await CambiarEstadoSolicitudAsync(connection, (SqlTransaction)transaction, solicitudId, "Aprobada", usuario.UsuarioId);
             await transaction.CommitAsync();
-            return Ok(new { mensaje = "Solicitud aprobada correctamente." });
         }
         catch
         {
             await transaction.RollbackAsync();
             throw;
         }
+
+        // Aviso al empleado con su rol en cada empresa. Si el correo falla, la aprobacion queda igual.
+        var avisado = await notificaciones.NotificarSolicitudAprobadaAsync(solicitudId, usuario.UsuarioId);
+        return Ok(new
+        {
+            mensaje = avisado
+                ? "Solicitud aprobada correctamente. Le avisamos por correo que ya puede ingresar."
+                : "Solicitud aprobada correctamente. No se pudo enviar el aviso por correo: avisale que ya puede ingresar."
+        });
     }
 
     [HttpPost("solicitudes/{solicitudId:int}/rechazar")]
@@ -686,6 +698,19 @@ public sealed class ManagerController(IConfiguration configuration, IAuthTokenSe
 
         await CambiarEstadoSolicitudAsync(connection, (SqlTransaction)transaction, solicitudId, estado, usuario.UsuarioId);
         await transaction.CommitAsync();
+
+        // Solo el rechazo se notifica: "Descartada" se usa para pedidos que el Gerente no reconoce.
+        if (estado == "Rechazada")
+        {
+            var avisado = await notificaciones.NotificarSolicitudRechazadaAsync(solicitudId, usuario.UsuarioId);
+            return Ok(new
+            {
+                mensaje = avisado
+                    ? "Solicitud rechazada correctamente. Le avisamos por correo."
+                    : "Solicitud rechazada correctamente. No se pudo enviar el aviso por correo."
+            });
+        }
+
         return Ok(new { mensaje = $"Solicitud {estado.ToLowerInvariant()} correctamente." });
     }
 

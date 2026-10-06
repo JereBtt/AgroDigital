@@ -13,6 +13,10 @@ import Siembras from './Siembras';
 import Cosechas from './Cosechas';
 import Almacenamiento from './Almacenamiento';
 import DisableLoteModal from './DisableLoteModal';
+import Distribucion from './Distribucion';
+import Estadisticas from './Estadisticas';
+import Inicio from './Inicio';
+import { LayoutDashboard, MessageCircle, Send, XCircle } from 'lucide-react';
 import {
   AlertTriangle,
   BarChart3,
@@ -528,7 +532,13 @@ function adminAccountFromApi(account, passwordTemporal = null) {
     estado: account.estado,
     grupoGestion: account.grupoGestion,
     fechaCreacion: formatDate(account.fechaCreacion),
-    fechaVencimiento: formatDate(account.fechaVencimiento)
+    fechaVencimiento: formatDate(account.fechaVencimiento),
+    correoElectronico: account.correoElectronico ?? '',
+    estadoEnvio: account.estadoEnvio ?? '',
+    fechaUltimoEnvio: account.fechaUltimoEnvio
+      ? new Date(account.fechaUltimoEnvio).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+      : '',
+    cantidadEnvios: account.cantidadEnvios ?? 0
   };
 }
 
@@ -540,9 +550,13 @@ function App() {
   const [adminAccounts, setAdminAccounts] = useState([]);
   const [lastGeneratedAccount, setLastGeneratedAccount] = useState(null);
   const [adminError, setAdminError] = useState('');
+  const [adminEnvio, setAdminEnvio] = useState(null);
+  const [adminResendingId, setAdminResendingId] = useState(null);
   const [copiedKey, setCopiedKey] = useState('');
-  const [activeModule, setActiveModule] = useState('lotes');
+  const [activeModule, setActiveModule] = useState('inicio');
   const [managerContext, setManagerContext] = useState(null);
+  // Empresas del usuario cuando no es Gerente (el Gerente las toma de managerContext).
+  const [misEmpresas, setMisEmpresas] = useState([]);
   const [managerContextError, setManagerContextError] = useState('');
   const [managerRequests, setManagerRequests] = useState([]);
   const [managerRequestsError, setManagerRequestsError] = useState('');
@@ -557,6 +571,14 @@ function App() {
   const [managerTeamSaving, setManagerTeamSaving] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState(null);
   const [otpError, setOtpError] = useState('');
+  const [managerInvitations, setManagerInvitations] = useState([]);
+  const [invitationSaving, setInvitationSaving] = useState('');
+  const [invitationResult, setInvitationResult] = useState(null);
+  const [invitationError, setInvitationError] = useState('');
+  const [joinPrefill, setJoinPrefill] = useState(null);
+  const [miAcceso, setMiAcceso] = useState(null);
+  const [equipoUsuarios, setEquipoUsuarios] = useState([]);
+  const [equipoError, setEquipoError] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
   const [view, setView] = useState('list');
   const [lotes, setLotes] = useState([]);
@@ -598,9 +620,24 @@ function App() {
   const areaM2 = useMemo(() => polygonAreaSquareMeters(form.coordenadas), [form.coordenadas]);
   const areaHa = areaM2 / 10000;
   const empresasDisponibles = useMemo(
-    () => (managerContext?.empresas ?? []).filter((empresa) => empresa.activo),
-    [managerContext]
+    () => (session?.role === 'Gerente' ? managerContext?.empresas ?? [] : misEmpresas).filter((empresa) => empresa.activo),
+    [managerContext, misEmpresas, session?.role]
   );
+
+  // Rol del usuario en la empresa seleccionada (puede ser distinto en cada empresa) y permisos
+  // de la matriz de roles. La API valida lo mismo: aca solo se ocultan los botones que no corresponden.
+  const rolEmpresaActual = useMemo(() => {
+    if (session?.role === 'Admin' || session?.role === 'Gerente') return session.role;
+    const empresa = misEmpresas.find((item) => String(item.empresaId) === String(selectedParentEmpresaId));
+    return empresa?.rol ?? session?.role ?? '';
+  }, [session?.role, misEmpresas, selectedParentEmpresaId]);
+
+  const permisosRol = useMemo(() => ({
+    rol: rolEmpresaActual,
+    estructura: ['Admin', 'Gerente', 'Encargado'].includes(rolEmpresaActual),
+    registroCampo: ['Admin', 'Gerente', 'Encargado', 'EmpleadoCampo'].includes(rolEmpresaActual),
+    movimientoGrano: ['Admin', 'Gerente', 'Encargado', 'EmpleadoAdministrativo'].includes(rolEmpresaActual)
+  }), [rolEmpresaActual]);
   const selectedParentEmpresa = useMemo(
     () => empresasDisponibles.find((empresa) => String(empresa.empresaId) === String(selectedParentEmpresaId)) ?? null,
     [empresasDisponibles, selectedParentEmpresaId]
@@ -795,6 +832,127 @@ function App() {
   }
 
 
+  // Usuarios para roles que no son Gerente: su propio acceso y, si es Encargado, el equipo (solo consulta).
+  async function loadMiAcceso() {
+    if (!session?.token || session.role === 'Gerente' || session.role === 'Admin') {
+      setMiAcceso(null);
+      setEquipoUsuarios([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/equipo/mi-acceso`, { headers: authHeaders() });
+      if (!response.ok) throw new Error(await response.text());
+      const acceso = await response.json();
+      setMiAcceso(acceso);
+      setEquipoError('');
+
+      if (acceso.puedeVerEquipo) {
+        const equipo = await fetch(`${API_BASE_URL}/api/equipo/usuarios`, { headers: authHeaders() });
+        if (!equipo.ok) throw new Error(await equipo.text());
+        setEquipoUsuarios(await equipo.json());
+      } else {
+        setEquipoUsuarios([]);
+      }
+    } catch (error) {
+      setEquipoError(error.message.replace(/^"|"$/g, '') || 'No se pudo cargar tu acceso.');
+    }
+  }
+
+  async function loadManagerInvitations() {
+    if (!session?.token || session.role !== 'Gerente') {
+      setManagerInvitations([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/manager/invitaciones`, { headers: authHeaders() });
+      if (!response.ok) throw new Error(await response.text());
+      setManagerInvitations(await response.json());
+    } catch (error) {
+      setManagerInvitations([]);
+      setInvitationError(error.message.replace(/^"|"$/g, '') || 'No se pudieron cargar las invitaciones.');
+    }
+  }
+
+  // Invitar por correo: crea la invitacion (OTP asociada al correo) y envia el mail.
+  async function handleCreateInvitation(invitationForm) {
+    if (!session?.token) return false;
+
+    setInvitationSaving('crear');
+    setInvitationError('');
+    setInvitationResult(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/manager/invitaciones`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(invitationForm)
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      const data = await response.json();
+      setInvitationResult(data);
+      await loadManagerInvitations();
+      return true;
+    } catch (error) {
+      setInvitationError(error.message.replace(/^"|"$/g, '') || 'No se pudo enviar la invitación.');
+      return false;
+    } finally {
+      setInvitationSaving('');
+    }
+  }
+
+  async function handleResendInvitation(invitationId) {
+    if (!session?.token) return;
+
+    setInvitationSaving(`reenviar-${invitationId}`);
+    setInvitationError('');
+    setInvitationResult(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/manager/invitaciones/${invitationId}/reenviar`, {
+        method: 'POST',
+        headers: authHeaders()
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      setInvitationResult(await response.json());
+      await loadManagerInvitations();
+    } catch (error) {
+      setInvitationError(error.message.replace(/^"|"$/g, '') || 'No se pudo reenviar la invitación.');
+    } finally {
+      setInvitationSaving('');
+    }
+  }
+
+  async function handleCancelInvitation(invitationId) {
+    if (!session?.token) return false;
+
+    setInvitationSaving(`cancelar-${invitationId}`);
+    setInvitationError('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/manager/invitaciones/${invitationId}/cancelar`, {
+        method: 'POST',
+        headers: authHeaders()
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      setInvitationResult((current) => (current?.invitacion?.id === invitationId ? null : current));
+      await loadManagerInvitations();
+      return true;
+    } catch (error) {
+      setInvitationError(error.message.replace(/^"|"$/g, '') || 'No se pudo cancelar la invitación.');
+      return false;
+    } finally {
+      setInvitationSaving('');
+    }
+  }
+
   async function loadManagerRequests() {
     if (!session?.token || session.role !== 'Gerente') {
       setManagerRequests([]);
@@ -858,6 +1016,25 @@ function App() {
       setManagerTeamError(error.message.replace(/^"|"$/g, '') || 'No se pudieron cargar los usuarios de la empresa.');
     } finally {
       setManagerTeamUsersLoading('');
+    }
+  }
+
+  // Encargado, empleados y Admin: sus empresas salen de UsuarioEmpresas.
+  async function loadMisEmpresas() {
+    if (!session?.token || session.role === 'Gerente') {
+      setMisEmpresas([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/usuarios/mis-empresas`, {
+        headers: authHeaders()
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+      setMisEmpresas(await response.json());
+    } catch {
+      setMisEmpresas([]);
     }
   }
 
@@ -1043,8 +1220,11 @@ function App() {
   useEffect(() => {
     if (session?.type === 'manager-demo') {
       loadManagerContext();
+      loadMisEmpresas();
       loadManagerRequests();
       loadManagerUsers();
+      loadManagerInvitations();
+      loadMiAcceso();
     }
   }, [session?.type, session?.token, session?.role]);
   useEffect(() => {
@@ -1196,6 +1376,18 @@ function App() {
       cerrado
     }));
   }, []);
+
+  function goToInicio() {
+    if (pendingNewCampaignLot && activeModule === 'campanias') {
+      setStatus('Asociá el lote nuevo a la campaña o deshabilitalo antes de salir.');
+      return;
+    }
+    setActiveModule('inicio');
+    setView('list');
+    setSelectedLote(null);
+    setIsMapExpanded(false);
+    setProfileMenuOpen(false);
+  }
 
   function goToList() {
     if (pendingNewCampaignLot && activeModule === 'campanias') {
@@ -1714,13 +1906,79 @@ function App() {
         : data.debeCompletarRegistro
           ? 'manager-onboarding'
           : 'manager-demo';
-      setActiveModule('lotes');
+      setActiveModule('inicio');
       setAuthView('login');
       setJoinRequestStatus('');
       setShowManagerWelcome(sessionType === 'manager-onboarding');
       setSession({ type: sessionType, name: data.nombre, role: data.rol, token: data.token, usuario: data.usuario });
     } catch (error) {
       setLoginError(error.message.replace(/^"|"$/g, ''));
+    }
+  }
+
+  // Enlace de invitacion de empleado: http://.../?unirse=CODIGO&otp=OTP&correo=...
+  // Abre "Solicitar acceso" con los datos precargados y los quita de la URL.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const codigo = params.get('unirse');
+    if (!codigo) return;
+
+    setJoinPrefill({
+      grupoGestionCodigo: codigo.trim().toUpperCase(),
+      otp: (params.get('otp') ?? '').trim().toUpperCase(),
+      correoElectronico: (params.get('correo') ?? '').trim().toLowerCase()
+    });
+    setAuthView('join');
+
+    ['unirse', 'otp', 'correo'].forEach((clave) => params.delete(clave));
+    const query = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+  }, []);
+
+  // Enlace del correo de invitacion: http://.../?activar=TOKEN
+  // Se lee una sola vez al abrir la app y se quita de la URL (no queda en el historial).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('activar');
+    if (!token) return;
+
+    params.delete('activar');
+    const query = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+    handleActivateManagerAccount(token);
+  }, []);
+
+  async function handleActivateManagerAccount(token) {
+    setLoginError('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/activar-gerente`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ token })
+      });
+
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || 'El enlace de activación no es válido o ya venció.');
+      }
+
+      const data = await response.json();
+      const sessionType = data.debeCompletarRegistro ? 'manager-onboarding' : 'manager-demo';
+      setActiveModule('inicio');
+      setAuthView('login');
+      setJoinRequestStatus('');
+      setShowManagerWelcome(sessionType === 'manager-onboarding');
+      setSession({
+        type: sessionType,
+        name: data.nombre,
+        role: data.rol,
+        token: data.token,
+        usuario: data.usuario,
+        correo: data.correoElectronico ?? ''
+      });
+    } catch (error) {
+      setLoginError(error.message.replace(/^"|"$/g, '') || 'El enlace de activación no es válido o ya venció.');
     }
   }
 
@@ -1745,7 +2003,7 @@ function App() {
       }
 
       const data = await response.json();
-      setActiveModule('lotes');
+      setActiveModule('inicio');
       setSession({ type: 'manager-demo', name: data.nombre, role: data.rol, token: data.token, usuario: data.usuario });
     } catch (error) {
       setLoginError(error.message.replace(/^"|"$/g, ''));
@@ -1771,9 +2029,48 @@ function App() {
       const account = adminAccountFromApi(data.cuenta, data.passwordTemporal);
       setAdminAccounts((current) => [account, ...current]);
       setLastGeneratedAccount(account);
+      setAdminEnvio(data.envio ?? null);
+      setAdminError('');
+      return true;
+    } catch (error) {
+      setAdminEnvio(null);
+      setAdminError(error.message.replace(/^"|"$/g, '') || 'No se pudo crear el acceso.');
+      return false;
+    }
+  }
+
+  async function handleResendAdminInvitation(accountId) {
+    if (!session?.token) return;
+
+    setAdminResendingId(accountId);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/cuentas-gerente/${accountId}/reenviar-invitacion`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.token}` }
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      const data = await response.json();
+      const updatedAccount = adminAccountFromApi(data.cuenta);
+      setAdminAccounts((current) =>
+        current.map((item) =>
+          item.id === updatedAccount.id
+            ? { ...updatedAccount, passwordTemporal: item.passwordTemporal ?? null }
+            : item
+        )
+      );
+      setLastGeneratedAccount((current) =>
+        current?.id === updatedAccount.id
+          ? { ...updatedAccount, passwordTemporal: current.passwordTemporal ?? null }
+          : current
+      );
+      setAdminEnvio(data.envio ?? null);
       setAdminError('');
     } catch (error) {
-      setAdminError(error.message.replace(/^"|"$/g, '') || 'No se pudo crear el acceso.');
+      setAdminError(error.message.replace(/^"|"$/g, '') || 'No se pudo reenviar la invitación.');
+    } finally {
+      setAdminResendingId(null);
     }
   }
 
@@ -1798,7 +2095,7 @@ function App() {
     }
   }
 
-  async function handleUpdateAdminResponsible(accountId, responsable) {
+  async function handleUpdateAdminResponsible(accountId, responsable, correoElectronico = '') {
     if (!session?.token) return;
 
     try {
@@ -1808,7 +2105,7 @@ function App() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.token}`
         },
-        body: JSON.stringify({ responsable })
+        body: JSON.stringify({ responsable, correoElectronico: correoElectronico.trim() || null })
       });
 
       if (!response.ok) throw new Error(await response.text());
@@ -1829,8 +2126,10 @@ function App() {
           : current
       );
       setAdminError('');
+      return true;
     } catch (error) {
       setAdminError(error.message.replace(/^"|"$/g, '') || 'No se pudo actualizar el responsable.');
+      return false;
     }
   }
 
@@ -1966,6 +2265,7 @@ function App() {
       <main className={`auth-shell text-size-${textSize}`} onChangeCapture={handleTextCaseCapture}>
         {authView === 'join' ? (
           <JoinTeamPage
+            initialValues={joinPrefill}
             error={loginError}
             status={joinRequestStatus}
             onSubmit={handleJoinTeamRequest}
@@ -2003,6 +2303,7 @@ function App() {
         ) : (
           <ManagerRegistrationPage
             initialName={session.name}
+            initialEmail={session.correo}
             error={loginError}
             onSubmit={handleCompleteManagerRegistration}
             onLogout={handleLogout}
@@ -2020,7 +2321,10 @@ function App() {
           accounts={adminAccounts}
           lastGeneratedAccount={lastGeneratedAccount}
           error={adminError}
+          envio={adminEnvio}
+          resendingId={adminResendingId}
           onCreateAccount={handleCreateAdminAccount}
+          onResendInvitation={handleResendAdminInvitation}
           onRegeneratePassword={handleRegenerateAdminPassword}
           onUpdateResponsible={handleUpdateAdminResponsible}
           onToggleAccountStatus={handleToggleAdminAccountStatus}
@@ -2028,7 +2332,7 @@ function App() {
           copiedKey={copiedKey}
           onLogout={handleLogout}
           onOpenDemo={() => {
-            setActiveModule('lotes');
+            setActiveModule('inicio');
             setSession({ type: 'manager-demo', name: session.name || 'Admin AgroDigital', role: 'Admin', token: session.token, usuario: session.usuario });
           }}
         />
@@ -2053,6 +2357,10 @@ function App() {
           <ChevronDown size={22} />
         </button>
         <nav className="nav-icons" aria-label="Modulos principales">
+          <button className={`nav-item ${activeModule === 'inicio' ? 'nav-item-active' : ''}`} type="button" onClick={goToInicio}>
+            <LayoutDashboard size={23} />
+            <span>Inicio</span>
+          </button>
           <button className={`nav-item ${activeModule === 'users' ? 'nav-item-active' : ''}`} type="button" onClick={() => { navigateModule('users'); setView('list'); setIsMapExpanded(false); setProfileMenuOpen(false); }}>
             <Users size={23} />
             <span>Usuarios</span>
@@ -2085,11 +2393,11 @@ function App() {
             <Home size={23} />
             <span>Almacenamiento</span>
           </button>
-          <button className="nav-item" type="button">
+          <button className={`nav-item ${activeModule === 'distribucion' ? 'nav-item-active' : ''}`} type="button" onClick={() => { navigateModule('distribucion'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
             <Tractor size={23} />
             <span>Distribución</span>
           </button>
-          <button className="nav-item" type="button">
+          <button className={`nav-item ${activeModule === 'estadisticas' ? 'nav-item-active' : ''}`} type="button" onClick={() => { navigateModule('estadisticas'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
             <BarChart3 size={23} />
             <span>Estadísticas</span>
           </button>
@@ -2112,11 +2420,11 @@ function App() {
         <header className="top-header">
           <div className="breadcrumb">
             <img className="header-logo" src={agroDigitalLogo} alt="AgroDigital" />
-            <button className="breadcrumb-home" type="button" aria-label="Inicio" onClick={goToList}>
+            <button className="breadcrumb-home" type="button" aria-label="Inicio" onClick={goToInicio}>
               <Home size={17} />
             </button>
             <button className="breadcrumb-link" type="button" onClick={activeModule === 'lotes' ? goToList : undefined}>
-                          {activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Empresas' : activeModule === 'campanias' ? 'Campañas' : activeModule === 'silos' ? 'Silos' : activeModule === 'siembras' ? 'Siembras' : activeModule === 'cosechas' ? 'Cosechas' : activeModule === 'almacenamiento' ? 'Almacenamiento' : 'Lotes'}
+                          {activeModule === 'inicio' ? 'Inicio' : activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Empresas' : activeModule === 'campanias' ? 'Campañas' : activeModule === 'silos' ? 'Silos' : activeModule === 'siembras' ? 'Siembras' : activeModule === 'cosechas' ? 'Cosechas' : activeModule === 'almacenamiento' ? 'Almacenamiento' : activeModule === 'distribucion' ? 'Distribución' : activeModule === 'estadisticas' ? 'Estadísticas' : 'Lotes'}
             </button>
             {false && activeModule === 'users' && (
               <>
@@ -2136,9 +2444,31 @@ function App() {
               <CheckCircle2 size={15} />
               <span>{status}</span>
             </div>
-            <button className="icon-button" type="button" aria-label="Notificaciones">
-              <Bell size={18} />
-            </button>
+            {(() => {
+              // Campanita: para el Gerente, solicitudes de acceso pendientes de aprobar.
+              const pendientes = session?.role === 'Gerente' ? managerRequests.length : 0;
+              const etiqueta = pendientes === 0
+                ? 'Notificaciones: no hay novedades'
+                : `Notificaciones: ${pendientes} ${pendientes === 1 ? 'solicitud pendiente' : 'solicitudes pendientes'} de aprobación`;
+              return (
+                <button
+                  className="icon-button notification-bell"
+                  type="button"
+                  aria-label={etiqueta}
+                  title={etiqueta.replace('Notificaciones: ', '')}
+                  onClick={() => {
+                    if (pendientes === 0) return;
+                    setActiveModule('users');
+                    setView('list');
+                    setIsMapExpanded(false);
+                    setProfileMenuOpen(false);
+                  }}
+                >
+                  <Bell size={18} />
+                  {pendientes > 0 && <span className="notification-badge">{pendientes > 9 ? '9+' : pendientes}</span>}
+                </button>
+              );
+            })()}
             <UserProfileMenu
               session={session}
               profile={userProfile}
@@ -2174,6 +2504,8 @@ function App() {
             onBack={goToList}
             managerContext={managerContext}
           />
+        ) : activeModule === 'users' && session.role !== 'Gerente' ? (
+          <MyAccessUsersPage acceso={miAcceso} equipo={equipoUsuarios} error={equipoError} />
         ) : activeModule === 'users' ? (
           <ManagerUsersPage
             context={managerContext}
@@ -2190,7 +2522,16 @@ function App() {
             onApproveRequest={handleApproveUserRequest}
             onResolveRequest={handleResolveUserRequest}
             onToggleUserStatus={handleToggleManagerUserStatus}
+            invitations={managerInvitations}
+            invitationSaving={invitationSaving}
+            invitationResult={invitationResult}
+            invitationError={invitationError}
+            onCreateInvitation={handleCreateInvitation}
+            onResendInvitation={handleResendInvitation}
+            onCancelInvitation={handleCancelInvitation}
           />
+        ) : activeModule === 'teams' && session.role !== 'Gerente' ? (
+          <MyCompaniesPage acceso={miAcceso} error={equipoError} />
         ) : activeModule === 'teams' ? (
           <ManagerTeamsPage
             context={managerContext}
@@ -2205,10 +2546,37 @@ function App() {
             onSetPrincipalTeam={handleSetPrincipalTeam}
             onLoadTeamUsers={loadManagerTeamUsers}
           />
+        ) : activeModule === 'inicio' ? (
+          <Inicio
+            session={session}
+            parentFilters={parentFiltersForEmpresaCampania}
+            selectedEmpresaId={selectedParentEmpresaId}
+            selectedCampaniaId={selectedParentCampania ? selectedParentCampaniaId : ''}
+            lotes={parentFilteredLotes}
+            onRegistrarLote={startCreate}
+            onNavigate={(modulo) => {
+              if (modulo === 'lotes') {
+                goToList();
+                return;
+              }
+              navigateModule(modulo);
+              setView('list');
+              setProfileMenuOpen(false);
+              setIsMapExpanded(false);
+            }}
+          />
         ) : activeModule === 'silos' ? (
-          <Silos session={session} lotes={lotes} />
+          <Silos
+            permisos={permisosRol}
+            session={session}
+            lotes={parentFilteredLotes}
+            parentFilters={parentFiltersForEmpresa}
+            selectedEmpresaId={selectedParentEmpresaId}
+            selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
+          />
         ) : activeModule === 'campanias' ? (
           <Campanias
+            permisos={permisosRol}
             session={session}
             lotes={parentFilteredLotes}
             parentFilters={parentFiltersForEmpresa}
@@ -2230,6 +2598,7 @@ function App() {
           />
         ) : activeModule === 'siembras' ? (
           <Siembras
+            permisos={permisosRol}
             session={session}
             lotes={parentFilteredLotes}
             parentFilters={parentFiltersForEmpresaCampania}
@@ -2242,18 +2611,41 @@ function App() {
           />
         ) : activeModule === 'cosechas' ? (
           <Cosechas
+            permisos={permisosRol}
             session={session}
             lotes={parentFilteredLotes}
             parentFilters={parentFiltersForEmpresaCampania}
+            selectedEmpresaId={selectedParentEmpresaId}
             selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
             selectedCampaniaName={selectedParentCampania?.campaniaNombre || ''}
             onLotesChanged={loadLotes}
             onCampaniasChanged={loadParentCampanias}
           />
         ) : activeModule === 'almacenamiento' ? (
-          <Almacenamiento session={session} />
+          <Almacenamiento
+            permisos={permisosRol}
+            session={session}
+            parentFilters={parentFiltersForEmpresa}
+            selectedEmpresaId={selectedParentEmpresaId}
+            selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
+          />
+        ) : activeModule === 'estadisticas' ? (
+          <Estadisticas
+            session={session}
+            parentFilters={parentFiltersForEmpresa}
+            selectedEmpresaId={selectedParentEmpresaId}
+          />
+        ) : activeModule === 'distribucion' ? (
+          <Distribucion
+            permisos={permisosRol}
+            session={session}
+            parentFilters={parentFiltersForEmpresa}
+            selectedEmpresaId={selectedParentEmpresaId}
+            selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
+          />
         ) : view === 'list' ? (
           <LotesList
+            permisos={permisosRol}
             lotes={parentFilteredLotes}
             loading={loading}
             parentFilters={parentFiltersForEmpresa}
@@ -2767,17 +3159,18 @@ function LoginPage({ onLogin, error, onJoin }) {
   );
 }
 
-function JoinTeamPage({ error, status, onSubmit, onBack }) {
+function JoinTeamPage({ initialValues = null, error, status, onSubmit, onBack }) {
   const [form, setForm] = useState({
     nombre: '',
     apellido: '',
     telefono: '',
-    correoElectronico: '',
+    correoElectronico: initialValues?.correoElectronico ?? '',
     password: '',
     repetirPassword: '',
-    grupoGestionCodigo: '',
-    otp: ''
+    grupoGestionCodigo: initialValues?.grupoGestionCodigo ?? '',
+    otp: initialValues?.otp ?? ''
   });
+  const invitedByLink = Boolean(initialValues?.grupoGestionCodigo && initialValues?.otp);
   const [showPassword, setShowPassword] = useState(false);
   const [showRepeatPassword, setShowRepeatPassword] = useState(false);
   const passwordRequirements = useMemo(() => getPasswordRequirements(form.password), [form.password]);
@@ -2857,6 +3250,16 @@ function JoinTeamPage({ error, status, onSubmit, onBack }) {
             <span>El gerente define después tus permisos por empresa.</span>
           </div>
         </div>
+
+        {invitedByLink && (
+          <p className="join-invite-notice" role="status">
+            <CheckCircle2 size={18} />
+            <span>
+              Llegaste desde una invitación: el código del grupo y la OTP ya están cargados.
+              {initialValues?.correoElectronico ? ' Usá el correo en el que la recibiste.' : ''}
+            </span>
+          </p>
+        )}
 
         <div className="join-form-grid">
           <label className="auth-field">
@@ -3010,12 +3413,12 @@ function ManagerWelcomePage({ managerName, onContinue, onLogout }) {
   );
 }
 
-function ManagerRegistrationPage({ initialName, error, onSubmit, onLogout }) {
+function ManagerRegistrationPage({ initialName, initialEmail = '', error, onSubmit, onLogout }) {
   const [form, setForm] = useState({
     nombre: initialName?.split(' ')[0] ?? '',
     apellido: '',
     telefono: '',
-    correoElectronico: '',
+    correoElectronico: initialEmail ?? '',
     password: '',
     repetirPassword: '',
     empresas: ['']
@@ -3239,12 +3642,17 @@ function PasswordRequirements({ requirements, passwordsMatch, repeatTouched }) {
     </section>
   );
 }
+const ADMIN_CORREO_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function AdminPanel({
   accounts,
   lastGeneratedAccount,
   error,
+  envio = null,
+  resendingId = null,
   copiedKey,
   onCreateAccount,
+  onResendInvitation,
   onRegeneratePassword,
   onUpdateResponsible,
   onToggleAccountStatus,
@@ -3252,36 +3660,52 @@ function AdminPanel({
   onLogout,
   onOpenDemo
 }) {
-  const [accountForm, setAccountForm] = useState({ responsable: '' });
+  const [accountForm, setAccountForm] = useState({ responsable: '', correoElectronico: '' });
+  const [creatingAccount, setCreatingAccount] = useState(false);
   const [editingAccountId, setEditingAccountId] = useState(null);
   const [editingResponsible, setEditingResponsible] = useState('');
+  const [editingEmail, setEditingEmail] = useState('');
   const [pendingAccountStatus, setPendingAccountStatus] = useState(null);
   const [updatingAccountStatus, setUpdatingAccountStatus] = useState(false);
 
-  function submitAccount(event) {
-    event.preventDefault();
-    if (!accountForm.responsable.trim()) return;
+  const formEmail = accountForm.correoElectronico.trim();
+  const formEmailInvalid = formEmail.length > 0 && !ADMIN_CORREO_REGEX.test(formEmail);
+  const canCreateAccount = accountForm.responsable.trim() && ADMIN_CORREO_REGEX.test(formEmail) && !creatingAccount;
+  const editingEmailValue = editingEmail.trim();
+  const canSaveEdit = editingResponsible.trim() && (!editingEmailValue || ADMIN_CORREO_REGEX.test(editingEmailValue));
 
-    onCreateAccount(accountForm);
-    setAccountForm({ responsable: '' });
+  async function submitAccount(event) {
+    event.preventDefault();
+    if (!canCreateAccount) return;
+
+    setCreatingAccount(true);
+    const created = await onCreateAccount({
+      responsable: accountForm.responsable.trim(),
+      correoElectronico: formEmail
+    });
+    setCreatingAccount(false);
+
+    // Si el alta falla (ej. correo repetido) se conservan los datos para corregirlos.
+    if (created) setAccountForm({ responsable: '', correoElectronico: '' });
   }
 
   function startResponsibleEdit(account) {
     setEditingAccountId(account.id);
     setEditingResponsible(account.responsable);
+    setEditingEmail(account.correoElectronico ?? '');
   }
 
   function cancelResponsibleEdit() {
     setEditingAccountId(null);
     setEditingResponsible('');
+    setEditingEmail('');
   }
 
-  function saveResponsibleEdit(accountId) {
-    const responsable = editingResponsible.trim();
-    if (!responsable) return;
+  async function saveResponsibleEdit(accountId) {
+    if (!canSaveEdit) return;
 
-    onUpdateResponsible(accountId, responsable);
-    cancelResponsibleEdit();
+    const saved = await onUpdateResponsible(accountId, editingResponsible.trim(), editingEmailValue);
+    if (saved) cancelResponsibleEdit();
   }
 
   async function confirmAccountStatus() {
@@ -3319,7 +3743,7 @@ function AdminPanel({
       <div className="admin-title">
         <div>
           <h1>Accesos iniciales de AgroDigital</h1>
-          <p>Creá credenciales de unico ingreso para responsables que luego completaran su registro.</p>
+          <p>Invitá a cada responsable por correo: recibe un enlace para activar su cuenta y completar su registro.</p>
         </div>
         <span className="admin-secure-pill">
           <CheckCircle2 size={17} />
@@ -3341,7 +3765,7 @@ function AdminPanel({
             </span>
             <div>
               <h2>Crear cuenta gerente</h2>
-              <p>Ingresá el responsable inicial para generar usuario y contraseña temporal.</p>
+              <p>Ingresá el responsable y su correo: le enviamos un enlace para activar su cuenta.</p>
             </div>
           </div>
 
@@ -3355,10 +3779,32 @@ function AdminPanel({
             />
           </label>
 
-          <button className="primary-admin-button" type="submit" disabled={!accountForm.responsable.trim()}>
-            <PlusCircle size={21} />
-            Generar acceso
+          <label className="admin-field">
+            <span>Correo electrónico *</span>
+            <input
+              type="email"
+              value={accountForm.correoElectronico}
+              onChange={(event) => setAccountForm((current) => ({ ...current, correoElectronico: event.target.value }))}
+              placeholder="Ej: juan@empresa.com"
+              aria-invalid={formEmailInvalid}
+              aria-describedby="admin-correo-ayuda"
+              autoComplete="off"
+            />
+          </label>
+          <p id="admin-correo-ayuda" className={`admin-field-help ${formEmailInvalid ? 'admin-field-help-error' : ''}`}>
+            {formEmailInvalid ? 'Revisá el formato del correo (ej: nombre@empresa.com).' : 'A este correo le llega el enlace de activación. Vence en 7 días.'}
+          </p>
+
+          <button className="primary-admin-button" type="submit" disabled={!canCreateAccount}>
+            {creatingAccount ? <LoaderCircle className="spin" size={21} /> : <PlusCircle size={21} />}
+            {creatingAccount ? 'Enviando invitación...' : 'Crear y enviar invitación'}
           </button>
+          {envio && (
+            <p className={`admin-envio ${envio.enviado ? 'admin-envio-ok' : 'admin-envio-error'}`} role="status">
+              {envio.enviado ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+              <span>{envio.mensaje}</span>
+            </p>
+          )}
           {error && <p className="auth-error admin-inline-error">{error}</p>}
         </form>
 
@@ -3368,8 +3814,8 @@ function AdminPanel({
               <KeyRound size={24} />
             </span>
             <div>
-              <h2>Credenciales generadas</h2>
-              <p>Estos datos se entregan al gerente para su primer ingreso.</p>
+              <h2>Credenciales de respaldo</h2>
+              <p>Si el correo no llega, compartí estos datos con el gerente para su primer ingreso.</p>
             </div>
           </div>
 
@@ -3412,6 +3858,7 @@ function AdminPanel({
               <thead>
                 <tr>
                   <th>Responsable</th>
+                  <th>Invitación</th>
                   <th>Usuario inicial</th>
                   <th>Contraseña temporal</th>
                   <th>Grupo de gestión</th>
@@ -3429,10 +3876,20 @@ function AdminPanel({
                           <input
                             value={editingResponsible}
                             onChange={(event) => setEditingResponsible(event.target.value)}
+                            aria-label="Responsable"
                             autoFocus
                           />
+                          {account.estado === 'Pendiente de primer ingreso' && (
+                            <input
+                              type="email"
+                              value={editingEmail}
+                              onChange={(event) => setEditingEmail(event.target.value)}
+                              aria-label="Correo electrónico"
+                              placeholder="Correo electrónico"
+                            />
+                          )}
                           <div>
-                            <button type="button" onClick={() => saveResponsibleEdit(account.id)} disabled={!editingResponsible.trim()}>
+                            <button type="button" onClick={() => saveResponsibleEdit(account.id)} disabled={!canSaveEdit}>
                               Guardar
                             </button>
                             <button type="button" onClick={cancelResponsibleEdit}>
@@ -3441,8 +3898,18 @@ function AdminPanel({
                           </div>
                         </div>
                       ) : (
-                        <strong className="admin-responsible-name">{account.responsable}</strong>
+                        <>
+                          <strong className="admin-responsible-name">{account.responsable}</strong>
+                          {account.correoElectronico && <small className="admin-responsible-email">{account.correoElectronico}</small>}
+                        </>
                       )}
+                    </td>
+                    <td>
+                      <AdminInvitationCell
+                        account={account}
+                        resending={resendingId === account.id}
+                        onResend={() => onResendInvitation(account.id)}
+                      />
                     </td>
                     <td>
                       <InlineCredential value={account.usuario} onCopy={onCopy} label="usuario inicial" copied={copiedKey === account.usuario} />
@@ -3506,6 +3973,47 @@ function AdminPanel({
         />
       )}
     </section>
+  );
+}
+
+function AdminInvitationCell({ account, resending, onResend }) {
+  const pending = account.estado === 'Pendiente de primer ingreso';
+
+  if (!account.correoElectronico) {
+    return (
+      <div className="admin-invite">
+        <span className="admin-invite-chip admin-invite-sin-correo">Sin correo</span>
+        {pending && <small>Editá el acceso para cargarlo.</small>}
+      </div>
+    );
+  }
+
+  if (!pending) {
+    return (
+      <div className="admin-invite">
+        <span className="admin-invite-chip admin-invite-ok">{account.estado === 'Usado' ? 'Activada' : 'Cerrada'}</span>
+      </div>
+    );
+  }
+
+  const estado = account.estadoEnvio || 'Pendiente';
+  const chip = { Enviado: 'admin-invite-ok', Error: 'admin-invite-error' }[estado] ?? 'admin-invite-pendiente';
+  const texto = { Enviado: 'Enviada', Error: 'No se pudo enviar' }[estado] ?? 'Sin enviar';
+
+  return (
+    <div className="admin-invite">
+      <span className={`admin-invite-chip ${chip}`}>{texto}</span>
+      {account.fechaUltimoEnvio && (
+        <small>
+          {account.fechaUltimoEnvio}
+          {account.cantidadEnvios > 1 ? ` · ${account.cantidadEnvios} envíos` : ''}
+        </small>
+      )}
+      <button className="regenerate-password-button" type="button" onClick={onResend} disabled={resending}>
+        {resending ? <LoaderCircle className="spin" size={15} /> : <Mail size={15} />}
+        {resending ? 'Enviando...' : 'Reenviar'}
+      </button>
+    </div>
   );
 }
 
@@ -3733,7 +4241,13 @@ function AccessibilityControl({ open, textSize, onToggle, onClose, onSelectSize 
 }
 
 
-function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp, onGenerateOtp, onCopy, requests = [], users = [], userSaving, actionStatus, onApproveRequest, onResolveRequest, onToggleUserStatus }) {
+function ManagerUsersPage({
+  context, error, generatedOtp, copiedKey, loadingOtp, onGenerateOtp, onCopy,
+  requests = [], users = [], userSaving, actionStatus, onApproveRequest, onResolveRequest, onToggleUserStatus,
+  invitations = [], invitationSaving = '', invitationResult = null, invitationError = '',
+  onCreateInvitation, onResendInvitation, onCancelInvitation
+}) {
+  const [invitationTab, setInvitationTab] = useState('correo');
   const empresas = context?.empresas ?? [];
   const [userFilters, setUserFilters] = useState({
     search: '',
@@ -3777,9 +4291,17 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
           <h1>Usuarios</h1>
           <p>Gestioná accesos, solicitudes y empresas vinculadas a tu grupo de gestión.</p>
         </div>
-        <button className="green-button add-lote-button" type="button" onClick={onGenerateOtp} disabled={loadingOtp || !context?.grupoGestionCodigo}>
-          {loadingOtp ? <LoaderCircle className="spin-icon" size={18} /> : <KeyRound size={18} />}
-          <span>{loadingOtp ? 'Generando...' : 'Generar OTP'}</span>
+        <button
+          className="green-button add-lote-button"
+          type="button"
+          onClick={() => {
+            setInvitationTab('correo');
+            document.getElementById('invitacion-correo')?.focus();
+          }}
+          disabled={!context?.grupoGestionCodigo}
+        >
+          <UserPlus size={18} />
+          <span>Invitar empleado</span>
         </button>
       </div>
 
@@ -3793,35 +4315,23 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
       </div>
 
       <div className="manager-users-grid">
-        <section className="dashboard-card users-card invitation-card">
-          <div className="card-heading">
-            <div className="card-heading-icon"><KeyRound size={18} /></div>
-            <div>
-              <h2>Invitación segura</h2>
-              <p>El empleado se une con el código del grupo y una OTP de un solo uso.</p>
-            </div>
-          </div>
-          <div className="otp-preview-card">
-            <div className="otp-value-row">
-              <div>
-                <span>Código de grupo</span>
-                <strong>{context?.grupoGestionCodigo ?? 'Se carga al completar registro'}</strong>
-              </div>
-              <button className={`otp-copy-button ${copiedKey === context?.grupoGestionCodigo ? 'copy-button-copied' : ''}`} type="button" onClick={() => onCopy(context?.grupoGestionCodigo)} disabled={!context?.grupoGestionCodigo} aria-label="Copiar código de grupo">
-                {copiedKey === context?.grupoGestionCodigo ? <CheckCircle2 size={18} /> : <Copy size={18} />}
-              </button>
-            </div>
-
-            {generatedOtp ? (
-              <div className="otp-generated-box">
-                <OtpSecretCredential value={generatedOtp.otp} copied={copiedKey === generatedOtp.otp} onCopy={onCopy} />
-                <p>Vence el {otpExpiration}. Es de un solo uso y se guarda protegida en la base de datos.</p>
-              </div>
-            ) : (
-              <p>Generá una OTP cuando quieras invitar a un empleado. Se vence a los 7 días y solo puede usarse una vez.</p>
-            )}
-          </div>
-        </section>
+        <EmployeeInvitationCard
+          context={context}
+          tab={invitationTab}
+          onTabChange={setInvitationTab}
+          invitations={invitations}
+          saving={invitationSaving}
+          result={invitationResult}
+          error={invitationError}
+          generatedOtp={generatedOtp}
+          loadingOtp={loadingOtp}
+          copiedKey={copiedKey}
+          onCopy={onCopy}
+          onGenerateOtp={onGenerateOtp}
+          onCreate={onCreateInvitation}
+          onResend={onResendInvitation}
+          onCancel={onCancelInvitation}
+        />
 
         <section className="dashboard-card users-card">
           <div className="card-heading">
@@ -3946,7 +4456,7 @@ function ManagerUsersPage({ context, error, generatedOtp, copiedKey, loadingOtp,
   );
 }
 
-function ApprovedUserRow({ user, saving, onToggleStatus }) {
+function ApprovedUserRow({ user, saving, onToggleStatus, readOnly = false }) {
   const fullName = `${user.nombre ?? ''} ${user.apellido ?? ''}`.trim() || user.correoElectronico;
   const action = user.activo ? 'deshabilitar' : 'habilitar';
   const isSaving = saving === `${action}-${user.usuarioId}`;
@@ -3980,7 +4490,7 @@ function ApprovedUserRow({ user, saving, onToggleStatus }) {
       </div>
       <div className="approved-user-status-actions">
         <em className={user.activo ? 'company-active' : 'company-disabled'}>{user.activo ? 'Habilitado' : 'Deshabilitado'}</em>
-        <button
+        {!readOnly && <button
           className={'team-action-button ' + (user.activo ? 'team-danger-action' : 'team-enable-action')}
           type="button"
           onClick={() => onToggleStatus(user)}
@@ -3988,9 +4498,205 @@ function ApprovedUserRow({ user, saving, onToggleStatus }) {
         >
           {isSaving ? <LoaderCircle className="spin-icon" size={16} /> : user.activo ? <Trash2 size={16} /> : <CheckCircle2 size={16} />}
           {user.activo ? 'Deshabilitar' : 'Habilitar'}
-        </button>
+        </button>}
       </div>
     </article>
+  );
+}
+
+/**
+ * Empresas para quien NO es Gerente: solo consulta de las empresas en las que tiene acceso.
+ * Crear, editar, deshabilitar o cambiar la principal es exclusivo del Gerente (la API lo valida).
+ */
+function MyCompaniesPage({ acceso, error }) {
+  const grupos = acceso?.grupos ?? [];
+  const empresas = grupos.flatMap((grupo) => grupo.empresas.map((empresa) => ({ ...empresa, grupo })));
+  const principal = empresas.find((empresa) => empresa.esPrincipal) ?? empresas[0];
+
+  return (
+    <section className="content-panel manager-users-panel">
+      <div className="page-heading">
+        <div>
+          <h1>Empresas</h1>
+          <p>Consultá las empresas en las que tenés acceso. Las empresas las administra el Gerente de tu grupo.</p>
+        </div>
+      </div>
+
+      {error && <p className="auth-error">{error}</p>}
+
+      <div className="summary-grid users-summary-grid">
+        <SummaryCard icon={<Building2 size={30} />} label="Empresas asignadas" value={empresas.length} helper="Empresas en las que tenés acceso" />
+        <SummaryCard icon={<Building2 size={30} />} label="Empresa principal" value={principal?.nombre ?? 'Sin empresa'} helper={principal ? `Tu rol: ${formatRole(principal.rol)}` : 'Todavía no tenés empresas asignadas'} />
+        <SummaryCard icon={<Users size={30} />} label="Grupo de gestión" value={grupos[0]?.codigo ?? 'Sin grupo'} helper={grupos[0] ? `Gerente: ${grupos[0].gerente}` : 'Todavía no pertenecés a un grupo'} />
+      </div>
+
+      <section className="dashboard-card users-card my-access-card">
+        <div className="card-heading">
+          <div className="card-heading-icon"><Building2 size={18} /></div>
+          <div>
+            <h2>Tus empresas</h2>
+            <p>Solo consulta: para sumar, editar o deshabilitar empresas, contactá al Gerente.</p>
+          </div>
+          <span className="points-count">{empresas.length} {empresas.length === 1 ? 'empresa' : 'empresas'}</span>
+        </div>
+
+        {empresas.length === 0 ? (
+          <div className="users-inline-empty">
+            <Building2 size={42} />
+            <strong>Todavía no tenés empresas asignadas.</strong>
+            <span>Cuando el Gerente te dé acceso a una empresa, vas a verla acá.</span>
+          </div>
+        ) : (
+          <div className="my-companies-list">
+            {empresas.map((empresa) => (
+              <article className="my-company-row" key={empresa.empresaId}>
+                <span className="my-company-icon"><Building2 size={20} /></span>
+                <div className="my-company-main">
+                  <strong>{empresa.nombre}</strong>
+                  <small>Grupo {empresa.grupo.codigo} · Gerente: {empresa.grupo.gerente}</small>
+                </div>
+                <div className="my-company-tags">
+                  <em className="role-chip">{formatRole(empresa.rol)}</em>
+                  {empresa.esPrincipal && <small className="my-access-principal">Principal</small>}
+                  <em className="company-active">Activa</em>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    </section>
+  );
+}
+
+/**
+ * Usuarios para quien NO es Gerente: solo consulta.
+ *  - Todos ven "Mi acceso": grupo, gerente, empresas y su rol en cada una.
+ *  - El Encargado ademas ve el equipo de las empresas donde es Encargado, sin acciones.
+ */
+function MyAccessUsersPage({ acceso, equipo = [], error }) {
+  const [search, setSearch] = useState('');
+  const grupos = acceso?.grupos ?? [];
+  const empresas = grupos.flatMap((grupo) => grupo.empresas);
+  const principal = empresas.find((empresa) => empresa.esPrincipal) ?? empresas[0];
+  const texto = normalizeSearchText(search.trim());
+  const equipoFiltrado = equipo.filter((user) => !texto || normalizeSearchText([
+    user.nombre, user.apellido, user.correoElectronico, formatRole(user.rolGeneral),
+    ...(user.empresas ?? []).flatMap((empresa) => [empresa.empresaNombre, formatRole(empresa.rol)])
+  ].filter(Boolean).join(' ')).includes(texto));
+
+  return (
+    <section className="content-panel manager-users-panel">
+      <div className="page-heading">
+        <div>
+          <h1>Usuarios</h1>
+          <p>
+            {acceso?.puedeVerEquipo
+              ? 'Consultá tu acceso y el equipo de tus empresas. Los accesos los gestiona el Gerente.'
+              : 'Consultá tu acceso a AgroDigital. Los accesos los gestiona el Gerente de tu grupo.'}
+          </p>
+        </div>
+      </div>
+
+      {error && <p className="auth-error">{error}</p>}
+
+      <div className="summary-grid users-summary-grid">
+        <SummaryCard
+          icon={<Users size={30} />}
+          label="Grupo de gestión"
+          value={grupos[0]?.codigo ?? 'Sin grupo'}
+          helper={grupos.length > 1 ? `y ${grupos.length - 1} grupo(s) más` : grupos[0] ? `Gerente: ${grupos[0].gerente}` : 'Todavía no pertenecés a un grupo'}
+        />
+        <SummaryCard icon={<Building2 size={30} />} label="Empresa principal" value={principal?.nombre ?? 'Sin empresa'} helper={principal ? `Tu rol: ${formatRole(principal.rol)}` : 'Todavía no tenés empresas asignadas'} />
+        <SummaryCard icon={<ShieldCheck size={30} />} label="Empresas asignadas" value={empresas.length} helper="Empresas en las que tenés acceso" />
+      </div>
+
+      <section className="dashboard-card users-card my-access-card">
+        <div className="card-heading">
+          <div className="card-heading-icon"><ShieldCheck size={18} /></div>
+          <div>
+            <h2>Mi acceso</h2>
+            <p>Tu rol puede ser distinto en cada empresa. Si necesitás un cambio, pedíselo al Gerente.</p>
+          </div>
+        </div>
+
+        {grupos.length === 0 ? (
+          <div className="users-inline-empty">
+            <Building2 size={42} />
+            <strong>Todavía no tenés empresas asignadas.</strong>
+            <span>Cuando el Gerente apruebe tu acceso, vas a verlas acá.</span>
+          </div>
+        ) : grupos.map((grupo) => (
+          <div className="my-access-group" key={grupo.grupoGestionId}>
+            <div className="my-access-block">
+              <small className="my-access-label">Tus empresas y tu rol</small>
+              <div className="my-access-companies">
+                {grupo.empresas.map((empresa) => (
+                  <span className="team-role-pill" key={empresa.empresaId}>
+                    <Building2 size={14} />
+                    <strong>{empresa.nombre}</strong>
+                    <em>{formatRole(empresa.rol)}</em>
+                    {empresa.esPrincipal && <small className="my-access-principal">Principal</small>}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="my-access-contact">
+              <span className="approved-user-avatar"><User size={20} /></span>
+              <div>
+                <small className="my-access-label">Tu gerente</small>
+                <strong>{grupo.gerente}</strong>
+                <span className="my-access-contact-text">
+                  Gestiona los accesos de {grupo.empresas.map((empresa) => empresa.nombre).join(', ')}.
+                  {grupo.gerenteCorreo ? ' Escribile si necesitás un cambio:' : ''}
+                </span>
+                {grupo.gerenteCorreo && (
+                  <a href={`mailto:${grupo.gerenteCorreo}`}><Mail size={14} /> {grupo.gerenteCorreo}</a>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </section>
+
+      {acceso?.puedeVerEquipo && (
+        <section className="dashboard-card users-card approved-users-card">
+          <div className="card-heading">
+            <div className="card-heading-icon"><Users size={18} /></div>
+            <div>
+              <h2>Equipo de tus empresas</h2>
+              <p>Solo consulta: invitar, aprobar o deshabilitar usuarios lo hace el Gerente.</p>
+            </div>
+            <span className="points-count">{equipo.length} {equipo.length === 1 ? 'persona' : 'personas'}</span>
+          </div>
+
+          <div className="approved-users-filters">
+            <label className="filter-search-field">
+              <Search size={18} />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar por nombre, correo, empresa o rol"
+                aria-label="Buscar en el equipo"
+              />
+            </label>
+          </div>
+
+          {equipoFiltrado.length === 0 ? (
+            <div className="pending-users-empty-row approved-users-empty-row">
+              <Users size={34} />
+              <strong>{equipo.length === 0 ? 'Todavía no hay otras personas en tus empresas' : 'No hay resultados para esa búsqueda'}</strong>
+            </div>
+          ) : (
+            <div className="approved-users-table">
+              {equipoFiltrado.map((user) => (
+                <ApprovedUserRow key={user.usuarioId} user={user} readOnly />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+    </section>
   );
 }
 
@@ -4375,6 +5081,242 @@ function PendingUserRequestCard({ request, empresas, onApprove, onResolve }) {
     </article>
   );
 }
+const INVITACION_CORREO_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Enlace que abre "Solicitar acceso" con el codigo y la OTP (y el correo) precargados. */
+function buildJoinLink(codigo, otp, correo = '') {
+  const params = new URLSearchParams({ unirse: codigo, otp });
+  if (correo) params.set('correo', correo);
+  return `${window.location.origin}/?${params.toString()}`;
+}
+
+/** Mensaje listo para pegar en WhatsApp u otro medio. */
+function buildInvitationMessage({ codigo, otp, correo = '', vence = null }) {
+  const venceTexto = vence
+    ? new Date(vence).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : null;
+
+  return [
+    '¡Hola! Te invito a sumarte a nuestro equipo en AgroDigital.',
+    '',
+    `1. Entrá a este enlace: ${buildJoinLink(codigo, otp, correo)}`,
+    '2. Completá tus datos y enviá la solicitud. Después la apruebo y te asigno un rol.',
+    '',
+    'Si preferís cargarlos a mano, en "Solicitar acceso":',
+    `Código de grupo: ${codigo}`,
+    `OTP: ${otp}`,
+    correo ? `Usá este correo: ${correo}` : null,
+    venceTexto ? `Es de un solo uso y vence el ${venceTexto}.` : 'Es de un solo uso.'
+  ].filter((linea) => linea !== null).join('\n');
+}
+
+function ShareInvitationActions({ message, copiedKey, onCopy }) {
+  return (
+    <div className="invite-share-actions">
+      <button className={`invite-share-button ${copiedKey === message ? 'invite-share-button-copied' : ''}`} type="button" onClick={() => onCopy(message)}>
+        {copiedKey === message ? <CheckCircle2 size={16} /> : <Copy size={16} />}
+        {copiedKey === message ? 'Mensaje copiado' : 'Copiar mensaje'}
+      </button>
+      <a className="invite-share-button" href={`https://wa.me/?text=${encodeURIComponent(message)}`} target="_blank" rel="noreferrer">
+        <MessageCircle size={16} />
+        Compartir por WhatsApp
+      </a>
+    </div>
+  );
+}
+
+function EmployeeInvitationCard({
+  context, tab, onTabChange, invitations, saving, result, error,
+  generatedOtp, loadingOtp, copiedKey, onCopy, onGenerateOtp, onCreate, onResend, onCancel
+}) {
+  const [form, setForm] = useState({ correoElectronico: '', nombre: '' });
+  const [confirmCancelId, setConfirmCancelId] = useState(null);
+  const codigo = context?.grupoGestionCodigo ?? '';
+  const correo = form.correoElectronico.trim();
+  const correoInvalido = correo.length > 0 && !INVITACION_CORREO_REGEX.test(correo);
+  const creating = saving === 'crear';
+  const canSend = Boolean(codigo) && INVITACION_CORREO_REGEX.test(correo) && !creating;
+
+  async function submit(event) {
+    event.preventDefault();
+    if (!canSend) return;
+    const ok = await onCreate({ correoElectronico: correo, nombre: form.nombre.trim() || null });
+    if (ok) setForm({ correoElectronico: '', nombre: '' });
+  }
+
+  async function confirmCancel(id) {
+    const ok = await onCancel(id);
+    if (ok) setConfirmCancelId(null);
+  }
+
+  const fallbackMessage = result && !result.envio?.enviado
+    ? buildInvitationMessage({ codigo: result.grupoGestionCodigo, otp: result.otp, correo: result.invitacion?.correoElectronico, vence: result.invitacion?.fechaVencimiento })
+    : '';
+  const manualMessage = generatedOtp
+    ? buildInvitationMessage({ codigo: generatedOtp.grupoGestionCodigo ?? codigo, otp: generatedOtp.otp, vence: generatedOtp.fechaVencimiento })
+    : '';
+
+  return (
+    <section className="dashboard-card users-card invitation-card">
+      <div className="card-heading">
+        <div className="card-heading-icon"><KeyRound size={18} /></div>
+        <div>
+          <h2>Invitación segura</h2>
+          <p>Invitá a una persona por correo o compartí el código manualmente.</p>
+        </div>
+      </div>
+
+      <div className="invite-tabs" role="tablist" aria-label="Forma de invitar">
+        <button type="button" role="tab" aria-selected={tab === 'correo'} className={tab === 'correo' ? 'active' : ''} onClick={() => onTabChange('correo')}>
+          <Mail size={16} /> Por correo
+        </button>
+        <button type="button" role="tab" aria-selected={tab === 'manual'} className={tab === 'manual' ? 'active' : ''} onClick={() => onTabChange('manual')}>
+          <Copy size={16} /> Compartir manualmente
+        </button>
+      </div>
+
+      {tab === 'correo' ? (
+        <div className="invite-panel" role="tabpanel">
+          <form className="invite-form" onSubmit={submit}>
+            <label className="invite-field">
+              <span>Correo electrónico *</span>
+              <input
+                id="invitacion-correo"
+                type="email"
+                value={form.correoElectronico}
+                onChange={(event) => setForm((current) => ({ ...current, correoElectronico: event.target.value }))}
+                placeholder="juan.perez@correo.com"
+                aria-invalid={correoInvalido}
+                autoComplete="off"
+              />
+            </label>
+            <label className="invite-field">
+              <span>Nombre (opcional)</span>
+              <input
+                type="text"
+                value={form.nombre}
+                onChange={(event) => setForm((current) => ({ ...current, nombre: event.target.value }))}
+                placeholder="Para saludarlo en el correo"
+                maxLength={150}
+              />
+            </label>
+            <p className={`invite-help ${correoInvalido ? 'invite-help-error' : ''}`}>
+              {correoInvalido
+                ? 'Revisá el formato del correo (ej: nombre@empresa.com).'
+                : 'Le llega el código del grupo y una OTP que solo sirve con este correo. Vence en 7 días.'}
+            </p>
+            <button className="green-button invite-send-button" type="submit" disabled={!canSend}>
+              {creating ? <LoaderCircle className="spin-icon" size={18} /> : <Send size={18} />}
+              <span>{creating ? 'Enviando...' : 'Enviar invitación'}</span>
+            </button>
+          </form>
+
+          {error && <p className="auth-error">{error}</p>}
+
+          {result?.envio && (
+            <div className={`invite-result ${result.envio.enviado ? 'invite-result-ok' : 'invite-result-error'}`} role="status">
+              <p>
+                {result.envio.enviado ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+                <span>{result.envio.mensaje}</span>
+              </p>
+              {!result.envio.enviado && (
+                <>
+                  <small>Compartí este mensaje por otro medio. La OTP no se vuelve a mostrar.</small>
+                  <ShareInvitationActions message={fallbackMessage} copiedKey={copiedKey} onCopy={onCopy} />
+                </>
+              )}
+            </div>
+          )}
+
+          <div className="invite-list-heading">
+            <strong>Invitaciones enviadas</strong>
+            <span>{invitations.length}</span>
+          </div>
+
+          {invitations.length === 0 ? (
+            <p className="invite-empty">Todavía no hay invitaciones pendientes.</p>
+          ) : (
+            <ul className="invite-list">
+              {invitations.map((inv) => {
+                const vencida = inv.estado === 'Vencida';
+                const chip = vencida ? 'vencida' : inv.estadoEnvio === 'Error' ? 'error' : inv.estadoEnvio === 'Enviado' ? 'ok' : 'pendiente';
+                const chipText = vencida ? 'Vencida' : inv.estadoEnvio === 'Error' ? 'No se pudo enviar' : inv.estadoEnvio === 'Enviado' ? 'Enviada' : 'Sin enviar';
+                const vence = new Date(inv.fechaVencimiento).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+                const resending = saving === `reenviar-${inv.id}`;
+                const cancelling = saving === `cancelar-${inv.id}`;
+
+                return (
+                  <li key={inv.id}>
+                    <div className="invite-item-main">
+                      <strong>{inv.nombre || inv.correoElectronico}</strong>
+                      {inv.nombre && <small>{inv.correoElectronico}</small>}
+                      <small>
+                        {vencida ? `Venció el ${vence}` : `Vence el ${vence}`}
+                        {inv.cantidadEnvios > 1 ? ` · ${inv.cantidadEnvios} envíos` : ''}
+                      </small>
+                    </div>
+                    <span className={`invite-chip invite-chip-${chip}`}>{chipText}</span>
+                    {confirmCancelId === inv.id ? (
+                      <div className="invite-item-actions">
+                        <span className="invite-confirm-text">¿Cancelar?</span>
+                        <button type="button" className="invite-action invite-action-danger" onClick={() => confirmCancel(inv.id)} disabled={cancelling}>
+                          {cancelling ? <LoaderCircle className="spin-icon" size={14} /> : null} Sí
+                        </button>
+                        <button type="button" className="invite-action" onClick={() => setConfirmCancelId(null)} disabled={cancelling}>No</button>
+                      </div>
+                    ) : (
+                      <div className="invite-item-actions">
+                        <button type="button" className="invite-action" onClick={() => onResend(inv.id)} disabled={Boolean(saving)}>
+                          {resending ? <LoaderCircle className="spin-icon" size={14} /> : <RotateCcw size={14} />}
+                          {resending ? 'Enviando...' : 'Reenviar'}
+                        </button>
+                        <button type="button" className="invite-action invite-action-danger" onClick={() => setConfirmCancelId(inv.id)} disabled={Boolean(saving)}>
+                          <XCircle size={14} /> Cancelar
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      ) : (
+        <div className="invite-panel" role="tabpanel">
+          <div className="otp-preview-card">
+            <div className="otp-value-row">
+              <div>
+                <span>Código de grupo</span>
+                <strong>{codigo || 'Se carga al completar registro'}</strong>
+              </div>
+              <button className={`otp-copy-button ${copiedKey === codigo ? 'copy-button-copied' : ''}`} type="button" onClick={() => onCopy(codigo)} disabled={!codigo} aria-label="Copiar código de grupo">
+                {copiedKey === codigo ? <CheckCircle2 size={18} /> : <Copy size={18} />}
+              </button>
+            </div>
+
+            {generatedOtp ? (
+              <div className="otp-generated-box">
+                <OtpSecretCredential value={generatedOtp.otp} copied={copiedKey === generatedOtp.otp} onCopy={onCopy} />
+                <p>
+                  Vence el {new Date(generatedOtp.fechaVencimiento).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}.
+                  Es de un solo uso y no está asociada a ningún correo: compartila solo con la persona que querés sumar.
+                </p>
+                <ShareInvitationActions message={manualMessage} copiedKey={copiedKey} onCopy={onCopy} />
+              </div>
+            ) : (
+              <p>Generá una OTP para compartirla por WhatsApp u otro medio. Vence a los 7 días y solo puede usarse una vez.</p>
+            )}
+          </div>
+          <button className="invite-generate-button" type="button" onClick={onGenerateOtp} disabled={loadingOtp || !codigo}>
+            {loadingOtp ? <LoaderCircle className="spin-icon" size={16} /> : <KeyRound size={16} />}
+            {loadingOtp ? 'Generando...' : generatedOtp ? 'Generar otra OTP' : 'Generar OTP'}
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function OtpSecretCredential({ value, copied, onCopy }) {
   const [isVisible, setIsVisible] = useState(false);
   const displayValue = isVisible ? value : '••••••••••••';
@@ -4630,7 +5572,7 @@ function ParentSearchSelect({ label, value, options, placeholder, onChange }) {
   );
 }
 
-function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onToggleStatus, statusSaving, activeCampaignEmpresaIds }) {
+function LotesList({ permisos = { estructura: true }, lotes, loading, parentFilters, onAdd, onView, onEdit, onToggleStatus, statusSaving, activeCampaignEmpresaIds }) {
   const [query, setQuery] = useState('');
   const [conditionFilter, setConditionFilter] = useState('');
   const [zoneFilter, setZoneFilter] = useState('');
@@ -4717,10 +5659,10 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
             <FileText size={18} />
             <span>Exportar PDF{selectedLotes.length > 0 ? ` (${selectedLotes.length})` : ''}</span>
           </button>
-          <button className="green-button add-lote-button" type="button" onClick={onAdd}>
+          <>{permisos.estructura && (<button className="green-button add-lote-button" type="button" onClick={onAdd}>
             <PlusCircle size={18} />
             <span>Registrar lote</span>
-          </button>
+          </button>)}</>
         </div>
       </div>
       {parentFilters}
@@ -4800,7 +5742,7 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
           icon={<Tractor size={104} strokeWidth={1.8} />}
           title="Aun no tenes lotes registrados..."
           description="Registra tus lotes y comenza a operar con AgroDigital."
-          actionLabel="Registrar lote"
+          actionLabel={permisos.estructura ? 'Registrar lote' : undefined}
           onAction={onAdd}
         />
       ) : filteredLotes.length === 0 ? (
@@ -4857,8 +5799,8 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
                     <td className="actions-cell lote-actions-cell">
                       <div className="actions-cell-content">
                       <button className="table-action-tooltip" data-tooltip="Ver detalle" type="button" aria-label={`Ver ${lote.nombre}`} onClick={() => onView(lote)}><Eye size={18} /></button>
-                      <button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label={`Editar ${lote.nombre}`} onClick={() => onEdit(lote)}><Edit size={18} /></button>
-                      <button
+                      <>{permisos.estructura && (<button className="table-action-tooltip" data-tooltip="Editar" type="button" aria-label={`Editar ${lote.nombre}`} onClick={() => onEdit(lote)}><Edit size={18} /></button>)}</>
+                      <>{permisos.estructura && (<button
                         className={`table-action-tooltip status-action-button ${lote.activo ? 'status-action-disable' : 'status-action-enable'}`}
                         data-tooltip={lote.activo && activeCampaignEmpresaIds?.has(String(lote.empresaId)) ? 'Desde Campañas' : lote.activo ? 'Deshabilitar' : 'Habilitar'}
                         type="button"
@@ -4870,7 +5812,7 @@ function LotesList({ lotes, loading, parentFilters, onAdd, onView, onEdit, onTog
                           ? <LoaderCircle className="spin" size={18} />
                           : lote.activo ? <Ban size={18} /> : <CheckCircle2 size={18} />}
                         <span>{lote.activo ? 'Deshabilitar' : 'Habilitar'}</span>
-                      </button>
+                      </button>)}</>
                       </div>
                     </td>
                   </tr>

@@ -1,34 +1,90 @@
+using System.Globalization;
+using System.Text;
 using AgroDigital.Api.Dtos;
 using Microsoft.Data.SqlClient;
 
 namespace AgroDigital.Api.Repositories;
 
+/*
+    Rediseno de Silos y Almacenamiento - fase 2.
+
+    Reglas que aplica este repositorio (ver propuesta funcional):
+      - Acceso por empresa: un usuario solo ve y mueve grano de silos de sus
+        empresas (dbo.UsuarioEmpresas). Admin ve todo. Mismo criterio que Lotes.
+      - Un grano por silo: solo se ingresa el mismo grano que ya contiene, o
+        cualquiera si esta vacio.
+      - Capacidad: un ingreso no puede superar la capacidad libre del silo.
+      - Saldo de cosecha: un ingreso vinculado no puede superar lo cosechado
+        menos lo ya almacenado.
+      - Silo inhabilitado: no recibe ingresos si esta En mantenimiento o Dado de baja.
+      - Fechas: no posteriores a hoy ni anteriores al ultimo movimiento del silo
+        (asi el orden por fecha coincide con la cadena StockAnterior/StockResultante).
+      - Partidas FIFO: cada ingreso abre una partida; los egresos consumen primero
+        la mas antigua y quedan registrados en AlmacenamientoPartidaConsumos.
+      - Estado operativo del silo: Vacio / Con grano se mantiene solo.
+*/
 public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenamientoRepository
 {
     private readonly string _connectionString =
         configuration.GetConnectionString("AgroDigital")
         ?? throw new InvalidOperationException("No se encontro la cadena de conexion AgroDigital.");
 
+    // Mismo criterio que Lotes y Silos: el usuario ve lo de sus empresas; Admin ve todo.
+    private const string AccesoSilo = """
+        (@IncluirTodos = 1 OR EXISTS (
+            SELECT 1 FROM dbo.UsuarioEmpresas AS ue
+            WHERE ue.UsuarioId = @UsuarioId AND ue.EmpresaId = s.EmpresaId AND ue.Activo = 1))
+        """;
+
     private const string SelectBase = """
         SELECT
             a.AlmacenamientoId, a.SiloId, s.Nombre AS SiloNombre, s.Producto AS SiloProducto,
             a.Fecha, a.TipoMovimiento, a.Cantidad, a.StockAnterior, a.StockResultante,
-            a.Origen, a.Observaciones, a.Campania, a.Cosecha, u.Nombre + ' ' + u.Apellido AS CreadoPorNombre,
-            a.FechaCreacion, a.FechaModificacion
+            a.Origen, a.Observaciones, a.Campania, a.Cosecha, a.Producto, u.Nombre + ' ' + u.Apellido AS CreadoPorNombre,
+            a.FechaCreacion, a.FechaModificacion,
+            COALESCE(a.EmpresaId, s.EmpresaId) AS EmpresaId, s.Codigo, a.CosechaId, a.CampaniaId, a.HumedadIngreso, a.Impurezas,
+            a.Motivo, a.TransferenciaId
         FROM dbo.Almacenamientos AS a
         INNER JOIN dbo.Silos AS s ON s.SiloId = a.SiloId
         LEFT JOIN dbo.Usuarios AS u ON u.UsuarioId = a.CreadoPorUsuarioId
         """;
 
-    public async Task<IReadOnlyList<AlmacenamientoDto>> ObtenerTodosAsync()
-    {
-        var sql = SelectBase + " ORDER BY a.Fecha DESC, a.AlmacenamientoId DESC;";
+    // =====================================================================
+    // Consultas de movimientos (ALM-02). Sin usuario (llamadas internas) no filtran.
+    // =====================================================================
 
+    public async Task<IReadOnlyList<AlmacenamientoDto>> ObtenerTodosAsync(int usuarioId = 0, bool incluirTodos = true)
+    {
+        var sql = SelectBase + $" WHERE {AccesoSilo} ORDER BY a.Fecha DESC, a.AlmacenamientoId DESC;";
+        return await LeerMovimientosAsync(sql, usuarioId, incluirTodos);
+    }
+
+    public async Task<AlmacenamientoDto?> ObtenerPorIdAsync(int almacenamientoId, int usuarioId = 0, bool incluirTodos = true)
+    {
+        var sql = SelectBase + $" WHERE a.AlmacenamientoId = @AlmacenamientoId AND {AccesoSilo};";
+        var resultado = await LeerMovimientosAsync(sql, usuarioId, incluirTodos, ("@AlmacenamientoId", almacenamientoId));
+        return resultado.FirstOrDefault();
+    }
+
+    public async Task<IReadOnlyList<AlmacenamientoDto>> ObtenerPorSiloAsync(int siloId, int usuarioId = 0, bool incluirTodos = true)
+    {
+        var sql = SelectBase + $" WHERE a.SiloId = @SiloId AND {AccesoSilo} ORDER BY a.Fecha DESC, a.AlmacenamientoId DESC;";
+        return await LeerMovimientosAsync(sql, usuarioId, incluirTodos, ("@SiloId", siloId));
+    }
+
+    private async Task<IReadOnlyList<AlmacenamientoDto>> LeerMovimientosAsync(
+        string sql, int usuarioId, bool incluirTodos, params (string Nombre, object Valor)[] parametros)
+    {
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
         await using var command = new SqlCommand(sql, connection);
-        await using var reader = await command.ExecuteReaderAsync();
+        AgregarAcceso(command, usuarioId, incluirTodos);
+        foreach (var (nombre, valor) in parametros)
+        {
+            command.Parameters.AddWithValue(nombre, valor);
+        }
 
+        await using var reader = await command.ExecuteReaderAsync();
         var movimientos = new List<AlmacenamientoDto>();
         while (await reader.ReadAsync())
         {
@@ -38,9 +94,820 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
         return movimientos;
     }
 
-    public async Task<AlmacenamientoDto?> ObtenerPorIdAsync(int almacenamientoId)
+    // =====================================================================
+    // ALM-05: stock actual
+    // =====================================================================
+
+    public async Task<StockActualDto> ObtenerStockAsync(int? empresaId, int? campaniaId, int usuarioId, bool incluirTodos)
     {
-        var sql = SelectBase + " WHERE a.AlmacenamientoId = @AlmacenamientoId;";
+        var sql = $"""
+            SELECT
+                s.SiloId, s.EmpresaId, s.Codigo, s.Nombre, s.TipoSilo, s.Producto, s.EstadoOperativo,
+                l.Nombre AS LoteNombre, s.CapacidadMax, s.CantidadGranoAlmacenado,
+                ctrl.Fecha, ctrl.Resultado, ctrl.FechaProximoControl
+            FROM dbo.Silos AS s
+            LEFT JOIN dbo.Lotes AS l ON l.LoteId = s.LoteId
+            OUTER APPLY (
+                SELECT TOP (1) sc.Fecha, sc.Resultado, sc.FechaProximoControl
+                FROM dbo.SiloControles AS sc
+                WHERE sc.SiloId = s.SiloId
+                ORDER BY sc.Fecha DESC, sc.SiloControlId DESC
+            ) AS ctrl
+            WHERE {AccesoSilo}
+              AND (@EmpresaId IS NULL OR s.EmpresaId = @EmpresaId)
+              AND s.EstadoOperativo <> N'Dado de baja'
+            ORDER BY s.Nombre;
+
+            SELECT
+                p.PartidaId, p.SiloId, p.CosechaId, c.Nombre AS CosechaNombre,
+                p.CampaniaId, cp.Nombre AS CampaniaNombre, lo.Nombre AS LoteNombre,
+                p.Producto, p.FechaIngreso, p.KgIniciales, p.KgRestantes
+            FROM dbo.AlmacenamientoPartidas AS p
+            INNER JOIN dbo.Silos AS s ON s.SiloId = p.SiloId
+            LEFT JOIN dbo.Cosechas AS c ON c.CosechaId = p.CosechaId
+            LEFT JOIN dbo.Lotes AS lo ON lo.LoteId = c.LoteId
+            LEFT JOIN dbo.Campanias AS cp ON cp.CampaniaId = p.CampaniaId
+            WHERE p.KgRestantes > 0
+              AND {AccesoSilo}
+              AND (@EmpresaId IS NULL OR s.EmpresaId = @EmpresaId)
+              AND s.EstadoOperativo <> N'Dado de baja'
+              AND (@CampaniaId IS NULL OR p.CampaniaId = @CampaniaId)
+            ORDER BY p.FechaIngreso, p.PartidaId;
+            """;
+
+        var hoy = DateOnly.FromDateTime(DateTime.Today);
+        var silos = new List<StockSiloDto>();
+        var partidas = new List<PartidaDto>();
+
+        await using (var connection = new SqlConnection(_connectionString))
+        {
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(sql, connection);
+            AgregarAcceso(command, usuarioId, incluirTodos);
+            command.Parameters.AddWithValue("@EmpresaId", (object?)empresaId ?? DBNull.Value);
+            command.Parameters.AddWithValue("@CampaniaId", (object?)campaniaId ?? DBNull.Value);
+
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                silos.Add(new StockSiloDto
+                {
+                    SiloId = reader.GetInt32(0),
+                    EmpresaId = reader.IsDBNull(1) ? null : reader.GetInt32(1),
+                    Codigo = reader.IsDBNull(2) ? null : reader.GetString(2),
+                    Nombre = reader.GetString(3),
+                    TipoSilo = reader.GetString(4),
+                    Producto = reader.IsDBNull(5) ? null : reader.GetString(5),
+                    EstadoOperativo = reader.GetString(6),
+                    LoteNombre = reader.IsDBNull(7) ? null : reader.GetString(7),
+                    CapacidadMax = reader.GetDecimal(8),
+                    Kg = reader.GetDecimal(9),
+                    UltimoControlFecha = reader.IsDBNull(10) ? null : DateOnly.FromDateTime(reader.GetDateTime(10)),
+                    UltimoControlResultado = reader.IsDBNull(11) ? null : reader.GetString(11),
+                    FechaProximoControl = reader.IsDBNull(12) ? null : DateOnly.FromDateTime(reader.GetDateTime(12)),
+                });
+            }
+
+            await reader.NextResultAsync();
+            while (await reader.ReadAsync())
+            {
+                var fechaIngreso = DateOnly.FromDateTime(reader.GetDateTime(8));
+                partidas.Add(new PartidaDto
+                {
+                    PartidaId = reader.GetInt32(0),
+                    SiloId = reader.GetInt32(1),
+                    CosechaId = reader.IsDBNull(2) ? null : reader.GetInt32(2),
+                    CosechaNombre = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    CampaniaId = reader.IsDBNull(4) ? null : reader.GetInt32(4),
+                    CampaniaNombre = reader.IsDBNull(5) ? null : reader.GetString(5),
+                    LoteNombre = reader.IsDBNull(6) ? null : reader.GetString(6),
+                    Producto = reader.IsDBNull(7) ? null : reader.GetString(7),
+                    FechaIngreso = fechaIngreso,
+                    KgIniciales = reader.GetDecimal(9),
+                    KgRestantes = reader.GetDecimal(10),
+                    DiasAlmacenado = Math.Max(0, hoy.DayNumber - fechaIngreso.DayNumber),
+                });
+            }
+        }
+
+        var partidasPorSilo = partidas.ToLookup(p => p.SiloId);
+        var capacidadTotal = silos.Sum(s => s.CapacidadMax);
+
+        foreach (var silo in silos)
+        {
+            var propias = partidasPorSilo[silo.SiloId].ToList();
+            silo.Partidas = propias;
+
+            // Con filtro de campania, el stock del silo es solo lo que vino de esa campania.
+            if (campaniaId.HasValue)
+            {
+                silo.Kg = propias.Sum(p => p.KgRestantes);
+            }
+
+            var kgPartidas = propias.Sum(p => p.KgRestantes);
+            silo.DiasAntiguedadPromedio = kgPartidas > 0
+                ? (int)Math.Round(propias.Sum(p => p.DiasAlmacenado * p.KgRestantes) / kgPartidas)
+                : null;
+            silo.Producto ??= propias.FirstOrDefault()?.Producto;
+        }
+
+        var silosConStock = campaniaId.HasValue ? silos.Where(s => s.Kg > 0).ToList() : silos;
+
+        var granos = silosConStock
+            .Where(s => s.Kg > 0 && !string.IsNullOrWhiteSpace(s.Producto))
+            .GroupBy(s => NormalizarGrano(s.Producto))
+            .Select(g => new StockGranoDto
+            {
+                Producto = g.First().Producto!,
+                Kg = g.Sum(s => s.Kg),
+                CantidadSilos = g.Count(),
+            })
+            .OrderByDescending(g => g.Kg)
+            .ToList();
+
+        var cosechas = (await ObtenerSaldosCosechaAsync(empresaId, cosechaId: null, usuarioId, incluirTodos))
+            .Where(c => c.KgCosechados is not null && c.KgDisponibles > 0)
+            .Where(c => campaniaId is null || c.CampaniaId == campaniaId)
+            .ToList();
+
+        return new StockActualDto
+        {
+            Granos = granos,
+            Silos = silosConStock,
+            CosechasConSaldo = cosechas,
+            KgTotales = silosConStock.Sum(s => s.Kg),
+            CapacidadTotal = capacidadTotal,
+        };
+    }
+
+    // =====================================================================
+    // Saldo de cosechas y silos destino
+    // =====================================================================
+
+    public async Task<IReadOnlyList<SaldoCosechaDto>> ObtenerCosechasConSaldoAsync(int? empresaId, int usuarioId, bool incluirTodos)
+    {
+        var todas = await ObtenerSaldosCosechaAsync(empresaId, cosechaId: null, usuarioId, incluirTodos);
+        return todas.Where(c => c.KgCosechados is not null && c.KgDisponibles > 0).ToList();
+    }
+
+    public async Task<SaldoCosechaDto?> ObtenerSaldoCosechaAsync(int cosechaId, int usuarioId, bool incluirTodos)
+    {
+        var resultado = await ObtenerSaldosCosechaAsync(empresaId: null, cosechaId, usuarioId, incluirTodos);
+        return resultado.FirstOrDefault();
+    }
+
+    private async Task<IReadOnlyList<SaldoCosechaDto>> ObtenerSaldosCosechaAsync(
+        int? empresaId, int? cosechaId, int usuarioId, bool incluirTodos,
+        int? excluirAlmacenamientoId = null, SqlConnection? connection = null, SqlTransaction? transaction = null)
+    {
+        const string sql = """
+            SELECT
+                c.CosechaId, lo.EmpresaId, c.Nombre, c.Producto, c.LoteId, lo.Nombre AS LoteNombre,
+                cp.CampaniaId, COALESCE(cp.Nombre, c.CampaniaNombre) AS CampaniaNombre,
+                c.Estado, c.FechaInicio, c.CantidadGranoCosechado, ISNULL(alm.Kg, 0) AS KgAlmacenados,
+                ISNULL(dist.Kg, 0) AS KgDistribuidosDirecto
+            FROM dbo.Cosechas AS c
+            INNER JOIN dbo.Lotes AS lo ON lo.LoteId = c.LoteId
+            OUTER APPLY (
+                SELECT TOP (1) x.CampaniaId, x.Nombre
+                FROM dbo.Campanias AS x
+                WHERE x.Nombre = c.CampaniaNombre
+                ORDER BY CASE WHEN x.EmpresaId = lo.EmpresaId THEN 0 ELSE 1 END, x.CampaniaId
+            ) AS cp
+            OUTER APPLY (
+                SELECT SUM(a.Cantidad) AS Kg
+                FROM dbo.Almacenamientos AS a
+                WHERE a.CosechaId = c.CosechaId
+                  AND a.TipoMovimiento = N'Ingreso'
+                  AND a.Origen <> N'Transferencia'
+                  AND (@ExcluirAlmacenamientoId IS NULL OR a.AlmacenamientoId <> @ExcluirAlmacenamientoId)
+            ) AS alm
+            OUTER APPLY (
+                -- Grano despachado directo de la cosecha, sin pasar por un silo (modulo Distribucion).
+                SELECT SUM(dc.KgDespachados) AS Kg
+                FROM dbo.DistribucionCamiones AS dc
+                INNER JOIN dbo.Distribuciones AS d ON d.DistribucionId = dc.DistribucionId
+                WHERE d.CosechaId = c.CosechaId
+                  AND d.OrigenGrano = N'Cosecha'
+            ) AS dist
+            WHERE (@IncluirTodos = 1 OR EXISTS (
+                    SELECT 1 FROM dbo.UsuarioEmpresas AS ue
+                    WHERE ue.UsuarioId = @UsuarioId AND ue.EmpresaId = lo.EmpresaId AND ue.Activo = 1))
+              AND (@EmpresaId IS NULL OR lo.EmpresaId = @EmpresaId)
+              AND (@CosechaId IS NULL OR c.CosechaId = @CosechaId)
+            ORDER BY c.FechaInicio DESC, c.CosechaId DESC;
+            """;
+
+        var propia = connection is null;
+        var conn = connection ?? new SqlConnection(_connectionString);
+        try
+        {
+            if (propia)
+            {
+                await conn.OpenAsync();
+            }
+
+            await using var command = new SqlCommand(sql, conn, transaction);
+            AgregarAcceso(command, usuarioId, incluirTodos);
+            command.Parameters.AddWithValue("@EmpresaId", (object?)empresaId ?? DBNull.Value);
+            command.Parameters.AddWithValue("@CosechaId", (object?)cosechaId ?? DBNull.Value);
+            command.Parameters.AddWithValue("@ExcluirAlmacenamientoId", (object?)excluirAlmacenamientoId ?? DBNull.Value);
+
+            await using var reader = await command.ExecuteReaderAsync();
+            var cosechas = new List<SaldoCosechaDto>();
+            while (await reader.ReadAsync())
+            {
+                cosechas.Add(new SaldoCosechaDto
+                {
+                    CosechaId = reader.GetInt32(0),
+                    EmpresaId = reader.IsDBNull(1) ? null : reader.GetInt32(1),
+                    Nombre = reader.GetString(2),
+                    Producto = reader.GetString(3),
+                    LoteId = reader.GetInt32(4),
+                    LoteNombre = reader.IsDBNull(5) ? null : reader.GetString(5),
+                    CampaniaId = reader.IsDBNull(6) ? null : reader.GetInt32(6),
+                    CampaniaNombre = reader.IsDBNull(7) ? null : reader.GetString(7),
+                    Estado = reader.GetString(8),
+                    FechaInicio = DateOnly.FromDateTime(reader.GetDateTime(9)),
+                    KgCosechados = reader.IsDBNull(10) ? null : reader.GetDecimal(10),
+                    KgAlmacenados = reader.GetDecimal(11),
+                    KgDistribuidosDirecto = reader.GetDecimal(12),
+                });
+            }
+
+            return cosechas;
+        }
+        finally
+        {
+            if (propia)
+            {
+                await conn.DisposeAsync();
+            }
+        }
+    }
+
+    public async Task<IReadOnlyList<SiloDestinoDto>> ObtenerSilosDestinoAsync(int empresaId, string producto, int usuarioId, bool incluirTodos)
+    {
+        var sql = $"""
+            SELECT s.SiloId, s.Codigo, s.Nombre, s.TipoSilo, s.Producto, s.EstadoOperativo, s.CapacidadMax, s.CantidadGranoAlmacenado
+            FROM dbo.Silos AS s
+            WHERE {AccesoSilo}
+              AND s.EmpresaId = @EmpresaId
+              AND s.EstadoOperativo <> N'Dado de baja'
+            ORDER BY s.Nombre;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(sql, connection);
+        AgregarAcceso(command, usuarioId, incluirTodos);
+        command.Parameters.AddWithValue("@EmpresaId", empresaId);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        var silos = new List<SiloDestinoDto>();
+        while (await reader.ReadAsync())
+        {
+            var silo = new SiloDestinoDto
+            {
+                SiloId = reader.GetInt32(0),
+                Codigo = reader.IsDBNull(1) ? null : reader.GetString(1),
+                Nombre = reader.GetString(2),
+                TipoSilo = reader.GetString(3),
+                Producto = reader.IsDBNull(4) ? null : reader.GetString(4),
+                EstadoOperativo = reader.GetString(5),
+                CapacidadMax = reader.GetDecimal(6),
+                Kg = reader.GetDecimal(7),
+            };
+            silo.MotivoNoCompatible = MotivoNoApto(silo.EstadoOperativo, silo.Kg, silo.CapacidadMax, silo.Producto, producto);
+            silo.Compatible = silo.MotivoNoCompatible is null;
+            silos.Add(silo);
+        }
+
+        // Primero los que se pueden usar; dentro de ellos, los que ya tienen ese grano.
+        return silos
+            .OrderBy(s => s.Compatible ? 0 : 1)
+            .ThenBy(s => s.Kg > 0 ? 0 : 1)
+            .ThenBy(s => s.Nombre)
+            .ToList();
+    }
+
+    // =====================================================================
+    // Registrar
+    // =====================================================================
+
+    public async Task<AlmacenamientoDto> RegistrarAsync(CrearAlmacenamientoRequest request, int usuarioId, bool incluirTodos)
+    {
+        var movimiento = new MovimientoNuevo(
+            request.SiloId, request.Fecha, request.TipoMovimiento, request.Cantidad, "Manual",
+            request.Observaciones, request.CosechaId, request.Producto, request.Campania, request.Cosecha,
+            request.HumedadIngreso, request.Impurezas, request.TipoMovimiento == "Egreso" ? request.Motivo : null);
+
+        var almacenamientoId = await RegistrarCoreAsync(movimiento, usuarioId, incluirTodos);
+        return (await ObtenerPorIdAsync(almacenamientoId, usuarioId, incluirTodos: true))!;
+    }
+
+    public async Task<AlmacenamientoDto> RegistrarMovimientoAutomaticoAsync(
+        int siloId, string tipoMovimiento, decimal cantidad, string origen, string? observaciones, int? usuarioId)
+    {
+        // Movimiento disparado por otro modulo (alta de silo, distribucion): el
+        // control de acceso ya lo hizo ese modulo, por eso incluirTodos = true.
+        var movimiento = new MovimientoNuevo(
+            siloId, DateOnly.FromDateTime(DateTime.Today), tipoMovimiento, cantidad, origen,
+            observaciones, CosechaId: null, Producto: null, CampaniaTexto: null, CosechaTexto: null,
+            HumedadIngreso: null, Impurezas: null);
+
+        var almacenamientoId = await RegistrarCoreAsync(movimiento, usuarioId ?? 0, incluirTodos: true, usuarioCreadorId: usuarioId);
+        return (await ObtenerPorIdAsync(almacenamientoId, usuarioId ?? 0, incluirTodos: true))!;
+    }
+
+    /// <summary>
+    /// Egreso automatico de Distribucion. Corre DENTRO de la transaccion del envio
+    /// (la abre DistribucionRepository), para que el camion y su egreso se guarden
+    /// juntos o no se guarde ninguno. Consume partidas FIFO y actualiza el silo.
+    /// El control de acceso y de rol ya lo hizo el modulo de Distribucion.
+    /// </summary>
+    public async Task<int> RegistrarEgresoDistribucionAsync(
+        SqlConnection connection, SqlTransaction transaction,
+        int siloId, int empresaId, DateOnly fecha, decimal cantidad, string observaciones, int usuarioId)
+    {
+        var silo = await BloquearSiloAsync(connection, transaction, siloId, usuarioId, incluirTodos: true)
+            ?? throw new InvalidOperationException("El silo de origen no existe.");
+
+        if (silo.EmpresaId != empresaId)
+        {
+            throw new InvalidOperationException("El silo de origen no pertenece a la empresa del envio.");
+        }
+
+        await ValidarFechaAsync(connection, transaction, siloId, fecha, excluirAlmacenamientoId: null);
+
+        if (cantidad > silo.Stock)
+        {
+            throw new InvalidOperationException(
+                $"La cantidad a despachar supera el stock actual del silo {silo.Nombre} ({silo.Stock:N0} kg).");
+        }
+
+        var stockResultante = silo.Stock - cantidad;
+        var almacenamientoId = await InsertarFilaAsync(connection, transaction, new FilaMovimiento(
+            siloId, silo.EmpresaId, fecha, "Egreso", cantidad, silo.Stock, stockResultante,
+            "Distribucion", observaciones, silo.Producto, Motivo: null, TransferenciaId: null, usuarioId));
+
+        await ConsumirPartidasFifoAsync(connection, transaction, siloId, almacenamientoId, cantidad);
+        await ActualizarSiloAsync(connection, transaction, siloId, stockResultante, silo.Producto);
+        return almacenamientoId;
+    }
+
+    /// <summary>
+    /// Ingreso automatico desde un parte diario de Cosechas (Origen = Cosecha). Corre DENTRO
+    /// de la transaccion del parte (la abre CosechaRepository), para que el parte y su
+    /// ingreso se guarden juntos o no se guarde ninguno. Abre una partida vinculada a la
+    /// cosecha y actualiza el silo. El control de acceso ya lo hizo el modulo de Cosechas.
+    /// </summary>
+    public async Task<int> RegistrarIngresoCosechaAsync(
+        SqlConnection connection, SqlTransaction transaction,
+        int siloId, int? empresaId, DateOnly fecha, decimal cantidad, int cosechaId, string producto,
+        string? campaniaNombre, string cosechaNombre, decimal? humedadIngreso, string? observaciones, int usuarioId)
+    {
+        var silo = await BloquearSiloAsync(connection, transaction, siloId, usuarioId, incluirTodos: true)
+            ?? throw new InvalidOperationException("El silo de destino no existe.");
+
+        if (silo.EmpresaId != empresaId)
+        {
+            throw new InvalidOperationException("El silo de destino no pertenece a la empresa de la cosecha.");
+        }
+
+        await ValidarFechaAsync(connection, transaction, siloId, fecha, excluirAlmacenamientoId: null);
+
+        var motivo = MotivoNoApto(silo.EstadoOperativo, silo.Stock, silo.CapacidadMax, silo.Producto, producto, cantidad);
+        if (motivo is not null)
+        {
+            throw new InvalidOperationException($"El silo {silo.Nombre} no puede recibir el grano: {motivo}");
+        }
+
+        int? campaniaId = null;
+        if (!string.IsNullOrWhiteSpace(campaniaNombre))
+        {
+            const string campaniaSql = """
+                SELECT TOP (1) CampaniaId
+                FROM dbo.Campanias
+                WHERE Nombre = @Nombre
+                ORDER BY CASE WHEN EmpresaId = @EmpresaId THEN 0 ELSE 1 END, CampaniaId;
+                """;
+
+            await using var campaniaCommand = new SqlCommand(campaniaSql, connection, transaction);
+            campaniaCommand.Parameters.AddWithValue("@Nombre", campaniaNombre.Trim());
+            campaniaCommand.Parameters.AddWithValue("@EmpresaId", (object?)empresaId ?? DBNull.Value);
+            if (await campaniaCommand.ExecuteScalarAsync() is int encontrada)
+            {
+                campaniaId = encontrada;
+            }
+        }
+
+        var stockResultante = silo.Stock + cantidad;
+
+        const string insertSql = """
+            INSERT INTO dbo.Almacenamientos
+                (SiloId, EmpresaId, Fecha, TipoMovimiento, Cantidad, StockAnterior, StockResultante, Origen,
+                 Observaciones, Campania, Cosecha, Producto, CosechaId, CampaniaId, HumedadIngreso, Impurezas, CreadoPorUsuarioId, Motivo)
+            OUTPUT INSERTED.AlmacenamientoId
+            VALUES
+                (@SiloId, @EmpresaId, @Fecha, N'Ingreso', @Cantidad, @StockAnterior, @StockResultante, N'Cosecha',
+                 @Observaciones, @Campania, @Cosecha, @Producto, @CosechaId, @CampaniaId, @HumedadIngreso, NULL, @CreadoPorUsuarioId, NULL);
+            """;
+
+        int almacenamientoId;
+        await using (var insert = new SqlCommand(insertSql, connection, transaction))
+        {
+            insert.Parameters.AddWithValue("@SiloId", siloId);
+            insert.Parameters.AddWithValue("@EmpresaId", (object?)silo.EmpresaId ?? DBNull.Value);
+            insert.Parameters.AddWithValue("@Fecha", fecha);
+            insert.Parameters.AddWithValue("@Cantidad", cantidad);
+            insert.Parameters.AddWithValue("@StockAnterior", silo.Stock);
+            insert.Parameters.AddWithValue("@StockResultante", stockResultante);
+            insert.Parameters.AddWithValue("@Observaciones", TextoONull(observaciones));
+            insert.Parameters.AddWithValue("@Campania", TextoONull(campaniaNombre));
+            insert.Parameters.AddWithValue("@Cosecha", TextoONull(cosechaNombre));
+            insert.Parameters.AddWithValue("@Producto", TextoONull(producto));
+            insert.Parameters.AddWithValue("@CosechaId", cosechaId);
+            insert.Parameters.AddWithValue("@CampaniaId", (object?)campaniaId ?? DBNull.Value);
+            insert.Parameters.AddWithValue("@HumedadIngreso", (object?)humedadIngreso ?? DBNull.Value);
+            insert.Parameters.AddWithValue("@CreadoPorUsuarioId", usuarioId > 0 ? usuarioId : DBNull.Value);
+
+            almacenamientoId = (int)(await insert.ExecuteScalarAsync()
+                ?? throw new InvalidOperationException("No se pudo registrar el ingreso al silo."));
+        }
+
+        await CrearPartidaAsync(connection, transaction, silo.EmpresaId, siloId, almacenamientoId,
+            cosechaId, campaniaId, producto, fecha, cantidad);
+        await ActualizarSiloAsync(connection, transaction, siloId, stockResultante, producto);
+        return almacenamientoId;
+    }
+
+    private sealed record MovimientoNuevo(
+        int SiloId, DateOnly Fecha, string Tipo, decimal Cantidad, string Origen, string? Observaciones,
+        int? CosechaId, string? Producto, string? CampaniaTexto, string? CosechaTexto,
+        decimal? HumedadIngreso, decimal? Impurezas, string? Motivo = null);
+
+    private async Task<int> RegistrarCoreAsync(MovimientoNuevo mov, int usuarioId, bool incluirTodos, int? usuarioCreadorId = null)
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+
+        try
+        {
+            var silo = await BloquearSiloAsync(connection, transaction, mov.SiloId, usuarioId, incluirTodos)
+                ?? throw new InvalidOperationException("El silo indicado no existe o no pertenece a tus empresas.");
+
+            await ValidarFechaAsync(connection, transaction, mov.SiloId, mov.Fecha, excluirAlmacenamientoId: null);
+
+            string? producto;
+            int? campaniaId = null;
+            var campaniaTexto = mov.CampaniaTexto;
+            var cosechaTexto = mov.CosechaTexto;
+
+            if (mov.Tipo == "Ingreso")
+            {
+                if (silo.EstadoOperativo is "En mantenimiento" or "Dado de baja")
+                {
+                    throw new InvalidOperationException($"El silo {silo.Nombre} esta {silo.EstadoOperativo.ToLowerInvariant()} y no puede recibir grano.");
+                }
+
+                if (mov.CosechaId.HasValue)
+                {
+                    var cosecha = (await ObtenerSaldosCosechaAsync(null, mov.CosechaId, usuarioId, incluirTodos,
+                            excluirAlmacenamientoId: null, connection, transaction)).FirstOrDefault()
+                        ?? throw new InvalidOperationException("La cosecha indicada no existe o no pertenece a tus empresas.");
+
+                    ValidarCosechaParaIngreso(cosecha, silo, mov.Cantidad, mov.Fecha);
+                    producto = cosecha.Producto;
+                    campaniaId = cosecha.CampaniaId;
+                    campaniaTexto = cosecha.CampaniaNombre;
+                    cosechaTexto = cosecha.Nombre;
+                }
+                else
+                {
+                    producto = string.IsNullOrWhiteSpace(mov.Producto) ? silo.Producto : mov.Producto.Trim();
+                    if (string.IsNullOrWhiteSpace(producto) && mov.Origen == "Manual")
+                    {
+                        throw new InvalidOperationException("Indica el grano que ingresa al silo o vincula el ingreso a una cosecha.");
+                    }
+                }
+
+                var motivo = MotivoNoApto(silo.EstadoOperativo, silo.Stock, silo.CapacidadMax, silo.Producto, producto, mov.Cantidad);
+                if (motivo is not null)
+                {
+                    throw new InvalidOperationException(motivo);
+                }
+            }
+            else
+            {
+                producto = silo.Producto;
+                if (mov.Cantidad > silo.Stock)
+                {
+                    throw new InvalidOperationException(
+                        $"La cantidad a retirar supera el stock actual del silo ({silo.Stock:N0} kg).");
+                }
+            }
+
+            var stockResultante = mov.Tipo == "Ingreso" ? silo.Stock + mov.Cantidad : silo.Stock - mov.Cantidad;
+
+            const string insertSql = """
+                INSERT INTO dbo.Almacenamientos
+                    (SiloId, EmpresaId, Fecha, TipoMovimiento, Cantidad, StockAnterior, StockResultante, Origen,
+                     Observaciones, Campania, Cosecha, Producto, CosechaId, CampaniaId, HumedadIngreso, Impurezas, CreadoPorUsuarioId, Motivo)
+                OUTPUT INSERTED.AlmacenamientoId
+                VALUES
+                    (@SiloId, @EmpresaId, @Fecha, @TipoMovimiento, @Cantidad, @StockAnterior, @StockResultante, @Origen,
+                     @Observaciones, @Campania, @Cosecha, @Producto, @CosechaId, @CampaniaId, @HumedadIngreso, @Impurezas, @CreadoPorUsuarioId, @Motivo);
+                """;
+
+            int almacenamientoId;
+            await using (var insert = new SqlCommand(insertSql, connection, transaction))
+            {
+                insert.Parameters.AddWithValue("@SiloId", mov.SiloId);
+                insert.Parameters.AddWithValue("@EmpresaId", (object?)silo.EmpresaId ?? DBNull.Value);
+                insert.Parameters.AddWithValue("@Fecha", mov.Fecha);
+                insert.Parameters.AddWithValue("@TipoMovimiento", mov.Tipo);
+                insert.Parameters.AddWithValue("@Cantidad", mov.Cantidad);
+                insert.Parameters.AddWithValue("@StockAnterior", silo.Stock);
+                insert.Parameters.AddWithValue("@StockResultante", stockResultante);
+                insert.Parameters.AddWithValue("@Origen", mov.Origen);
+                insert.Parameters.AddWithValue("@Observaciones", TextoONull(mov.Observaciones));
+                insert.Parameters.AddWithValue("@Campania", TextoONull(campaniaTexto));
+                insert.Parameters.AddWithValue("@Cosecha", TextoONull(cosechaTexto));
+                insert.Parameters.AddWithValue("@Producto", TextoONull(producto));
+                insert.Parameters.AddWithValue("@CosechaId", (object?)mov.CosechaId ?? DBNull.Value);
+                insert.Parameters.AddWithValue("@CampaniaId", (object?)campaniaId ?? DBNull.Value);
+                insert.Parameters.AddWithValue("@HumedadIngreso", mov.Tipo == "Ingreso" ? (object?)mov.HumedadIngreso ?? DBNull.Value : DBNull.Value);
+                insert.Parameters.AddWithValue("@Impurezas", mov.Tipo == "Ingreso" ? (object?)mov.Impurezas ?? DBNull.Value : DBNull.Value);
+                insert.Parameters.AddWithValue("@CreadoPorUsuarioId", (object?)(usuarioCreadorId ?? (usuarioId > 0 ? usuarioId : null)) ?? DBNull.Value);
+                insert.Parameters.AddWithValue("@Motivo", TextoONull(mov.Motivo));
+
+                almacenamientoId = (int)(await insert.ExecuteScalarAsync()
+                    ?? throw new InvalidOperationException("No se pudo registrar el movimiento de almacenamiento."));
+            }
+
+            if (mov.Tipo == "Ingreso")
+            {
+                await CrearPartidaAsync(connection, transaction, silo.EmpresaId, mov.SiloId, almacenamientoId,
+                    mov.CosechaId, campaniaId, producto, mov.Fecha, mov.Cantidad);
+            }
+            else
+            {
+                await ConsumirPartidasFifoAsync(connection, transaction, mov.SiloId, almacenamientoId, mov.Cantidad);
+            }
+
+            await ActualizarSiloAsync(connection, transaction, mov.SiloId, stockResultante, producto);
+
+            await transaction.CommitAsync();
+            return almacenamientoId;
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    // =====================================================================
+    // Ajuste de stock (ALM-08): merma por secado, diferencia de medicion, deterioro
+    // =====================================================================
+
+    public async Task<AlmacenamientoDto> RegistrarAjusteAsync(RegistrarAjusteRequest request, int usuarioId, bool incluirTodos)
+    {
+        var positivo = request.Sentido == "Positivo";
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+
+        try
+        {
+            var silo = await BloquearSiloAsync(connection, transaction, request.SiloId, usuarioId, incluirTodos)
+                ?? throw new InvalidOperationException("El silo indicado no existe o no pertenece a tus empresas.");
+
+            // Solo el Encargado de la empresa del silo (o Admin) ajusta stock.
+            if (!incluirTodos && !await TieneRolEnEmpresaAsync(connection, transaction, usuarioId, silo.EmpresaId, "Encargado"))
+            {
+                throw new UnauthorizedAccessException("Solo el Encargado de la empresa puede registrar ajustes de stock.");
+            }
+
+            if (silo.EstadoOperativo == "Dado de baja")
+            {
+                throw new InvalidOperationException($"El silo {silo.Nombre} esta dado de baja.");
+            }
+
+            await ValidarFechaAsync(connection, transaction, request.SiloId, request.Fecha, excluirAlmacenamientoId: null);
+
+            decimal stockResultante;
+            if (positivo)
+            {
+                if (silo.Stock <= 0)
+                {
+                    throw new InvalidOperationException("El silo esta vacio: para cargar grano registra un ingreso.");
+                }
+
+                if (silo.Stock + request.Cantidad > silo.CapacidadMax)
+                {
+                    throw new InvalidOperationException(
+                        $"El ajuste supera la capacidad libre del silo ({silo.CapacidadMax - silo.Stock:N0} kg).");
+                }
+
+                stockResultante = silo.Stock + request.Cantidad;
+            }
+            else
+            {
+                if (request.Cantidad > silo.Stock)
+                {
+                    throw new InvalidOperationException($"El ajuste supera el stock actual del silo ({silo.Stock:N0} kg).");
+                }
+
+                stockResultante = silo.Stock - request.Cantidad;
+            }
+
+            var almacenamientoId = await InsertarFilaAsync(connection, transaction, new FilaMovimiento(
+                request.SiloId, silo.EmpresaId, request.Fecha, positivo ? "AjustePositivo" : "AjusteNegativo", request.Cantidad,
+                silo.Stock, stockResultante, "Manual", request.Observaciones, silo.Producto, request.Motivo, null, usuarioId));
+
+            if (positivo)
+            {
+                // El grano de mas se registra como una partida nueva, con la fecha del ajuste.
+                await CrearPartidaAsync(connection, transaction, silo.EmpresaId, request.SiloId, almacenamientoId,
+                    cosechaId: null, campaniaId: null, silo.Producto, request.Fecha, request.Cantidad);
+            }
+            else
+            {
+                await ConsumirPartidasFifoAsync(connection, transaction, request.SiloId, almacenamientoId, request.Cantidad);
+            }
+
+            await ActualizarSiloAsync(connection, transaction, request.SiloId, stockResultante, silo.Producto);
+            await transaction.CommitAsync();
+            return (await ObtenerPorIdAsync(almacenamientoId, usuarioId, incluirTodos: true))!;
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    // =====================================================================
+    // Transferencia entre silos (ALM-06): un Egreso y un Ingreso vinculados
+    // =====================================================================
+
+    public async Task<TransferenciaResultadoDto> RegistrarTransferenciaAsync(RegistrarTransferenciaRequest request, int usuarioId, bool incluirTodos)
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+
+        try
+        {
+            // Se bloquean los dos silos siempre en el mismo orden (por id) para evitar bloqueos cruzados.
+            var primero = Math.Min(request.SiloOrigenId, request.SiloDestinoId);
+            var segundo = Math.Max(request.SiloOrigenId, request.SiloDestinoId);
+            var siloA = await BloquearSiloAsync(connection, transaction, primero, usuarioId, incluirTodos);
+            var siloB = await BloquearSiloAsync(connection, transaction, segundo, usuarioId, incluirTodos);
+            var origen = (primero == request.SiloOrigenId ? siloA : siloB)
+                ?? throw new InvalidOperationException("El silo de origen no existe o no pertenece a tus empresas.");
+            var destino = (primero == request.SiloDestinoId ? siloA : siloB)
+                ?? throw new InvalidOperationException("El silo de destino no existe o no pertenece a tus empresas.");
+
+            if (origen.EmpresaId != destino.EmpresaId)
+            {
+                throw new InvalidOperationException(
+                    "Origen y destino deben ser de la misma empresa. Mover grano entre empresas se registra en Distribucion.");
+            }
+
+            if (request.Cantidad > origen.Stock)
+            {
+                throw new InvalidOperationException($"La cantidad supera el stock del silo de origen ({origen.Stock:N0} kg).");
+            }
+
+            var motivo = MotivoNoApto(destino.EstadoOperativo, destino.Stock, destino.CapacidadMax, destino.Producto, origen.Producto, request.Cantidad);
+            if (motivo is not null)
+            {
+                throw new InvalidOperationException($"El silo de destino no puede recibir el grano: {motivo}");
+            }
+
+            await ValidarFechaAsync(connection, transaction, origen.SiloId, request.Fecha, excluirAlmacenamientoId: null);
+            await ValidarFechaAsync(connection, transaction, destino.SiloId, request.Fecha, excluirAlmacenamientoId: null);
+
+            var transferenciaId = Guid.NewGuid();
+            var observaciones = string.IsNullOrWhiteSpace(request.Motivo)
+                ? $"Transferencia de {origen.Nombre} a {destino.Nombre}."
+                : request.Motivo.Trim();
+
+            var egresoId = await InsertarFilaAsync(connection, transaction, new FilaMovimiento(
+                origen.SiloId, origen.EmpresaId, request.Fecha, "Egreso", request.Cantidad,
+                origen.Stock, origen.Stock - request.Cantidad, "Transferencia", observaciones, origen.Producto, null, transferenciaId, usuarioId));
+
+            var consumidas = await ConsumirPartidasFifoAsync(connection, transaction, origen.SiloId, egresoId, request.Cantidad);
+
+            var ingresoId = await InsertarFilaAsync(connection, transaction, new FilaMovimiento(
+                destino.SiloId, destino.EmpresaId, request.Fecha, "Ingreso", request.Cantidad,
+                destino.Stock, destino.Stock + request.Cantidad, "Transferencia", observaciones, origen.Producto, null, transferenciaId, usuarioId));
+
+            // Cada tramo consumido llega al destino como una partida nueva que conserva
+            // fecha de ingreso, cosecha y campania de la original (la antiguedad no se reinicia).
+            const string moverSql = """
+                INSERT INTO dbo.AlmacenamientoPartidas
+                    (EmpresaId, SiloId, IngresoAlmacenamientoId, PartidaOrigenId, CosechaId, CampaniaId, Producto, FechaIngreso, KgIniciales, KgRestantes)
+                SELECT p.EmpresaId, @SiloDestinoId, NULL, p.PartidaId, p.CosechaId, p.CampaniaId, p.Producto, p.FechaIngreso, @Kg, @Kg
+                FROM dbo.AlmacenamientoPartidas AS p
+                WHERE p.PartidaId = @PartidaId;
+                """;
+            foreach (var (partidaId, kg) in consumidas)
+            {
+                await using var mover = new SqlCommand(moverSql, connection, transaction);
+                mover.Parameters.AddWithValue("@SiloDestinoId", destino.SiloId);
+                mover.Parameters.AddWithValue("@Kg", kg);
+                mover.Parameters.AddWithValue("@PartidaId", partidaId);
+                await mover.ExecuteNonQueryAsync();
+            }
+
+            await ActualizarSiloAsync(connection, transaction, origen.SiloId, origen.Stock - request.Cantidad, origen.Producto);
+            await ActualizarSiloAsync(connection, transaction, destino.SiloId, destino.Stock + request.Cantidad, origen.Producto);
+
+            await transaction.CommitAsync();
+            return new TransferenciaResultadoDto
+            {
+                TransferenciaId = transferenciaId,
+                Egreso = (await ObtenerPorIdAsync(egresoId, usuarioId, incluirTodos: true))!,
+                Ingreso = (await ObtenerPorIdAsync(ingresoId, usuarioId, incluirTodos: true))!,
+            };
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    private sealed record FilaMovimiento(
+        int SiloId, int? EmpresaId, DateOnly Fecha, string Tipo, decimal Cantidad, decimal StockAnterior, decimal StockResultante,
+        string Origen, string? Observaciones, string? Producto, string? Motivo, Guid? TransferenciaId, int? UsuarioId);
+
+    private static async Task<int> InsertarFilaAsync(SqlConnection connection, SqlTransaction transaction, FilaMovimiento fila)
+    {
+        const string sql = """
+            INSERT INTO dbo.Almacenamientos
+                (SiloId, EmpresaId, Fecha, TipoMovimiento, Cantidad, StockAnterior, StockResultante, Origen,
+                 Observaciones, Producto, Motivo, TransferenciaId, CreadoPorUsuarioId)
+            OUTPUT INSERTED.AlmacenamientoId
+            VALUES
+                (@SiloId, @EmpresaId, @Fecha, @TipoMovimiento, @Cantidad, @StockAnterior, @StockResultante, @Origen,
+                 @Observaciones, @Producto, @Motivo, @TransferenciaId, @CreadoPorUsuarioId);
+            """;
+
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@SiloId", fila.SiloId);
+        command.Parameters.AddWithValue("@EmpresaId", (object?)fila.EmpresaId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@Fecha", fila.Fecha);
+        command.Parameters.AddWithValue("@TipoMovimiento", fila.Tipo);
+        command.Parameters.AddWithValue("@Cantidad", fila.Cantidad);
+        command.Parameters.AddWithValue("@StockAnterior", fila.StockAnterior);
+        command.Parameters.AddWithValue("@StockResultante", fila.StockResultante);
+        command.Parameters.AddWithValue("@Origen", fila.Origen);
+        command.Parameters.AddWithValue("@Observaciones", TextoONull(fila.Observaciones));
+        command.Parameters.AddWithValue("@Producto", TextoONull(fila.Producto));
+        command.Parameters.AddWithValue("@Motivo", TextoONull(fila.Motivo));
+        command.Parameters.AddWithValue("@TransferenciaId", (object?)fila.TransferenciaId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@CreadoPorUsuarioId", fila.UsuarioId is > 0 ? fila.UsuarioId.Value : DBNull.Value);
+
+        return (int)(await command.ExecuteScalarAsync()
+            ?? throw new InvalidOperationException("No se pudo registrar el movimiento de almacenamiento."));
+    }
+
+    private static async Task<bool> TieneRolEnEmpresaAsync(SqlConnection connection, SqlTransaction transaction, int usuarioId, int? empresaId, string rol)
+    {
+        const string sql = """
+            SELECT CASE WHEN EXISTS (
+                SELECT 1 FROM dbo.UsuarioEmpresas
+                WHERE UsuarioId = @UsuarioId AND EmpresaId = @EmpresaId AND Rol = @Rol AND Activo = 1)
+            THEN 1 ELSE 0 END;
+            """;
+
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@UsuarioId", usuarioId);
+        command.Parameters.AddWithValue("@EmpresaId", (object?)empresaId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@Rol", rol);
+        return Convert.ToInt32(await command.ExecuteScalarAsync()) == 1;
+    }
+
+    // =====================================================================
+    // Documentos del movimiento (tickets de balanza, comprobantes)
+    // =====================================================================
+
+    public async Task<IReadOnlyList<AlmacenamientoDocumentoDto>> ObtenerDocumentosAsync(int almacenamientoId)
+    {
+        const string sql = """
+            SELECT d.AlmacenamientoDocumentoId, d.NombreArchivo, d.FechaCarga, u.Nombre, u.Apellido
+            FROM dbo.AlmacenamientoDocumentos AS d
+            LEFT JOIN dbo.Usuarios AS u ON u.UsuarioId = d.CargadoPorUsuarioId
+            WHERE d.AlmacenamientoId = @AlmacenamientoId
+            ORDER BY d.FechaCarga DESC, d.AlmacenamientoDocumentoId DESC;
+            """;
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -48,43 +915,79 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
         command.Parameters.AddWithValue("@AlmacenamientoId", almacenamientoId);
         await using var reader = await command.ExecuteReaderAsync();
 
-        return await reader.ReadAsync() ? Mapear(reader) : null;
+        var documentos = new List<AlmacenamientoDocumentoDto>();
+        while (await reader.ReadAsync())
+        {
+            var nombre = reader.IsDBNull(3) ? null : reader.GetString(3);
+            var apellido = reader.IsDBNull(4) ? null : reader.GetString(4);
+            var cargadoPor = string.Join(' ', new[] { nombre, apellido }.Where(v => !string.IsNullOrWhiteSpace(v)));
+            documentos.Add(new AlmacenamientoDocumentoDto
+            {
+                AlmacenamientoDocumentoId = reader.GetInt32(0),
+                NombreArchivo = reader.GetString(1),
+                FechaCarga = reader.GetDateTime(2),
+                CargadoPor = cargadoPor.Length > 0 ? cargadoPor : null,
+            });
+        }
+
+        return documentos;
     }
 
-    public async Task<IReadOnlyList<AlmacenamientoDto>> ObtenerPorSiloAsync(int siloId)
+    public async Task<AlmacenamientoDocumentoDto> AgregarDocumentoAsync(int almacenamientoId, string nombreArchivo, string rutaArchivo, int? usuarioId)
     {
-        var sql = SelectBase + " WHERE a.SiloId = @SiloId ORDER BY a.Fecha DESC, a.AlmacenamientoId DESC;";
+        const string sql = """
+            INSERT INTO dbo.AlmacenamientoDocumentos (AlmacenamientoId, NombreArchivo, RutaArchivo, CargadoPorUsuarioId)
+            OUTPUT INSERTED.AlmacenamientoDocumentoId
+            VALUES (@AlmacenamientoId, @NombreArchivo, @RutaArchivo, @CargadoPorUsuarioId);
+            """;
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
         await using var command = new SqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@SiloId", siloId);
-        await using var reader = await command.ExecuteReaderAsync();
+        command.Parameters.AddWithValue("@AlmacenamientoId", almacenamientoId);
+        command.Parameters.AddWithValue("@NombreArchivo", nombreArchivo);
+        command.Parameters.AddWithValue("@RutaArchivo", rutaArchivo);
+        command.Parameters.AddWithValue("@CargadoPorUsuarioId", (object?)usuarioId ?? DBNull.Value);
+        var id = (int)(await command.ExecuteScalarAsync() ?? throw new InvalidOperationException("No se pudo guardar el documento."));
 
-        var movimientos = new List<AlmacenamientoDto>();
-        while (await reader.ReadAsync())
-        {
-            movimientos.Add(Mapear(reader));
-        }
-
-        return movimientos;
+        return (await ObtenerDocumentosAsync(almacenamientoId)).First(d => d.AlmacenamientoDocumentoId == id);
     }
 
-    public async Task<AlmacenamientoDto> RegistrarAsync(CrearAlmacenamientoRequest request, int? usuarioId)
+    public async Task<string?> ObtenerRutaDocumentoAsync(int almacenamientoId, int documentoId)
     {
-        return await InsertarMovimientoAsync(
-            request.SiloId, request.TipoMovimiento, request.Cantidad,
-            origen: "Manual", request.Observaciones, request.Campania, request.Cosecha, usuarioId);
+        const string sql = """
+            SELECT RutaArchivo FROM dbo.AlmacenamientoDocumentos
+            WHERE AlmacenamientoDocumentoId = @DocumentoId AND AlmacenamientoId = @AlmacenamientoId;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@DocumentoId", documentoId);
+        command.Parameters.AddWithValue("@AlmacenamientoId", almacenamientoId);
+        return await command.ExecuteScalarAsync() as string;
     }
 
-    public async Task<AlmacenamientoDto> RegistrarMovimientoAutomaticoAsync(
-        int siloId, string tipoMovimiento, decimal cantidad, string origen, string? observaciones, int? usuarioId)
+    public async Task<bool> EliminarDocumentoAsync(int almacenamientoId, int documentoId)
     {
-        return await InsertarMovimientoAsync(siloId, tipoMovimiento, cantidad, origen, observaciones, campania: null, cosecha: null, usuarioId);
+        const string sql = """
+            DELETE FROM dbo.AlmacenamientoDocumentos
+            WHERE AlmacenamientoDocumentoId = @DocumentoId AND AlmacenamientoId = @AlmacenamientoId;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@DocumentoId", documentoId);
+        command.Parameters.AddWithValue("@AlmacenamientoId", almacenamientoId);
+        return await command.ExecuteNonQueryAsync() > 0;
     }
 
-    private async Task<AlmacenamientoDto> InsertarMovimientoAsync(
-        int siloId, string tipoMovimiento, decimal cantidad, string origen, string? observaciones, string? campania, string? cosecha, int? usuarioId)
+    // =====================================================================
+    // Editar (solo el ultimo movimiento manual de cada silo)
+    // =====================================================================
+
+    public async Task<bool> ActualizarAsync(int almacenamientoId, ActualizarAlmacenamientoRequest request, int usuarioId, bool incluirTodos)
     {
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -92,224 +995,452 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
 
         try
         {
-            // Bloquea la fila del silo hasta el commit para que dos movimientos
-            // concurrentes sobre el mismo silo no calculen el mismo stock base.
-            const string selectStockSql = """
-                SELECT CantidadGranoAlmacenado, CapacidadMax
-                FROM dbo.Silos WITH (UPDLOCK, ROWLOCK)
-                WHERE SiloId = @SiloId;
-                """;
-
-            decimal stockAnterior;
-            decimal capacidadMax;
-            await using (var selectCommand = new SqlCommand(selectStockSql, connection, transaction))
+            var actual = await ObtenerMovimientoParaEditarAsync(connection, transaction, almacenamientoId, usuarioId, incluirTodos);
+            if (actual is null)
             {
-                selectCommand.Parameters.AddWithValue("@SiloId", siloId);
-                await using var reader = await selectCommand.ExecuteReaderAsync();
-                if (!await reader.ReadAsync())
+                await transaction.RollbackAsync();
+                return false;
+            }
+
+            if (actual.Origen != "Manual")
+            {
+                throw new InvalidOperationException("Los movimientos automaticos se corrigen desde su modulo de origen.");
+            }
+
+            if (actual.UltimoDelSiloId != almacenamientoId)
+            {
+                throw new InvalidOperationException("Solo se puede editar el ultimo movimiento registrado para este silo.");
+            }
+
+            if (actual.TipoMovimiento is "AjustePositivo" or "AjusteNegativo")
+            {
+                throw new InvalidOperationException("Los ajustes no se editan: si hubo un error, registra otro ajuste que lo compense.");
+            }
+
+            if (!string.Equals(actual.TipoMovimiento, request.TipoMovimiento, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("No se puede cambiar el tipo de movimiento. Si hace falta, registra un movimiento nuevo.");
+            }
+
+            var silo = (await BloquearSiloAsync(connection, transaction, actual.SiloId, usuarioId, incluirTodos))!;
+            await ValidarFechaAsync(connection, transaction, actual.SiloId, request.Fecha, excluirAlmacenamientoId: almacenamientoId);
+
+            var producto = actual.Producto;
+            decimal stockResultante;
+
+            if (actual.TipoMovimiento == "Ingreso")
+            {
+                if (actual.CosechaId.HasValue)
                 {
-                    throw new InvalidOperationException("El silo indicado no existe.");
+                    var cosecha = (await ObtenerSaldosCosechaAsync(null, actual.CosechaId, usuarioId, incluirTodos,
+                            excluirAlmacenamientoId: almacenamientoId, connection, transaction)).First();
+                    ValidarCosechaParaIngreso(cosecha, silo, request.Cantidad, request.Fecha);
                 }
-                stockAnterior = reader.GetDecimal(0);
-                capacidadMax = reader.GetDecimal(1);
-            }
-
-            var stockResultante = tipoMovimiento == "Ingreso"
-                ? stockAnterior + cantidad
-                : stockAnterior - cantidad;
-
-            if (tipoMovimiento == "Ingreso" && stockResultante > capacidadMax)
-            {
-                throw new InvalidOperationException(
-                    $"La cantidad a almacenar supera la capacidad disponible del silo. Capacidad maxima: {capacidadMax:N0} kg, stock actual: {stockAnterior:N0} kg, disponible: {capacidadMax - stockAnterior:N0} kg.");
-            }
-
-            if (stockResultante < 0)
-            {
-                throw new InvalidOperationException(
-                    "La cantidad a retirar supera el stock actual del silo.");
-            }
-
-            const string insertSql = """
-                INSERT INTO dbo.Almacenamientos
-                    (SiloId, Fecha, TipoMovimiento, Cantidad, StockAnterior, StockResultante, Origen, Observaciones, Campania, Cosecha, CreadoPorUsuarioId)
-                OUTPUT INSERTED.AlmacenamientoId
-                VALUES
-                    (@SiloId, @Fecha, @TipoMovimiento, @Cantidad, @StockAnterior, @StockResultante, @Origen, @Observaciones, @Campania, @Cosecha, @CreadoPorUsuarioId);
-                """;
-
-            int almacenamientoId;
-            await using (var insertCommand = new SqlCommand(insertSql, connection, transaction))
-            {
-                insertCommand.Parameters.AddWithValue("@SiloId", siloId);
-                insertCommand.Parameters.AddWithValue("@Fecha", DateOnly.FromDateTime(DateTime.Today));
-                insertCommand.Parameters.AddWithValue("@TipoMovimiento", tipoMovimiento);
-                insertCommand.Parameters.AddWithValue("@Cantidad", cantidad);
-                insertCommand.Parameters.AddWithValue("@StockAnterior", stockAnterior);
-                insertCommand.Parameters.AddWithValue("@StockResultante", stockResultante);
-                insertCommand.Parameters.AddWithValue("@Origen", origen);
-                insertCommand.Parameters.AddWithValue("@Observaciones", string.IsNullOrWhiteSpace(observaciones) ? DBNull.Value : observaciones.Trim());
-                insertCommand.Parameters.AddWithValue("@Campania", string.IsNullOrWhiteSpace(campania) ? DBNull.Value : campania.Trim());
-                insertCommand.Parameters.AddWithValue("@Cosecha", string.IsNullOrWhiteSpace(cosecha) ? DBNull.Value : cosecha.Trim());
-                insertCommand.Parameters.AddWithValue("@CreadoPorUsuarioId", (object?)usuarioId ?? DBNull.Value);
-
-                almacenamientoId = (int)(await insertCommand.ExecuteScalarAsync()
-                    ?? throw new InvalidOperationException("No se pudo registrar el movimiento de almacenamiento."));
-            }
-
-            const string updateSiloSql = """
-                UPDATE dbo.Silos
-                SET CantidadGranoAlmacenado = @StockResultante,
-                    FechaModificacion = SYSDATETIME()
-                WHERE SiloId = @SiloId;
-                """;
-
-            await using (var updateCommand = new SqlCommand(updateSiloSql, connection, transaction))
-            {
-                updateCommand.Parameters.AddWithValue("@StockResultante", stockResultante);
-                updateCommand.Parameters.AddWithValue("@SiloId", siloId);
-                await updateCommand.ExecuteNonQueryAsync();
-            }
-
-            await transaction.CommitAsync();
-
-            return (await ObtenerPorIdAsync(almacenamientoId))!;
-        }
-        catch
-        {
-            await transaction.RollbackAsync();
-            throw;
-        }
-    }
-
-    public async Task<bool> ActualizarAsync(int almacenamientoId, ActualizarAlmacenamientoRequest request)
-    {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync();
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
-
-        try
-        {
-            const string selectSql = """
-                SELECT TOP (1) a.SiloId, a.AlmacenamientoId
-                FROM dbo.Almacenamientos AS a
-                WHERE a.SiloId = (SELECT SiloId FROM dbo.Almacenamientos WHERE AlmacenamientoId = @AlmacenamientoId)
-                ORDER BY a.Fecha DESC, a.AlmacenamientoId DESC;
-                """;
-
-            int siloId;
-            int ultimoMovimientoId;
-            await using (var selectCommand = new SqlCommand(selectSql, connection, transaction))
-            {
-                selectCommand.Parameters.AddWithValue("@AlmacenamientoId", almacenamientoId);
-                await using var reader = await selectCommand.ExecuteReaderAsync();
-                if (!await reader.ReadAsync())
+                else if (!string.IsNullOrWhiteSpace(request.Producto))
                 {
-                    await transaction.RollbackAsync();
-                    return false;
+                    producto = request.Producto.Trim();
                 }
 
-                siloId = reader.GetInt32(0);
-                ultimoMovimientoId = reader.GetInt32(1);
+                // Capacidad y grano, contra el stock previo a este movimiento.
+                var motivo = MotivoNoApto("Con grano", actual.StockAnterior, silo.CapacidadMax,
+                    actual.StockAnterior > 0 ? silo.Producto : null, producto, request.Cantidad);
+                if (motivo is not null)
+                {
+                    throw new InvalidOperationException(motivo);
+                }
+
+                stockResultante = actual.StockAnterior + request.Cantidad;
+                await AjustarPartidaDeIngresoAsync(connection, transaction, almacenamientoId, request.Fecha, request.Cantidad);
             }
-
-            // Simplificacion deliberada: solo se puede editar el ultimo
-            // movimiento cargado sobre ese silo. Editar un movimiento en
-            // medio del historico obligaria a recalcular en cadena el
-            // StockAnterior/StockResultante de todos los movimientos
-            // posteriores; se deja fuera de este alcance inicial.
-            if (ultimoMovimientoId != almacenamientoId)
+            else
             {
-                await transaction.RollbackAsync();
-                throw new InvalidOperationException(
-                    "Solo se puede editar el ultimo movimiento registrado para este silo.");
-            }
+                if (request.Cantidad > actual.StockAnterior)
+                {
+                    throw new InvalidOperationException(
+                        $"La cantidad a retirar supera el stock que tenia el silo antes de este movimiento ({actual.StockAnterior:N0} kg).");
+                }
 
-            const string selectMovimientoSql = """
-                SELECT a.StockAnterior, s.CapacidadMax
-                FROM dbo.Almacenamientos AS a
-                INNER JOIN dbo.Silos AS s ON s.SiloId = a.SiloId
-                WHERE a.AlmacenamientoId = @AlmacenamientoId;
-                """;
-
-            decimal stockAnterior;
-            decimal capacidadMax;
-            await using (var selectMovCommand = new SqlCommand(selectMovimientoSql, connection, transaction))
-            {
-                selectMovCommand.Parameters.AddWithValue("@AlmacenamientoId", almacenamientoId);
-                await using var movReader = await selectMovCommand.ExecuteReaderAsync();
-                await movReader.ReadAsync();
-                stockAnterior = movReader.GetDecimal(0);
-                capacidadMax = movReader.GetDecimal(1);
-            }
-
-            var stockResultante = request.TipoMovimiento == "Ingreso"
-                ? stockAnterior + request.Cantidad
-                : stockAnterior - request.Cantidad;
-
-            if (request.TipoMovimiento == "Ingreso" && stockResultante > capacidadMax)
-            {
-                await transaction.RollbackAsync();
-                throw new InvalidOperationException(
-                    $"La cantidad a almacenar supera la capacidad disponible del silo. Capacidad maxima: {capacidadMax:N0} kg, stock previo a este movimiento: {stockAnterior:N0} kg, disponible: {capacidadMax - stockAnterior:N0} kg.");
-            }
-
-            if (stockResultante < 0)
-            {
-                await transaction.RollbackAsync();
-                throw new InvalidOperationException(
-                    "La cantidad a retirar supera el stock disponible del silo.");
+                stockResultante = actual.StockAnterior - request.Cantidad;
+                await RevertirConsumosAsync(connection, transaction, almacenamientoId);
+                await ConsumirPartidasFifoAsync(connection, transaction, actual.SiloId, almacenamientoId, request.Cantidad);
             }
 
             const string updateSql = """
                 UPDATE dbo.Almacenamientos
                 SET Fecha = @Fecha,
-                    TipoMovimiento = @TipoMovimiento,
                     Cantidad = @Cantidad,
                     StockResultante = @StockResultante,
                     Observaciones = @Observaciones,
-                    Campania = @Campania,
-                    Cosecha = @Cosecha,
+                    Producto = @Producto,
+                    Campania = CASE WHEN CosechaId IS NULL THEN @Campania ELSE Campania END,
+                    Cosecha = CASE WHEN CosechaId IS NULL THEN @Cosecha ELSE Cosecha END,
+                    HumedadIngreso = CASE WHEN TipoMovimiento = N'Ingreso' THEN @HumedadIngreso ELSE NULL END,
+                    Impurezas = CASE WHEN TipoMovimiento = N'Ingreso' THEN @Impurezas ELSE NULL END,
+                    Motivo = CASE WHEN TipoMovimiento = N'Egreso' THEN COALESCE(@Motivo, Motivo) ELSE Motivo END,
                     FechaModificacion = SYSDATETIME()
                 WHERE AlmacenamientoId = @AlmacenamientoId;
                 """;
 
-            int filasAfectadas;
-            await using (var updateCommand = new SqlCommand(updateSql, connection, transaction))
+            await using (var update = new SqlCommand(updateSql, connection, transaction))
             {
-                updateCommand.Parameters.AddWithValue("@Fecha", request.Fecha);
-                updateCommand.Parameters.AddWithValue("@TipoMovimiento", request.TipoMovimiento);
-                updateCommand.Parameters.AddWithValue("@Cantidad", request.Cantidad);
-                updateCommand.Parameters.AddWithValue("@StockResultante", stockResultante);
-                updateCommand.Parameters.AddWithValue("@Observaciones", string.IsNullOrWhiteSpace(request.Observaciones) ? DBNull.Value : request.Observaciones.Trim());
-                updateCommand.Parameters.AddWithValue("@Campania", string.IsNullOrWhiteSpace(request.Campania) ? DBNull.Value : request.Campania.Trim());
-                updateCommand.Parameters.AddWithValue("@Cosecha", string.IsNullOrWhiteSpace(request.Cosecha) ? DBNull.Value : request.Cosecha.Trim());
-                updateCommand.Parameters.AddWithValue("@AlmacenamientoId", almacenamientoId);
-                filasAfectadas = await updateCommand.ExecuteNonQueryAsync();
+                update.Parameters.AddWithValue("@Fecha", request.Fecha);
+                update.Parameters.AddWithValue("@Cantidad", request.Cantidad);
+                update.Parameters.AddWithValue("@StockResultante", stockResultante);
+                update.Parameters.AddWithValue("@Observaciones", TextoONull(request.Observaciones));
+                update.Parameters.AddWithValue("@Producto", TextoONull(producto));
+                update.Parameters.AddWithValue("@Campania", TextoONull(request.Campania));
+                update.Parameters.AddWithValue("@Cosecha", TextoONull(request.Cosecha));
+                update.Parameters.AddWithValue("@HumedadIngreso", (object?)request.HumedadIngreso ?? DBNull.Value);
+                update.Parameters.AddWithValue("@Impurezas", (object?)request.Impurezas ?? DBNull.Value);
+                update.Parameters.AddWithValue("@Motivo", TextoONull(request.Motivo));
+                update.Parameters.AddWithValue("@AlmacenamientoId", almacenamientoId);
+                await update.ExecuteNonQueryAsync();
             }
 
-            const string updateSiloSql = """
-                UPDATE dbo.Silos
-                SET CantidadGranoAlmacenado = @StockResultante,
-                    FechaModificacion = SYSDATETIME()
-                WHERE SiloId = @SiloId;
-                """;
-
-            await using (var updateSiloCommand = new SqlCommand(updateSiloSql, connection, transaction))
-            {
-                updateSiloCommand.Parameters.AddWithValue("@StockResultante", stockResultante);
-                updateSiloCommand.Parameters.AddWithValue("@SiloId", siloId);
-                await updateSiloCommand.ExecuteNonQueryAsync();
-            }
+            await ActualizarSiloAsync(connection, transaction, actual.SiloId, stockResultante, producto);
 
             await transaction.CommitAsync();
-            return filasAfectadas > 0;
+            return true;
         }
         catch
         {
             await transaction.RollbackAsync();
             throw;
         }
+    }
+
+    // =====================================================================
+    // Helpers de silo, validacion y partidas
+    // =====================================================================
+
+    private sealed record SiloBloqueado(
+        int SiloId, int? EmpresaId, string Nombre, decimal Stock, decimal CapacidadMax, string? Producto, string EstadoOperativo);
+
+    private static async Task<SiloBloqueado?> BloquearSiloAsync(
+        SqlConnection connection, SqlTransaction transaction, int siloId, int usuarioId, bool incluirTodos)
+    {
+        // UPDLOCK: dos movimientos concurrentes sobre el mismo silo no calculan el mismo stock base.
+        var sql = $"""
+            SELECT s.SiloId, s.EmpresaId, s.Nombre, s.CantidadGranoAlmacenado, s.CapacidadMax, s.Producto, s.EstadoOperativo
+            FROM dbo.Silos AS s WITH (UPDLOCK, ROWLOCK)
+            WHERE s.SiloId = @SiloId AND {AccesoSilo};
+            """;
+
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@SiloId", siloId);
+        AgregarAcceso(command, usuarioId, incluirTodos);
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            return null;
+        }
+
+        return new SiloBloqueado(
+            reader.GetInt32(0),
+            reader.IsDBNull(1) ? null : reader.GetInt32(1),
+            reader.GetString(2),
+            reader.GetDecimal(3),
+            reader.GetDecimal(4),
+            reader.IsDBNull(5) ? null : reader.GetString(5),
+            reader.GetString(6));
+    }
+
+    private sealed record MovimientoEditable(
+        int SiloId, string TipoMovimiento, string Origen, decimal StockAnterior, int? CosechaId, string? Producto, int UltimoDelSiloId);
+
+    private static async Task<MovimientoEditable?> ObtenerMovimientoParaEditarAsync(
+        SqlConnection connection, SqlTransaction transaction, int almacenamientoId, int usuarioId, bool incluirTodos)
+    {
+        var sql = $"""
+            SELECT a.SiloId, a.TipoMovimiento, a.Origen, a.StockAnterior, a.CosechaId, a.Producto,
+                   (SELECT MAX(x.AlmacenamientoId) FROM dbo.Almacenamientos AS x WHERE x.SiloId = a.SiloId) AS UltimoDelSilo
+            FROM dbo.Almacenamientos AS a
+            INNER JOIN dbo.Silos AS s ON s.SiloId = a.SiloId
+            WHERE a.AlmacenamientoId = @AlmacenamientoId AND {AccesoSilo};
+            """;
+
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@AlmacenamientoId", almacenamientoId);
+        AgregarAcceso(command, usuarioId, incluirTodos);
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            return null;
+        }
+
+        return new MovimientoEditable(
+            reader.GetInt32(0),
+            reader.GetString(1),
+            reader.GetString(2),
+            reader.GetDecimal(3),
+            reader.IsDBNull(4) ? null : reader.GetInt32(4),
+            reader.IsDBNull(5) ? null : reader.GetString(5),
+            reader.GetInt32(6));
+    }
+
+    private static async Task ValidarFechaAsync(
+        SqlConnection connection, SqlTransaction transaction, int siloId, DateOnly fecha, int? excluirAlmacenamientoId)
+    {
+        if (fecha > DateOnly.FromDateTime(DateTime.Today))
+        {
+            throw new InvalidOperationException("La fecha del movimiento no puede ser posterior a hoy.");
+        }
+
+        const string sql = """
+            SELECT MAX(Fecha)
+            FROM dbo.Almacenamientos
+            WHERE SiloId = @SiloId
+              AND (@Excluir IS NULL OR AlmacenamientoId <> @Excluir);
+            """;
+
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@SiloId", siloId);
+        command.Parameters.AddWithValue("@Excluir", (object?)excluirAlmacenamientoId ?? DBNull.Value);
+        var resultado = await command.ExecuteScalarAsync();
+        if (resultado is DateTime ultima && fecha < DateOnly.FromDateTime(ultima))
+        {
+            throw new InvalidOperationException(
+                $"La fecha no puede ser anterior al ultimo movimiento del silo ({ultima:dd/MM/yyyy}).");
+        }
+    }
+
+    private static void ValidarCosechaParaIngreso(SaldoCosechaDto cosecha, SiloBloqueado silo, decimal cantidad, DateOnly fecha)
+    {
+        if (cosecha.EmpresaId != silo.EmpresaId)
+        {
+            throw new InvalidOperationException("La cosecha y el silo deben pertenecer a la misma empresa.");
+        }
+
+        if (cosecha.KgCosechados is null)
+        {
+            throw new InvalidOperationException(
+                $"La cosecha {cosecha.Nombre} todavia no tiene cantidad cosechada. Finalizala antes de almacenar su grano.");
+        }
+
+        if (cantidad > cosecha.KgDisponibles)
+        {
+            throw new InvalidOperationException(
+                $"La cantidad supera el saldo disponible de la cosecha {cosecha.Nombre} ({cosecha.KgDisponibles:N0} kg).");
+        }
+
+        if (fecha < cosecha.FechaInicio)
+        {
+            throw new InvalidOperationException(
+                $"La fecha no puede ser anterior al inicio de la cosecha ({cosecha.FechaInicio:dd/MM/yyyy}).");
+        }
+    }
+
+    private static async Task CrearPartidaAsync(
+        SqlConnection connection, SqlTransaction transaction, int? empresaId, int siloId, int ingresoId,
+        int? cosechaId, int? campaniaId, string? producto, DateOnly fecha, decimal kg)
+    {
+        const string sql = """
+            INSERT INTO dbo.AlmacenamientoPartidas
+                (EmpresaId, SiloId, IngresoAlmacenamientoId, CosechaId, CampaniaId, Producto, FechaIngreso, KgIniciales, KgRestantes)
+            VALUES
+                (@EmpresaId, @SiloId, @IngresoId, @CosechaId, @CampaniaId, @Producto, @FechaIngreso, @Kg, @Kg);
+            """;
+
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@EmpresaId", (object?)empresaId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@SiloId", siloId);
+        command.Parameters.AddWithValue("@IngresoId", ingresoId);
+        command.Parameters.AddWithValue("@CosechaId", (object?)cosechaId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@CampaniaId", (object?)campaniaId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@Producto", TextoONull(producto));
+        command.Parameters.AddWithValue("@FechaIngreso", fecha);
+        command.Parameters.AddWithValue("@Kg", kg);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task AjustarPartidaDeIngresoAsync(
+        SqlConnection connection, SqlTransaction transaction, int ingresoId, DateOnly fecha, decimal kg)
+    {
+        // Es el ultimo movimiento del silo, asi que ningun egreso posterior pudo
+        // haber consumido su partida. Igual se verifica por seguridad.
+        const string sql = """
+            UPDATE p
+            SET p.KgIniciales = @Kg, p.KgRestantes = @Kg, p.FechaIngreso = @Fecha, p.FechaModificacion = SYSDATETIME()
+            FROM dbo.AlmacenamientoPartidas AS p
+            WHERE p.IngresoAlmacenamientoId = @IngresoId
+              AND NOT EXISTS (SELECT 1 FROM dbo.AlmacenamientoPartidaConsumos AS c WHERE c.PartidaId = p.PartidaId);
+            """;
+
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@Kg", kg);
+        command.Parameters.AddWithValue("@Fecha", fecha);
+        command.Parameters.AddWithValue("@IngresoId", ingresoId);
+        if (await command.ExecuteNonQueryAsync() == 0)
+        {
+            throw new InvalidOperationException(
+                "No se encontro la partida de este ingreso o ya fue consumida. Revisa el reporte de partidas.");
+        }
+    }
+
+    private static async Task<List<(int PartidaId, decimal Kg)>> ConsumirPartidasFifoAsync(
+        SqlConnection connection, SqlTransaction transaction, int siloId, int almacenamientoId, decimal kg)
+    {
+        var consumidas = new List<(int PartidaId, decimal Kg)>();
+        var partidas = new List<(int PartidaId, decimal KgRestantes)>();
+        const string selectSql = """
+            SELECT PartidaId, KgRestantes
+            FROM dbo.AlmacenamientoPartidas WITH (UPDLOCK, ROWLOCK)
+            WHERE SiloId = @SiloId AND KgRestantes > 0
+            ORDER BY FechaIngreso, PartidaId;
+            """;
+
+        await using (var select = new SqlCommand(selectSql, connection, transaction))
+        {
+            select.Parameters.AddWithValue("@SiloId", siloId);
+            await using var reader = await select.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                partidas.Add((reader.GetInt32(0), reader.GetDecimal(1)));
+            }
+        }
+
+        var pendiente = kg;
+        foreach (var (partidaId, disponible) in partidas)
+        {
+            if (pendiente <= 0)
+            {
+                break;
+            }
+
+            var tomar = Math.Min(disponible, pendiente);
+            const string consumoSql = """
+                UPDATE dbo.AlmacenamientoPartidas
+                SET KgRestantes = KgRestantes - @Kg, FechaModificacion = SYSDATETIME()
+                WHERE PartidaId = @PartidaId;
+
+                INSERT INTO dbo.AlmacenamientoPartidaConsumos (PartidaId, AlmacenamientoId, Kg)
+                VALUES (@PartidaId, @AlmacenamientoId, @Kg);
+                """;
+
+            await using var consumo = new SqlCommand(consumoSql, connection, transaction);
+            consumo.Parameters.AddWithValue("@Kg", tomar);
+            consumo.Parameters.AddWithValue("@PartidaId", partidaId);
+            consumo.Parameters.AddWithValue("@AlmacenamientoId", almacenamientoId);
+            await consumo.ExecuteNonQueryAsync();
+            consumidas.Add((partidaId, tomar));
+            pendiente -= tomar;
+        }
+
+        if (pendiente > 0)
+        {
+            throw new InvalidOperationException(
+                $"Las partidas del silo no alcanzan para cubrir el egreso (faltan {pendiente:N0} kg). Revisa el reporte de partidas del script 21.");
+        }
+
+        return consumidas;
+    }
+
+    private static async Task RevertirConsumosAsync(SqlConnection connection, SqlTransaction transaction, int almacenamientoId)
+    {
+        const string sql = """
+            UPDATE p
+            SET p.KgRestantes = p.KgRestantes + c.Kg, p.FechaModificacion = SYSDATETIME()
+            FROM dbo.AlmacenamientoPartidas AS p
+            INNER JOIN dbo.AlmacenamientoPartidaConsumos AS c ON c.PartidaId = p.PartidaId
+            WHERE c.AlmacenamientoId = @AlmacenamientoId;
+
+            DELETE FROM dbo.AlmacenamientoPartidaConsumos WHERE AlmacenamientoId = @AlmacenamientoId;
+            """;
+
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@AlmacenamientoId", almacenamientoId);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task ActualizarSiloAsync(
+        SqlConnection connection, SqlTransaction transaction, int siloId, decimal stockResultante, string? producto)
+    {
+        // Silo vacio: pierde el grano y queda Vacio. Con stock: toma el grano y queda Con grano.
+        // En mantenimiento y Dado de baja no se tocan: son estados que maneja el usuario.
+        const string sql = """
+            UPDATE dbo.Silos
+            SET CantidadGranoAlmacenado = @Stock,
+                Producto = CASE WHEN @Stock > 0 THEN COALESCE(@Producto, Producto) ELSE NULL END,
+                EstadoOperativo = CASE
+                    WHEN EstadoOperativo IN (N'En mantenimiento', N'Dado de baja') THEN EstadoOperativo
+                    WHEN @Stock > 0 THEN N'Con grano'
+                    ELSE N'Vacio'
+                END,
+                FechaModificacion = SYSDATETIME()
+            WHERE SiloId = @SiloId;
+            """;
+
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@Stock", stockResultante);
+        command.Parameters.AddWithValue("@Producto", TextoONull(producto));
+        command.Parameters.AddWithValue("@SiloId", siloId);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    // =====================================================================
+    // Utilidades
+    // =====================================================================
+
+    private static object TextoONull(string? valor) =>
+        string.IsNullOrWhiteSpace(valor) ? DBNull.Value : valor.Trim();
+
+    private static void AgregarAcceso(SqlCommand command, int usuarioId, bool incluirTodos)
+    {
+        command.Parameters.AddWithValue("@UsuarioId", usuarioId);
+        command.Parameters.AddWithValue("@IncluirTodos", incluirTodos);
+    }
+
+    /// <summary>
+    /// Devuelve por que un silo no puede recibir un grano, o null si puede.
+    /// Se usa igual para listar silos destino y para validar el ingreso.
+    /// </summary>
+    private static string? MotivoNoApto(
+        string estadoOperativo, decimal stock, decimal capacidadMax, string? granoSilo, string? granoIngreso, decimal cantidad = 0)
+    {
+        if (estadoOperativo is "En mantenimiento" or "Dado de baja")
+        {
+            return estadoOperativo;
+        }
+
+        if (stock > 0 && !string.IsNullOrWhiteSpace(granoSilo) && !string.IsNullOrWhiteSpace(granoIngreso)
+            && NormalizarGrano(granoSilo) != NormalizarGrano(granoIngreso))
+        {
+            return $"Contiene {granoSilo}: un silo guarda un solo grano a la vez.";
+        }
+
+        var libre = capacidadMax - stock;
+        if (libre <= 0)
+        {
+            return "Sin capacidad libre";
+        }
+
+        if (cantidad > libre)
+        {
+            return $"La cantidad supera la capacidad libre del silo ({libre:N0} kg de {capacidadMax:N0} kg).";
+        }
+
+        return null;
+    }
+
+    /// <summary>"Maíz", "maiz " y "MAIZ" son el mismo grano.</summary>
+    private static string NormalizarGrano(string? valor)
+    {
+        if (string.IsNullOrWhiteSpace(valor))
+        {
+            return string.Empty;
+        }
+
+        var descompuesto = valor.Trim().Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(descompuesto.Length);
+        foreach (var caracter in descompuesto)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(caracter) != UnicodeCategory.NonSpacingMark)
+            {
+                builder.Append(char.ToLowerInvariant(caracter));
+            }
+        }
+
+        return builder.ToString();
     }
 
     private static AlmacenamientoDto Mapear(SqlDataReader reader) => new()
@@ -327,8 +1458,17 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
         Observaciones = reader.IsDBNull(10) ? null : reader.GetString(10),
         Campania = reader.IsDBNull(11) ? null : reader.GetString(11),
         Cosecha = reader.IsDBNull(12) ? null : reader.GetString(12),
-        CreadoPorNombre = reader.IsDBNull(13) ? null : reader.GetString(13),
-        FechaCreacion = reader.GetDateTime(14),
-        FechaModificacion = reader.IsDBNull(15) ? null : reader.GetDateTime(15),
+        Producto = reader.IsDBNull(13) ? null : reader.GetString(13),
+        CreadoPorNombre = reader.IsDBNull(14) ? null : reader.GetString(14),
+        FechaCreacion = reader.GetDateTime(15),
+        FechaModificacion = reader.IsDBNull(16) ? null : reader.GetDateTime(16),
+        EmpresaId = reader.IsDBNull(17) ? null : reader.GetInt32(17),
+        SiloCodigo = reader.IsDBNull(18) ? null : reader.GetString(18),
+        CosechaId = reader.IsDBNull(19) ? null : reader.GetInt32(19),
+        CampaniaId = reader.IsDBNull(20) ? null : reader.GetInt32(20),
+        HumedadIngreso = reader.IsDBNull(21) ? null : reader.GetDecimal(21),
+        Impurezas = reader.IsDBNull(22) ? null : reader.GetDecimal(22),
+        Motivo = reader.IsDBNull(23) ? null : reader.GetString(23),
+        TransferenciaId = reader.IsDBNull(24) ? null : reader.GetGuid(24),
     };
 }

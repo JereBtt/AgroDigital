@@ -9,7 +9,7 @@ namespace AgroDigital.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepository loteRepository, IAuthTokenService authTokenService, IWebHostEnvironment environment) : ControllerBase
+public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepository loteRepository, IAuthTokenService authTokenService, IWebHostEnvironment environment, IPermisosService permisos) : ControllerBase
 {
     private readonly string _uploadsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "siembras");
     private const int DiasDesvioRequiereJustificacion = 3;
@@ -44,6 +44,7 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
     public async Task<ActionResult<SiembraDto>> Crear(CrearSiembraRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Lote, request.LoteId, RolesPermiso.Estructura, "registrar siembras");
 
         NormalizarDetalleAgronomico(request);
         var validation = ValidarSiembra(request);
@@ -73,6 +74,7 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
     public async Task<IActionResult> Actualizar(int siembraId, ActualizarSiembraRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Siembra, siembraId, RolesPermiso.Estructura, "editar siembras");
         var registroActual = await siembraRepository.ObtenerPorIdAsync(siembraId);
         if (registroActual?.Deshabilitada == true) return Conflict("La siembra deshabilitada se conserva como historial y no puede editarse.");
 
@@ -117,6 +119,7 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
     public async Task<IActionResult> Deshabilitar(int siembraId, DeshabilitarSiembraRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Siembra, siembraId, RolesPermiso.Estructura, "deshabilitar siembras");
         if (request.Motivo is not ("Fin de alquiler" or "Siniestro" or "Otro motivo")) return BadRequest("Seleccioná un motivo válido.");
         if (request.Motivo == "Otro motivo" && string.IsNullOrWhiteSpace(request.Detalle)) return BadRequest("Describí el motivo.");
         if (request.Motivo != "Otro motivo" && !string.IsNullOrWhiteSpace(request.Detalle)) return BadRequest("El detalle solo corresponde a Otro motivo.");
@@ -135,6 +138,7 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
     public async Task<IActionResult> Habilitar(int siembraId)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Siembra, siembraId, RolesPermiso.Estructura, "habilitar siembras");
         try
         {
             return await loteRepository.HabilitarSiembraAsync(siembraId, usuario.UsuarioId, usuario.Rol == "Admin") ? NoContent() : NotFound();
@@ -147,6 +151,7 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
     public async Task<IActionResult> FinalizarSiembra(int siembraId, FinalizarSiembraRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Siembra, siembraId, RolesPermiso.Estructura, "finalizar siembras");
 
         var siembra = await siembraRepository.ObtenerPorIdAsync(siembraId);
         if (siembra is null) return NotFound();
@@ -171,6 +176,7 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
     public async Task<ActionResult<SiembraInsumoDto>> AgregarInsumo(int siembraId, CrearSiembraInsumoRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Siembra, siembraId, RolesPermiso.Estructura, "cargar insumos de siembras");
 
         var validation = ValidarInsumo(request);
         if (validation is not null) return validation;
@@ -198,7 +204,8 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
     [HttpDelete("{siembraId:int}/insumos/{insumoId:int}")]
     public async Task<IActionResult> EliminarInsumo(int siembraId, int insumoId)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Siembra, siembraId, RolesPermiso.Estructura, "eliminar insumos de siembras");
         var eliminado = await siembraRepository.EliminarInsumoAsync(siembraId, insumoId);
         return eliminado ? NoContent() : NotFound();
     }
@@ -216,6 +223,7 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
     public async Task<ActionResult<SiembraDocumentoDto>> SubirDocumento(int siembraId, IFormFile archivo)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Siembra, siembraId, RolesPermiso.Estructura, "adjuntar documentos a siembras");
 
         if (archivo is null || archivo.Length == 0)
         {
@@ -256,7 +264,8 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
     [HttpDelete("{siembraId:int}/documentos/{documentoId:int}")]
     public async Task<IActionResult> EliminarDocumento(int siembraId, int documentoId)
     {
-        if (!TryGetAuthenticatedUser(out _, out var error)) return error;
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Siembra, siembraId, RolesPermiso.Estructura, "eliminar documentos de siembras");
 
         var ruta = await siembraRepository.ObtenerRutaDocumentoAsync(siembraId, documentoId);
         var eliminado = await siembraRepository.EliminarDocumentoAsync(siembraId, documentoId);

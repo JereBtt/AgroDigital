@@ -121,8 +121,13 @@ Estructura inicial definida:
 - `database/`: scripts SQL, documentacion y recursos de base de datos.
 - `database/scripts/00_master_create_database.sql`: script madre de creacion completa de la base de datos.
 - `database/scripts/09_cosechas.sql`: script incremental del modulo Cosechas y documentos adjuntos.
+- `database/scripts/29_cosechas_rediseno.sql`: rediseño de Cosechas (EmpresaId, EstadoControl, maquinaria, rinde seco, tolerancias por grano, partes diarios y vista vw_CosechasAvance).
+- `frontend/AgroDigital.Web/src/Cosechas.jsx`: consulta con avance y control de perdidas, registrar/editar, modal de finalizacion, partes diarios, Tirada de Aros con mapa y detalle. Estilos: bloque `cos-*` al final de `styles.css`.
 - `database/scripts/09_almacenamiento.sql` y `10_almacenamiento_campania_cosecha.sql`: estructura de Almacenamiento y referencias textuales. Comparten prefijos numericos con scripts de otros modulos; identificarlos por nombre completo y respetar sus dependencias.
 - `frontend/AgroDigital.Web/src/Almacenamiento.jsx`: consulta, registro y edicion de movimientos de almacenamiento.
+- `frontend/AgroDigital.Web/src/Estadisticas.jsx`: modulo Estadisticas con pestanias Silos y almacenamiento y Distribucion, filtros de periodo (atajos: ultimos 30 dias, ultimos 6 meses, este anio, por campania y personalizado) y grano; la empresa sale del selector superior de App. Graficos en HTML/SVG propios, sin librerias. Estilos: bloque `est-*` al final de `styles.css`.
+- `frontend/AgroDigital.Web/src/Distribucion.jsx`: envios por camion (indicadores y tabla por Carta de Porte), registro, conciliacion con analisis de merma en vivo, detalle con trazabilidad, catalogos y parametros por grano. Sus estilos son el bloque `dist-*` al final de `styles.css`; reutiliza las clases `alm-*` de Almacenamiento.
+- `database/scripts/23_distribucion.sql`: estructura del modulo Distribucion (catalogos, parametros por grano, envios, camiones, documentos y vistas). Pendiente de incorporar al script madre cuando el modulo este probado.
 - `docs/`: documentacion tecnica y funcional versionada que corresponda.
 
 Actualizar esta seccion cuando se creen carpetas, proyectos, scripts o convenciones reales.
@@ -148,10 +153,12 @@ Segun el Manual de Usuario, AgroDigital incluye:
 
 Roles definidos:
 
-- Gerente: consulta en modulos operativos, acceso a Estadisticas y Reporteria IA, y gestion completa del modulo Usuarios, incluyendo aprobacion de cuentas y asignacion de roles.
-- Encargado: alta, edicion y consulta en modulos operativos, acceso a Estadisticas y Reporteria IA; en Usuarios solo consulta.
-- Empleado de campo: consulta en modulos operativos; sin acceso a Estadisticas ni Reporteria IA.
-- Empleado Administrativo: consulta en modulos operativos y gestion completa de Distribucion.
+- Gerente: alta, edicion y consulta de la estructura operativa (Lotes, Campanias, Siembras, Cosechas y Silos), registros de campo y movimientos de grano; acceso a Estadisticas y Reporteria IA y gestion completa de Usuarios.
+- Encargado: alta, edicion y consulta de la estructura operativa, registros de campo y movimientos de grano; acceso a Estadisticas y Reporteria IA; en Usuarios solo consulta.
+- Empleado de campo: consulta operativa y registro de Seguimientos, tiradas de aros, partes de cosecha y controles de silo. Solo puede editar o eliminar los registros de campo que cargo. Sin acceso a Estadisticas ni Reporteria IA.
+- Empleado Administrativo: consulta operativa y gestion de movimientos de grano en Almacenamiento y Distribucion.
+
+Estos permisos se evaluan segun el rol del usuario en la empresa del registro; Admin tiene acceso interno completo. La matriz implementada esta en `backend/AgroDigital.Api/Services/PermisosService.cs`.
 
 AgroBot esta disponible para los cuatro roles, pero sus respuestas deben respetar los permisos del usuario logueado.
 
@@ -168,6 +175,7 @@ AgroBot esta disponible para los cuatro roles, pero sus respuestas deben respeta
 - En resiembra, seleccionar Si en pulverizacion exige al menos un registro en la tabla de agroquimicos para continuar o guardar. Completar el formulario sin agregarlo a la tabla no satisface la condicion; seleccionar No permite continuar sin aplicaciones.
 
 - En Datos generales de siembra y resiembra se muestra Cultivo anterior, informativo y de solo lectura, obtenido del último cultivo cosechado en una campaña previa del lote. En resiembra, Cultivo a resembrar conserva el campo técnico Producto y las reglas de selección existentes (parcial conserva el original; total permite cambiarlo). En siembras originales el campo se presenta como Cultivo.
+- En Datos generales de resiembra se muestran dos campos: Cultivo afectado, informativo y de solo lectura obtenido de Producto de la siembra original; y Cultivo a resembrar, que conserva el campo tecnico Producto y las reglas de seleccion existentes (parcial conserva el original; total permite cambiarlo). En siembras originales el campo se presenta como Cultivo.
 
 - En Datos generales de Siembras, la seleccion del lote y la referencia a la siembra original se presentan antes de las fechas. La fecha de inicio de resiembra permanece deshabilitada hasta seleccionar un lote con fecha real de fin original disponible, para aplicar los limites correspondientes.
 
@@ -219,8 +227,11 @@ AgroBot esta disponible para los cuatro roles, pero sus respuestas deben respeta
 - El seguimiento de una siembra se registra como Siniestro o Posemergente. Ambos requieren fecha posterior a la FechaInicio de siembra y hasta seis meses calendario después, además de un punto georreferenciado dentro del polígono del lote; frontend y API lo validan. Siniestro requiere causa y alcance/pérdida Parcial o Total; incluye Incendio entre sus causas. Posemergente requiere motivo de aplicación (Plaga, Maleza o Enfermedad), alcance Parcial o Total y al menos un agroquímico cargado. Su primera fecha es directamente Fecha de aplicación y se usa en todos sus agroquímicos, sin repetir el campo por producto. El historial los presenta en tablas separadas: no muestra Latitud ni Longitud como columnas, y en Posemergentes agrega las Drogas aplicadas, resumidas desde sus agroquímicos asociados. Las coordenadas se conservan para el mapa y la validación geográfica.
 - El mapa de Seguimiento se muestra con ancho máximo de la mitad del formulario (hasta 720 px) y altura de 260 px; limita el encuadre y desplazamiento al entorno del polígono del lote. Usa zoom máximo y máximo nativo 17 para no solicitar teselas satelitales fuera de rango al ampliar la vista.
 - El historial consolidado de Seguimiento separa visualmente cada etapa de siembra mediante una fila divisoria discreta `Resiembra` antes de los registros de la etapa anterior, tanto en Siniestros como en Posemergentes. Las filas conservan su fondo normal; el separador es la única marca visual de la etapa anterior.
-- Decision vigente de Cosechas: la Tirada de Aros es un control opcional y no gobierna el estado de la cosecha. Al registrar una cosecha queda directamente En curso con fecha de fin tentativa; al finalizar se carga fecha real de finalizacion, resultado de cosecha y, si la fecha real se aleja mas de 3 dias de la tentativa, una justificacion operativa.
-- Los controles de Tirada de Aros pueden registrarse mientras la cosecha esta En curso, durante la finalizacion, o luego de finalizada con una advertencia clara para el usuario.
+- Decision vigente de Cosechas (29_cosechas_rediseno.sql): dos estados independientes, igual que Siembras. Estado de la cosecha: al registrar queda En curso con fecha tentativa de fin; el boton de estado abre un modal de finalizacion que pide fecha real (no futura, hasta 6 meses desde el inicio), hectareas por hora, kg, hectareas, humedad e impurezas; si la fecha real se aleja mas de 3 dias de la tentativa exige justificacion. El rinde y el rinde seco (a la humedad base de dbo.GranoBasesComercializacion) los calcula la API y no se editan a mano. Control de perdidas (EstadoControl): Sin controles -> En curso con la primera Tirada de Aros -> Finalizado con Finalizar control; cerrado, no admite agregar, editar ni eliminar tiradas. Cerrar el control no finaliza la cosecha; el modal de finalizacion puede cerrarlo en el mismo paso.
+- Una cosecha por siembra (indice unico filtrado UX_Cosechas_SiembraId). Solo se registra sobre una siembra Finalizada que sea la ultima de su cadena (sin resiembra posterior); lote, grano, campania y empresa se toman de la siembra en la API. La fecha de inicio no puede ser anterior al fin real de la siembra. Responsable obligatorio; maquinaria (Propia/Contratada, contratista, cosechadora, ancho de cabezal) opcional.
+- Tirada de Aros: el punto se marca en el mapa y debe quedar dentro del poligono del lote; la fecha va del inicio de la cosecha a hoy (o al fin real si esta finalizada). PMG: el indicado, si no el de la siembra y si no el de referencia del grano (PmgOrigen). Los granos de precosecha (promedio por aro, opcional) se descuentan del aro cabezal. Severidad: Baja <= tolerancia, Media <= tolerancia x factor, Alta por encima. Tolerancias de referencia INTA PRECOP en dbo.GranoToleranciasCosecha (Soja 90, Maiz 210, Sorgo 180, Trigo 80, Girasol 70 kg/ha) con ajuste opcional por empresa en dbo.GranoParametrosCosecha (Gerente y Encargado); grano sin referencia usa cortes generales 80/150. Cada tirada guarda la tolerancia y el factor aplicados: cambiar parametros no reclasifica el historial.
+- Partes diarios de cosecha (dbo.CosechaPartes): solo con la cosecha En curso; fecha entre el inicio y hoy; el total de hectareas no supera las sembradas. Destino Silo, Distribucion directa o Pendiente. Un parte con destino Silo genera en la misma transaccion el ingreso en Almacenamiento (Origen = Cosecha, vinculado por CosechaId) y desde entonces solo se editan sus observaciones; no se elimina (el stock se corrige con un ajuste). Al finalizar, los kg cosechados no pueden ser menores a lo ya ingresado a silos o distribuido desde la cosecha; el modal precarga kg, hectareas y humedad desde los partes.
+- GET /api/cosechas devuelve solo las cosechas de las empresas del usuario (Admin: todas).
 - Almacenamiento registra ingresos y egresos de grano en silos y recalcula stock automaticamente.
 - Se generan movimientos automaticos de almacenamiento al crear un silo con grano inicial y al distribuir grano desde un silo.
 - Distribucion puede salir directo desde una cosecha o desde un silo.
@@ -256,7 +267,14 @@ AgroBot esta disponible para los cuatro roles, pero sus respuestas deben respeta
 - Perdida de cabezal en Tirada de Aros: `((Granos del Aro Cabezal / 0.25) * PMG) / 100`.
 - Perdida de cola en Tirada de Aros: `((Promedio de granos de los 3 Aros Cola / 0.25) * PMG) / 100`.
 - Perdida total en Tirada de Aros: `Perdida Cabezal + Perdida Cola`.
-- Diferencia de mermas en Distribucion: cantidad despachada total menos cantidad informada por la acopiadora.
+- Merma en Distribucion (por camion / Carta de Porte, la calcula la API al conciliar):
+  - Secado (%) = `(HumedadDestino - HumedadBase) / (100 - HumedadBase) * 100`, 0 si no supera la base. HumedadBase sale de `dbo.GranoBasesComercializacion`.
+  - Materias extranas sobre tolerancia (%) = `MateriasExtranasDestino - ToleranciaME`, 0 si no la supera.
+  - Merma esperada (%) = `Secado + Manipuleo + ME sobre tolerancia`; Merma esperada (kg) = `KgRecibidos * Merma esperada % / 100`.
+  - Diferencia de balanza = `KgDespachados - KgRecibidos`; Descuento por calidad = `KgRecibidos - KgNetosLiquidados`; Merma total = `KgDespachados - KgNetosLiquidados`.
+  - Merma no justificada = `Merma total - Merma esperada (kg)`; Desvio (pp) = `Merma no justificada / KgDespachados * 100`.
+  - Nivel de desvio: Bajo <= DesvioMedioPp (0,5 por defecto), Medio <= DesvioAltoPp (1,5 por defecto), Alto por encima. Un desvio negativo es Bajo.
+  - La logica vive en `Services/CalculadoraMermaDistribucion.cs` y se usa igual en la previsualizacion y en la conciliacion.
 
 ## Integraciones funcionales previstas
 
@@ -311,8 +329,19 @@ La tesis describe el flujo operativo de campania:
 
 ## Decisiones tecnicas vigentes
 
+- Distribucion: un envio (`dbo.Distribuciones`, nombre `DIST - 0001` numerado por empresa) agrupa camiones (`dbo.DistribucionCamiones`); la merma se concilia por camion / Carta de Porte. Ciclo del camion: En transito -> Recibido -> Conciliado; el estado del envio se deriva de sus camiones (`dbo.vw_DistribucionesResumen`).
+- Distribucion: una vez registrado un camion no se borra y sus kg despachados y el origen del envio no se modifican. Solo se editan datos logisticos (chofer, camion, destino, CPE y ticket de balanza) y la cabecera (responsable y observaciones).
+- Distribucion: si el grano sale de un silo, cada camion genera su Egreso FIFO en Almacenamiento (Origen = Distribucion) dentro de la misma transaccion del envio, mediante `IAlmacenamientoRepository.RegistrarEgresoDistribucionAsync`. Si sale directo de la cosecha, el saldo disponible es cosechado - ingresos a silos - ya distribuido directo (`SaldoCosechaDto.KgDistribuidosDirecto`).
+- Distribucion: al conciliar se guarda una foto de los parametros aplicados (humedad base, manipuleo, tolerancia) y de la merma esperada; cambiar parametros despues no altera envios ya conciliados. Volver a conciliar recalcula con los parametros vigentes.
+- Distribucion: catalogos por empresa (`Transportistas`, `Choferes`, `Camiones`, `DestinosDistribucion`) con FK compuestas (Id, EmpresaId); no se borran, se desactivan. La patente se guarda sin espacios ni guiones y en mayusculas; el DNI, solo digitos. La CPE es unica por empresa.
+- Distribucion: permisos. Consulta, cualquier usuario de la empresa. Alta, edicion, recepcion, conciliacion, documentos y catalogos: Encargado y Empleado Administrativo. Parametros por grano: Gerente y Encargado. Indicadores agregados de merma: solo Gerente y Encargado (el resto recibe `IncluyeMerma = false`).
+- Distribucion: los graficos de merma por acopiadora, kg por destino y diferencia de balanza por transportista se reservan para el futuro modulo de Estadisticas, no para la pantalla de Distribucion.
+- Estadisticas (primera version): pestanias Silos y almacenamiento y Distribucion, por empresa y periodo (`GET /api/estadisticas/almacenamiento` y `/distribucion`, con `empresaId`, `desde`, `hasta` y `grano` opcional; sin fechas, ultimos 6 meses). Solo lectura, sin tablas propias. Acceso: Gerente, Encargado y Admin. Campanias, Siembras y Cosechas se suman cuando esos modulos esten terminados; Usuarios queda para una etapa posterior.
+- Estadisticas: cada grafico se marca "Segun el periodo" o "Al dia de hoy". Al dia de hoy (ignoran fechas): stock, antiguedad del stock y camiones sin conciliar. El grano se compara sin tildes ni mayusculas.
+- Estadisticas, criterios: el flujo mensual excluye transferencias entre silos y reconstruye el stock al cierre de cada mes hacia atras desde el stock actual; las mermas de almacenamiento son ajustes negativos por motivo mas egresos manuales por Deterioro; un control programado en el periodo esta en termino si el siguiente se hizo hasta esa fecha, los vencidos sin hacer cuentan como incumplidos salvo que el silo ya no tenga grano, y los no vencidos no cuentan.
 - Almacenamiento esta integrado al menu y a la API; genera el ingreso inicial de grano al crear un silo. El script madre incluye su estructura y las bases existentes se actualizan con los dos incrementales de almacenamiento, sin ejecutar scripts de reasignacion de empresas.
 - Pendiente de integracion estructural: Almacenamiento conserva Campania/Cosecha como texto libre y no posee EmpresaId ni aislamiento por empresa. Esto no reemplaza la regla objetivo de EmpresaId en tablas operativas; requiere una migracion especifica antes de considerarlo integrado al flujo multiempresa de Campanias/Cosechas.
+- Almacenamiento agrega Producto como texto libre y opcional en el movimiento (mismo criterio que Campania/Cosecha, columna NULL agregada via `11_almacenamiento_producto.sql`). Es independiente del campo `Producto` ya existente en `dbo.Silos`, porque un mismo silo puede recibir mas de un producto a lo largo del tiempo y el movimiento debe poder dejar registrado cual corresponde a ese ingreso o egreso puntual. La tabla de consulta muestra el Producto del movimiento y, si no fue cargado, cae al Producto registrado en el Silo. Cuando exista un catalogo formal de Productos, la migracion natural es agregar ProductoId (INT NULL + FK) y evaluar la baja de esta columna de texto.
 - Lotes permite exportar los registros seleccionados a PDF y confirmar la habilitacion/deshabilitacion mediante modal. Se conservan los filtros y campos de cultivo locales.
 
 - SQL Server objetivo: SQL Server 2019 Developer Edition configurado localmente por cada integrante.

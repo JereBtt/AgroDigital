@@ -1,3 +1,4 @@
 namespace AgroDigital.Api.Dtos;
 
-public sealed record CrearCuentaGerenteRequest(string Responsable);
+/// <summary>Alta de un Gerente por el Admin. El correo es obligatorio: ahi se envia la invitacion.</summary>
+public sealed record CrearCuentaGerenteRequest(string Responsable, string? CorreoElectronico);

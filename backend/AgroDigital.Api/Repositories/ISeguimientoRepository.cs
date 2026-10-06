@@ -6,7 +6,7 @@ public interface ISeguimientoRepository
 {
     Task<IReadOnlyList<SiembraSeguimientoDto>> ObtenerTodosAsync(int siembraId);
     Task<SiembraSeguimientoDto?> ObtenerPorIdAsync(int siembraId, int seguimientoId);
-    Task<SiembraSeguimientoDto?> CrearAsync(int siembraId, CrearSiembraSeguimientoRequest request);
+    Task<SiembraSeguimientoDto?> CrearAsync(int siembraId, CrearSiembraSeguimientoRequest request, int? creadoPorUsuarioId = null);
     Task<bool> ActualizarAsync(int siembraId, int seguimientoId, ActualizarSiembraSeguimientoRequest request);
     Task<bool> EliminarAsync(int siembraId, int seguimientoId);
     Task<IReadOnlyList<string>> ObtenerRutasDocumentosDeSeguimientoAsync(int seguimientoId);
