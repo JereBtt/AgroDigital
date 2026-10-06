@@ -595,6 +595,7 @@ function App() {
   const [loteActiveCampaignPrompt, setLoteActiveCampaignPrompt] = useState(null);
   const [loteOverlapConflict, setLoteOverlapConflict] = useState('');
   const [campaignEditRequestId, setCampaignEditRequestId] = useState('');
+  const [siembraRegistrationRequest, setSiembraRegistrationRequest] = useState(null);
   const [pendingCampaignReactivation, setPendingCampaignReactivation] = useState(null);
   const [pendingNewCampaignLot, setPendingNewCampaignLot] = useState(null);
   const [status, setStatus] = useState('Conectando...');
@@ -1679,6 +1680,7 @@ function App() {
       return;
     }
     if (nextModule !== 'campanias') setPendingCampaignReactivation(null);
+    if (nextModule !== 'siembras') setSiembraRegistrationRequest(null);
     setActiveModule(nextModule);
   }
 
@@ -2589,8 +2591,10 @@ function App() {
             onPendingReactivationDone={() => setPendingCampaignReactivation(null)}
             pendingNewCampaignLot={pendingNewCampaignLot}
             onPendingNewCampaignLotResolved={() => setPendingNewCampaignLot(null)}
-            onRegisterSiembra={(campaniaId) => {
-              setSelectedParentCampaniaId(String(campaniaId));
+            onRegisterSiembra={(plan) => {
+              if (plan.empresaId) setSelectedParentEmpresaId(String(plan.empresaId));
+              setSelectedParentCampaniaId(String(plan.campaniaId));
+              setSiembraRegistrationRequest(plan);
               setActiveModule('siembras');
               setProfileMenuOpen(false);
               setIsMapExpanded(false);
@@ -2606,6 +2610,8 @@ function App() {
             selectedCampaniaCombinaciones={selectedParentCampaniaCombinaciones}
             selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
             selectedCampaniaName={selectedParentCampania?.campaniaNombre || ''}
+            registrationRequest={siembraRegistrationRequest}
+            onRegistrationRequestHandled={() => setSiembraRegistrationRequest(null)}
             onLotesChanged={loadLotes}
             onCampaniasChanged={loadParentCampanias}
           />

@@ -76,7 +76,11 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
         await permisos.ExigirAsync(usuario, RecursoOperativo.Siembra, siembraId, RolesPermiso.Estructura, "editar siembras");
         var registroActual = await siembraRepository.ObtenerPorIdAsync(siembraId);
-        if (registroActual?.Deshabilitada == true) return Conflict("La siembra deshabilitada se conserva como historial y no puede editarse.");
+        if (registroActual is null) return NotFound();
+        if (registroActual.Deshabilitada) return Conflict("La siembra deshabilitada se conserva como historial y no puede editarse.");
+        if (registroActual.LoteId != request.LoteId || registroActual.TipoRegistro != request.TipoRegistro
+            || registroActual.CicloEstacional != request.CicloEstacional)
+            return Conflict("No se puede cambiar el lote, el tipo de registro ni el ciclo estacional al editar una siembra.");
 
         NormalizarDetalleAgronomico(request);
         var validation = ValidarSiembra(request);

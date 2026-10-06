@@ -10,7 +10,6 @@ import {
   CalendarDays,
   CheckCircle2,
   Edit,
-  Eye,
   Info,
   Leaf,
   LoaderCircle,
@@ -1259,7 +1258,12 @@ function CampaniaDetalle({ permisos = PERMISOS_TODOS, campania, onBack, onEdit, 
         showOperationalActions
         showDates={false}
         onEdit={onEdit}
-        onRegisterSiembra={onRegisterSiembra}
+        onRegisterSiembra={(item) => onRegisterSiembra?.({
+          campaniaId: campania.campaniaId,
+          empresaId: campania.empresaId,
+          loteId: item.loteId,
+          cicloEstacional: item.cicloEstacional || 'Verano'
+        })}
         onDisablePlan={onDisablePlan}
       />
 
@@ -1311,8 +1315,7 @@ function CombinacionesTable({ permisos = PERMISOS_TODOS, combinaciones, editable
                 <td className="compact-actions-cell">
                   <div className="actions-cell actions-cell-center">
                     {permisos.estructura && <button className="table-action-tooltip" data-tooltip="Editar campaña" type="button" aria-label="Editar campaña" onClick={onEdit}><Edit size={18} /></button>}
-                    <button className="table-action-tooltip" data-tooltip="Detalle de campaña" type="button" aria-label="Detalle de campaña" onClick={() => alert('Ya estas consultando el detalle de esta campaña.')}><Eye size={18} /></button>
-                    {permisos.estructura && <button className="table-action-tooltip" data-tooltip="Registrar siembra" type="button" aria-label={`Registrar siembra para ${item.loteNombre}`} onClick={() => onRegisterSiembra?.(item.campaniaId)}><Sprout size={18} /></button>}
+                    {permisos.estructura && <button className="table-action-tooltip" data-tooltip={item.estado === 'Pendiente' && item.etapaActual === 'Sin etapa' ? 'Registrar siembra' : 'Siembra iniciada'} type="button" aria-label={`Registrar siembra para ${item.loteNombre} en ${item.cicloEstacional || 'Verano'}`} disabled={item.estado !== 'Pendiente' || item.etapaActual !== 'Sin etapa'} onClick={() => onRegisterSiembra?.(item)}><Sprout size={18} /></button>}
                     {permisos.estructura && <button className="table-action-tooltip" data-tooltip="Registrar cosecha" type="button" aria-label="Registrar cosecha" disabled={item.estado === 'Pendiente'} onClick={() => alert('La accion quedo preparada para conectar con Registrar Cosecha.')}><Scale size={18} /></button>}
                     {permisos.movimientoGrano && <button className="table-action-tooltip" data-tooltip="Almacenamiento" type="button" aria-label="Registrar almacenamiento" disabled={item.estado === 'Pendiente'}><Package size={18} /></button>}
                     {permisos.movimientoGrano && <button className="table-action-tooltip" data-tooltip="Distribucion" type="button" aria-label="Registrar distribucion" disabled={item.estado === 'Pendiente'}><Truck size={18} /></button>}

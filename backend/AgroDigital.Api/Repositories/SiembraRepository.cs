@@ -222,8 +222,19 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
         var sql = """
             SET XACT_ABORT ON;
             BEGIN TRANSACTION;
-            DECLARE @LoteAnteriorId INT = (SELECT LoteId FROM dbo.Siembras WHERE SiembraId = @SiembraId);
-            IF @CicloEstacional <> (SELECT CicloEstacional FROM dbo.Siembras WHERE SiembraId = @SiembraId)
+            DECLARE @LoteAnteriorId INT;
+            DECLARE @TipoRegistroAnterior NVARCHAR(20);
+            DECLARE @CicloEstacionalAnterior NVARCHAR(20);
+            SELECT @LoteAnteriorId = LoteId,
+                   @TipoRegistroAnterior = ISNULL(TipoRegistro, N'Siembra'),
+                   @CicloEstacionalAnterior = CicloEstacional
+            FROM dbo.Siembras WITH (UPDLOCK, HOLDLOCK)
+            WHERE SiembraId = @SiembraId;
+            IF @LoteId <> @LoteAnteriorId
+                THROW 50001, N'No se puede cambiar el lote de una siembra existente.', 1;
+            IF @TipoRegistro <> @TipoRegistroAnterior
+                THROW 50001, N'No se puede cambiar el tipo de registro de una siembra existente.', 1;
+            IF @CicloEstacional <> @CicloEstacionalAnterior
                 THROW 50001, N'No se puede cambiar el ciclo estacional de una siembra existente.', 1;
             IF @TipoRegistro <> N'Resiembra' AND EXISTS (
                 SELECT 1 FROM dbo.Siembras WITH (UPDLOCK, HOLDLOCK)
