@@ -34,3 +34,9 @@ El primer modulo modelado es Lotes, tomando como referencia funcional el Manual 
 - Hectareas.
 - Superficie total.
 - Coordenadas de las esquinas del lote marcadas en el mapa.
+
+## Refertilización de siembras
+
+En una base existente que ya tiene Seguimientos y permisos de campo, ejecutar
+`scripts/30_refertilizacion_seguimientos.sql`. Agrega el tipo Refertilización y sus
+cantidades calculadas sin modificar las recorridas anteriores.

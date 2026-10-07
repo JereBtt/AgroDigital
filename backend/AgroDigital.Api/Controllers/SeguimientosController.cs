@@ -18,7 +18,7 @@ public class SeguimientosController(
     private readonly string _uploadsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "seguimientos");
 
     private static readonly string[] IncidenciasValidas = ["Plaga", "Maleza", "Enfermedad", "Ninguna"];
-    private static readonly string[] TiposRegistroValidos = ["Siniestro", "Posemergente"];
+    private static readonly string[] TiposRegistroValidos = ["Siniestro", "Posemergente", "Refertilizacion"];
     private static readonly string[] SiniestrosValidos =
     [
         "Granizo", "Sequia / Estres hidrico", "Helada tardia", "Anegamiento / Inundacion",
@@ -72,10 +72,10 @@ public class SeguimientosController(
 
         var lote = await loteRepository.ObtenerPorIdAsync(siembra.LoteId, usuario.UsuarioId, usuario.Rol == "Admin");
         if (lote is null) return NotFound();
-        var validationError = ValidarRegistro(request, siembra.FechaInicio, lote.Coordenadas);
+        var validationError = ValidarRegistro(request, siembra.FechaInicio, lote.Coordenadas, siembra.CantidadHectareasTrabajadas);
         if (validationError is not null) return BadRequest(validationError);
 
-        var seguimiento = await seguimientoRepository.CrearAsync(siembraId, request, usuario.UsuarioId);
+        var seguimiento = await seguimientoRepository.CrearAsync(siembraId, request, siembra.CantidadHectareasTrabajadas, usuario.UsuarioId);
         return seguimiento is null ? NotFound() : Ok(seguimiento);
     }
 
@@ -91,10 +91,14 @@ public class SeguimientosController(
 
         var lote = await loteRepository.ObtenerPorIdAsync(siembra.LoteId, usuario.UsuarioId, usuario.Rol == "Admin");
         if (lote is null) return NotFound();
-        var validationError = ValidarRegistro(request, siembra.FechaInicio, lote.Coordenadas);
+        var validationError = ValidarRegistro(request, siembra.FechaInicio, lote.Coordenadas, siembra.CantidadHectareasTrabajadas);
         if (validationError is not null) return BadRequest(validationError);
 
-        var actualizado = await seguimientoRepository.ActualizarAsync(siembraId, seguimientoId, request);
+        var actual = await seguimientoRepository.ObtenerPorIdAsync(siembraId, seguimientoId);
+        if (actual is null) return NotFound();
+        if (actual.TipoRegistro != request.TipoRegistro) return BadRequest("No se puede cambiar el tipo de registro.");
+
+        var actualizado = await seguimientoRepository.ActualizarAsync(siembraId, seguimientoId, request, siembra.CantidadHectareasTrabajadas);
         return actualizado ? NoContent() : NotFound();
     }
 
@@ -261,13 +265,28 @@ public class SeguimientosController(
         return true;
     }
 
-    private static string? ValidarRegistro(CrearSiembraSeguimientoRequest request, DateTime fechaInicioSiembra, IReadOnlyList<LoteCoordenadaDto> coordenadasLote)
+    private static string? ValidarRegistro(CrearSiembraSeguimientoRequest request, DateTime fechaInicioSiembra, IReadOnlyList<LoteCoordenadaDto> coordenadasLote, decimal? hectareasSembradas)
     {
         if (!TiposRegistroValidos.Contains(request.TipoRegistro))
             return "Tipo de seguimiento invalido.";
 
         if (request.Fecha is null)
             return "La fecha del seguimiento es obligatoria.";
+
+        if (request.TipoRegistro == "Refertilizacion")
+        {
+            if (request.Fecha.Value.Date <= fechaInicioSiembra.Date || request.Fecha.Value.Date > fechaInicioSiembra.Date.AddMonths(4))
+                return $"La fecha debe ser posterior a la siembra y no superar los cuatro meses desde {fechaInicioSiembra:dd/MM/yyyy}.";
+            if (hectareasSembradas is null or <= 0)
+                return "La siembra no tiene hectáreas sembradas válidas.";
+            if (request.UreaKgHa is null or < 1 or > 500)
+                return "La urea debe estar entre 1 y 500 kg/ha.";
+            if (request.HectareasHora is null or <= 0)
+                return "Las hectáreas por hora deben ser mayores que cero.";
+            if (request.HectareasHora > 10000)
+                return "Las hectáreas por hora exceden el máximo admitido.";
+            return null;
+        }
 
         if (request.Latitud is null || request.Longitud is null)
             return "Debes marcar el punto del seguimiento en el mapa.";
@@ -303,7 +322,7 @@ public class SeguimientosController(
         return null;
     }
 
-    private static string? ValidarRegistro(ActualizarSiembraSeguimientoRequest request, DateTime fechaInicioSiembra, IReadOnlyList<LoteCoordenadaDto> coordenadasLote) =>
+    private static string? ValidarRegistro(ActualizarSiembraSeguimientoRequest request, DateTime fechaInicioSiembra, IReadOnlyList<LoteCoordenadaDto> coordenadasLote, decimal? hectareasSembradas) =>
         ValidarRegistro(new CrearSiembraSeguimientoRequest
         {
             Fecha = request.Fecha,
@@ -315,6 +334,8 @@ public class SeguimientosController(
             Incidencia = request.Incidencia,
             PerdidaEconomica = request.PerdidaEconomica,
             AplicacionAgroquimicos = request.AplicacionAgroquimicos,
-            Observaciones = request.Observaciones
-        }, fechaInicioSiembra, coordenadasLote);
+            Observaciones = request.Observaciones,
+            UreaKgHa = request.UreaKgHa,
+            HectareasHora = request.HectareasHora
+        }, fechaInicioSiembra, coordenadasLote, hectareasSembradas);
 }

@@ -43,6 +43,7 @@ const PERMISOS_TODOS = { estructura: true, registroCampo: true, movimientoGrano:
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
 const DIAS_DESVIO_REQUIERE_JUSTIFICACION = 3;
 const MESES_MAXIMOS_COSECHA = 6;
+const MESES_MAXIMOS_TIRADA = 4;
 const AREA_ARO_M2 = 0.25;
 const DEFAULT_MAP_CENTER = [-32.0025, -64.0055];
 
@@ -66,7 +67,7 @@ const COSECHA_FIELD_RULES = {
   fechaFin: `Es obligatoria, no anterior al inicio y hasta ${MESES_MAXIMOS_COSECHA} meses después. Al finalizar se compara con la fecha real.`,
   responsable: 'Es obligatorio seleccionar un usuario de la empresa.',
   maquinaria: 'Es opcional. Junto con las ha/h del cierre permite comparar rendimiento operativo y pérdidas por contratista.',
-  fechaFinReal: `Entre el inicio y hoy, hasta ${MESES_MAXIMOS_COSECHA} meses después del inicio. Si se aleja más de ${DIAS_DESVIO_REQUIERE_JUSTIFICACION} días de la tentativa, se pide justificación.`,
+  fechaFinReal: `Entre el inicio y hasta ${MESES_MAXIMOS_COSECHA} meses después. Si se aleja más de ${DIAS_DESVIO_REQUIERE_JUSTIFICACION} días de la tentativa, se pide justificación.`,
   hectareasHora: 'Es obligatoria y mayor que cero. Alimenta la productividad promedio de la consulta.',
   kg: 'Es obligatorio y no puede ser menor a lo que ya ingresó a silos desde esta cosecha.',
   hectareas: 'Es obligatoria, mayor que cero y sin superar la superficie del lote.',
@@ -77,6 +78,7 @@ const COSECHA_FIELD_RULES = {
   parteFecha: 'Entre el inicio de la cosecha y hoy.',
   parteHectareas: 'Mayor que cero. El total de partes no puede superar las hectáreas sembradas.',
   parteDestino: 'Si elegís un silo, se registra el ingreso en Almacenamiento y el parte queda fijo (solo se editan observaciones).',
+  tiradaFecha: `Entre el inicio de la cosecha y ${MESES_MAXIMOS_TIRADA} meses después; si ya finalizó, hasta su fecha real de fin.`,
   tiradaPunto: 'Tocá el mapa: las coordenadas se completan solas y deben quedar dentro del lote.',
   tiradaPmg: 'Se precarga desde la siembra (o la referencia del grano). Podés ajustarlo: el grano cosechado puede pesar distinto que la semilla.',
   tiradaPrecosecha: 'Opcional. Promedio de granos por aro que ya estaban en el suelo antes de pasar la cosechadora; se descuenta del cabezal.'
@@ -214,9 +216,13 @@ function getEmptyCosechaForm() {
   };
 }
 
-function getEmptyTiradaForm(pmg = '') {
+function getEmptyTiradaForm(pmg = '', cosecha = null) {
+  const inicio = toDateInput(cosecha?.fechaInicio);
+  const limite = minFecha(sumarMeses(inicio, MESES_MAXIMOS_TIRADA), toDateInput(cosecha?.fechaFinReal));
+  const hoy = hoyInput();
+  const fecha = inicio ? hoy < inicio ? inicio : hoy > limite ? limite : hoy : hoy;
   return {
-    fecha: hoyInput(),
+    fecha,
     latitud: '',
     longitud: '',
     aroCabezal: '',
@@ -663,7 +669,7 @@ export default function Cosechas({ permisos = PERMISOS_TODOS, session, lotes, pa
       ]);
       setTiradas(listado);
       setParametros(params);
-      setTiradaForm(getEmptyTiradaForm(params.pmgSiembra ?? params.pmgReferencia));
+      setTiradaForm(getEmptyTiradaForm(params.pmgSiembra ?? params.pmgReferencia, cosecha));
       setView('tirada');
     } catch (err) {
       mostrarError('No se pudo abrir la Tirada de Aros', err);
@@ -699,7 +705,7 @@ export default function Cosechas({ permisos = PERMISOS_TODOS, session, lotes, pa
 
   function cancelEditTirada() {
     setEditingTiradaId(null);
-    setTiradaForm(getEmptyTiradaForm(parametros?.pmgSiembra ?? parametros?.pmgReferencia));
+    setTiradaForm(getEmptyTiradaForm(parametros?.pmgSiembra ?? parametros?.pmgReferencia, selected));
   }
 
   async function handleGuardarTirada() {
@@ -1227,12 +1233,17 @@ function CosechasList({ permisos = PERMISOS_TODOS, cosechas, parentFilters, sele
             <h2>{hayFiltrosActivos ? 'No hay cosechas para esos filtros' : 'No hay cosechas para la empresa o campaña seleccionada'}</h2>
             <p>{hayFiltrosActivos ? 'Limpiá los filtros para volver a ver los registros disponibles.' : 'Cambiá la empresa o campaña desde los filtros superiores.'}</p>
           </div>
-          {hayFiltrosActivos && (
+          {hayFiltrosActivos ? (
             <button className="green-button empty-state-action" type="button" onClick={clearFilters}>
               <RotateCcw size={18} />
               <span>Limpiar filtros</span>
             </button>
-          )}
+          ) : permisos.estructura ? (
+            <button className="green-button empty-state-action" type="button" onClick={onAdd}>
+              <PlusCircle size={18} />
+              <span>Registrar Cosecha</span>
+            </button>
+          ) : null}
         </section>
       ) : (
         <div className="table-shell dashboard-card">
@@ -1442,8 +1453,6 @@ function validarResultado(datos, cosecha) {
     errores.fechaFinReal = 'La fecha real es obligatoria.';
   } else if (datos.fechaFinReal < inicio) {
     errores.fechaFinReal = `No puede ser anterior al inicio (${formatFecha(inicio)}).`;
-  } else if (datos.fechaFinReal > hoyInput()) {
-    errores.fechaFinReal = 'No puede ser posterior a hoy.';
   } else if (datos.fechaFinReal > sumarMeses(inicio, MESES_MAXIMOS_COSECHA)) {
     errores.fechaFinReal = `No puede superar los ${MESES_MAXIMOS_COSECHA} meses desde el inicio.`;
   }
@@ -1604,7 +1613,7 @@ function CosechaForm({
           <div className="create-grid cos-grid-auto">
             <label className="field">
               <span className="field-label">Fecha real de finalización <b>*</b></span>
-              <input type="date" required min={form.fechaInicio || undefined} max={hoyInput()} value={form.fechaFinReal} onChange={(event) => onFieldChange('fechaFinReal', event.target.value)} />
+              <input type="date" required min={form.fechaInicio || undefined} max={form.fechaInicio ? sumarMeses(form.fechaInicio, MESES_MAXIMOS_COSECHA) : undefined} value={form.fechaFinReal} onChange={(event) => onFieldChange('fechaFinReal', event.target.value)} />
               {desvio !== 0 && <span className={`cos-chip ${Math.abs(desvio) > DIAS_DESVIO_REQUIERE_JUSTIFICACION ? 'cos-chip-warn' : 'cos-chip-ok'}`}>{desvio > 0 ? '+' : ''}{desvio} días respecto de la tentativa</span>}
               {mostrarError('fechaFinReal')}
               <FieldRule>{COSECHA_FIELD_RULES.fechaFinReal}</FieldRule>
@@ -1707,7 +1716,7 @@ function DocumentosSection({ documentos, onSubir, onDescargar, onEliminar }) {
 function FinalizarCosechaModal({ cosecha, humedadBase, saving, onFinalizar, onCancel }) {
   // Se precarga con lo acumulado en los partes diarios; todo queda editable.
   const [datos, setDatos] = useState(() => ({
-    fechaFinReal: minFecha(hoyInput(), sumarMeses(toDateInput(cosecha.fechaInicio), MESES_MAXIMOS_COSECHA)),
+    fechaFinReal: toDateInput(cosecha.fechaFin),
     justificacionDesvioFin: '',
     cantidadGranoCosechado: cosecha.kgAcumulados > 0 ? String(Math.round(cosecha.kgAcumulados)) : '',
     cantidadHectareasTrabajadas: cosecha.hectareasCosechadas > 0
@@ -1785,7 +1794,7 @@ function FinalizarCosechaModal({ cosecha, humedadBase, saving, onFinalizar, onCa
         <div className="cos-modal-grid cos-modal-grid-2">
           <label className="field">
             <span className="field-label">Fecha real de finalización <b>*</b></span>
-            <input type="date" autoFocus min={toDateInput(cosecha.fechaInicio)} max={minFecha(hoyInput(), sumarMeses(toDateInput(cosecha.fechaInicio), MESES_MAXIMOS_COSECHA))} value={datos.fechaFinReal} onChange={(event) => cambiar('fechaFinReal', event.target.value)} />
+            <input type="date" autoFocus min={toDateInput(cosecha.fechaInicio)} max={sumarMeses(toDateInput(cosecha.fechaInicio), MESES_MAXIMOS_COSECHA)} value={datos.fechaFinReal} onChange={(event) => cambiar('fechaFinReal', event.target.value)} />
             {datos.fechaFinReal && desvio !== 0 && (
               <span className={`cos-chip ${requiereJustificacion ? 'cos-chip-warn' : 'cos-chip-ok'}`}>
                 {Math.abs(desvio)} {Math.abs(desvio) === 1 ? 'día' : 'días'} {desvio > 0 ? 'después' : 'antes'} de la fecha tentativa
@@ -2329,7 +2338,8 @@ function TiradaView({ cosecha, lote, tiradas, parametros, form, editingTiradaId,
   const calculo = calcularPerdidas(form, parametros);
   const severidad = calculo ? SEVERIDADES[calculo.severidad] : null;
   const poligono = lote?.coordenadas ?? [];
-  const finMaximo = minFecha(hoyInput(), toDateInput(cosecha.fechaFinReal));
+  const limiteCuatroMeses = sumarMeses(toDateInput(cosecha.fechaInicio), MESES_MAXIMOS_TIRADA);
+  const finMaximo = minFecha(limiteCuatroMeses, toDateInput(cosecha.fechaFinReal));
 
   const puntos = useMemo(() => tiradas
     .filter((tirada) => tirada.latitud != null && tirada.longitud != null && tirada.cosechaTiradaAroId !== editingTiradaId)
@@ -2345,7 +2355,8 @@ function TiradaView({ cosecha, lote, tiradas, parametros, form, editingTiradaId,
   const errores = {};
   if (!form.fecha) errores.fecha = 'La fecha es obligatoria.';
   else if (form.fecha < toDateInput(cosecha.fechaInicio)) errores.fecha = `No puede ser anterior al inicio (${formatFecha(cosecha.fechaInicio)}).`;
-  else if (form.fecha > finMaximo) errores.fecha = cosecha.fechaFinReal ? 'No puede ser posterior al fin real de la cosecha.' : 'No puede ser posterior a hoy.';
+  else if (form.fecha > limiteCuatroMeses) errores.fecha = `No puede superar los ${MESES_MAXIMOS_TIRADA} meses desde el inicio.`;
+  else if (cosecha.fechaFinReal && form.fecha > toDateInput(cosecha.fechaFinReal)) errores.fecha = 'No puede ser posterior al fin real de la cosecha.';
   if (!pendiente) errores.punto = 'Marcá en el mapa el punto de medición.';
   ['aroCabezal', 'aroCola1', 'aroCola2', 'aroCola3'].forEach((campo) => {
     if (form[campo] === '' || !Number.isInteger(Number(form[campo]))) errores[campo] = 'Entero ≥ 0.';
@@ -2426,6 +2437,7 @@ function TiradaView({ cosecha, lote, tiradas, parametros, form, editingTiradaId,
                   <span className="field-label">Fecha <b>*</b></span>
                   <input type="date" min={toDateInput(cosecha.fechaInicio)} max={finMaximo} value={form.fecha} onChange={(event) => onFieldChange('fecha', event.target.value)} />
                   {mostrar('fecha')}
+                  <FieldRule>{COSECHA_FIELD_RULES.tiradaFecha}</FieldRule>
                 </label>
                 <label className="field">Latitud<input readOnly value={form.latitud || '-'} /></label>
                 <label className="field">Longitud<input readOnly value={form.longitud || '-'} /></label>

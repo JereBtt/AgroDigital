@@ -4161,6 +4161,23 @@ button {
   gap: 16px 28px;
 }
 
+.refertilizacion-grid {
+  margin-top: 18px;
+  align-items: start;
+}
+
+.refertilizacion-grid > .field {
+  min-width: 0;
+  grid-template-rows: minmax(20px, auto) 46px minmax(0, auto);
+  align-content: start;
+}
+
+.refertilizacion-grid > .field > input {
+  width: 100%;
+  min-width: 0;
+}
+
+
 .field,
 .area-grid label,
 .corner-grid label {

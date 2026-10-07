@@ -1195,8 +1195,6 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
 
         if (real < inicio)
             throw new ReglaCosechaException($"La fecha real de finalización no puede ser anterior al inicio ({inicio:dd/MM/yyyy}).");
-        if (real > DateTime.Today)
-            throw new ReglaCosechaException("La fecha real de finalización no puede ser posterior a hoy.");
         if (real > inicio.AddMonths(MesesMaximoCosecha))
             throw new ReglaCosechaException($"La fecha real de finalización no puede superar los {MesesMaximoCosecha} meses desde el inicio.");
         if (cosecha.UltimaFechaParte is not null && cosecha.UltimaFechaParte.Value.Date > real)
@@ -1235,8 +1233,8 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
         var fecha = fechaTirada.Date;
         if (fecha < cosecha.FechaInicio.Date)
             throw new ReglaCosechaException($"La fecha del control no puede ser anterior al inicio de la cosecha ({cosecha.FechaInicio:dd/MM/yyyy}).");
-        if (fecha > DateTime.Today)
-            throw new ReglaCosechaException("La fecha del control no puede ser posterior a hoy.");
+        if (fecha > cosecha.FechaInicio.Date.AddMonths(4))
+            throw new ReglaCosechaException("La fecha del control no puede superar los 4 meses desde el inicio de la cosecha.");
         if (cosecha.FechaFinReal is not null && fecha > cosecha.FechaFinReal.Value.Date)
             throw new ReglaCosechaException($"La fecha del control no puede ser posterior al fin real de la cosecha ({cosecha.FechaFinReal.Value:dd/MM/yyyy}).");
     }

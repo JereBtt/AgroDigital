@@ -75,7 +75,7 @@ function todayIso() {
   return (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
 }
 function getEmptySeguimientoForm() {
-  return { fecha: todayIso(), longitud: "", latitud: "", tipoRegistro: "Posemergente", siniestro: "", alcance: "", incidencia: "", perdidaEconomica: "", aplicacionAgroquimicos: "", observaciones: "" };
+  return { fecha: todayIso(), longitud: "", latitud: "", tipoRegistro: "Posemergente", siniestro: "", alcance: "", incidencia: "", perdidaEconomica: "", aplicacionAgroquimicos: "", observaciones: "", ureaKgHa: "", hectareasHora: "" };
 }
 function getEmptySiembraForm() {
   return { tipoRegistro: "Siembra", cicloEstacional: "Verano", siembraOriginalId: "", tipoResiembra: "Parcial", siniestro: "", loteId: "", cantidadHectareasLote: "", campaniaNombre: "", producto: "", empresa: "", fechaInicio: "", fechaFin: "", fechaFinReal: "", justificacionDesvioFin: "", hectareasHora: "", variedadSemilla: "", cicloCultivo: "", tipoImplantacion: "", pmg: "", densidadSiembra: "", profundidad: "", cantidadHectareasTrabajadas: "", ureaKgHa: "", responsableACargo: "", fechaMuestreo: "", fechaAnalisis: "", cantidadMuestras: "", productoAntecesor: "", observacionesPreSiembra: "" };
@@ -110,6 +110,7 @@ function Siembras({ permisos = PERMISOS_TODOS, session, lotes, parentFilters, se
   const [seguimientoInsumos, setSeguimientoInsumos] = useState([]);
   const [seguimientoDocumentos, setSeguimientoDocumentos] = useState([]);
   const [seguimientoDetalle, setSeguimientoDetalle] = useState(null);
+  const [seguimientoToDelete, setSeguimientoToDelete] = useState(null);
   const [seguimientoSaving, setSeguimientoSaving] = useState(false);
   const [seguimientoBloqueadoSiembra, setSeguimientoBloqueadoSiembra] = useState(null);
   const [seguimientoRedireccion, setSeguimientoRedireccion] = useState(null);
@@ -589,7 +590,7 @@ function Siembras({ permisos = PERMISOS_TODOS, session, lotes, parentFilters, se
   async function openEditarSeguimiento(siembra, seguimiento) {
     setSelectedSiembra(siembra);
     setActiveSeguimientoId(seguimiento.siembraSeguimientoId);
-    setSeguimientoForm({ fecha: toDateInput(seguimiento.fecha), longitud: seguimiento.longitud ?? "", latitud: seguimiento.latitud ?? "", tipoRegistro: seguimiento.tipoRegistro || "Posemergente", siniestro: seguimiento.siniestro || "", alcance: seguimiento.alcance || "", incidencia: seguimiento.incidencia || "", perdidaEconomica: seguimiento.perdidaEconomica === null || seguimiento.perdidaEconomica === void 0 ? "" : seguimiento.perdidaEconomica ? "Si" : "No", aplicacionAgroquimicos: seguimiento.aplicacionAgroquimicos === null || seguimiento.aplicacionAgroquimicos === void 0 ? "" : seguimiento.aplicacionAgroquimicos ? "Si" : "No", observaciones: seguimiento.observaciones || "" });
+    setSeguimientoForm({ fecha: toDateInput(seguimiento.fecha), longitud: seguimiento.longitud ?? "", latitud: seguimiento.latitud ?? "", tipoRegistro: seguimiento.tipoRegistro || "Posemergente", siniestro: seguimiento.siniestro || "", alcance: seguimiento.alcance || "", incidencia: seguimiento.incidencia || "", perdidaEconomica: seguimiento.perdidaEconomica === null || seguimiento.perdidaEconomica === void 0 ? "" : seguimiento.perdidaEconomica ? "Si" : "No", aplicacionAgroquimicos: seguimiento.aplicacionAgroquimicos === null || seguimiento.aplicacionAgroquimicos === void 0 ? "" : seguimiento.aplicacionAgroquimicos ? "Si" : "No", observaciones: seguimiento.observaciones || "", ureaKgHa: seguimiento.ureaKgHa ?? "", hectareasHora: seguimiento.hectareasHora ?? "" });
     setSeguimientoInsumoForm(emptyInsumoForm);
     setError("");
     await loadSeguimientoSubItems(siembra.siembraId, seguimiento.siembraSeguimientoId);
@@ -618,15 +619,22 @@ function Siembras({ permisos = PERMISOS_TODOS, session, lotes, parentFilters, se
     setError("");
     try {
       const inicio = toDateInput(selectedSiembra.fechaInicio);
-      const maximo = addMonthsToDateInput(inicio, 6);
+      const esRefertilizacion = seguimientoForm.tipoRegistro === "Refertilizacion";
+      const maximo = addMonthsToDateInput(inicio, esRefertilizacion ? 4 : 6);
       if (!seguimientoForm.fecha || seguimientoForm.fecha <= inicio || seguimientoForm.fecha > maximo) {
         throw new Error(`La fecha debe ser posterior al ${formatDateInputLabel(inicio)} y no superar el ${formatDateInputLabel(maximo)}.`);
       }
-      if (seguimientoForm.latitud === "" || seguimientoForm.longitud === "") throw new Error("Marc\xE1 el punto del seguimiento en el mapa.");
-      if (!seguimientoForm.alcance) throw new Error("Seleccion\xE1 el alcance.");
+      if (esRefertilizacion) {
+        if (!(Number(selectedSiembra.cantidadHectareasTrabajadas) > 0)) throw new Error("La siembra no tiene hectáreas sembradas válidas.");
+        if (!(Number(seguimientoForm.ureaKgHa) >= 1 && Number(seguimientoForm.ureaKgHa) <= 500)) throw new Error("La urea debe estar entre 1 y 500 kg/ha.");
+        if (!(Number(seguimientoForm.hectareasHora) > 0 && Number(seguimientoForm.hectareasHora) <= 10000)) throw new Error("Las hectáreas por hora deben ser mayores que cero.");
+      } else {
+        if (seguimientoForm.latitud === "" || seguimientoForm.longitud === "") throw new Error("Marc\xE1 el punto del seguimiento en el mapa.");
+        if (!seguimientoForm.alcance) throw new Error("Seleccion\xE1 el alcance.");
+      }
       if (seguimientoForm.tipoRegistro === "Siniestro" && !seguimientoForm.siniestro) throw new Error("Seleccion\xE1 el siniestro.");
       if (seguimientoForm.tipoRegistro === "Posemergente" && !seguimientoForm.incidencia) throw new Error("Seleccion\xE1 el motivo de aplicaci\xF3n.");
-      const body = { fecha: seguimientoForm.fecha ? (/* @__PURE__ */ new Date(`${seguimientoForm.fecha}T00:00:00`)).toISOString() : null, longitud: seguimientoForm.longitud === "" ? null : Number(seguimientoForm.longitud), latitud: seguimientoForm.latitud === "" ? null : Number(seguimientoForm.latitud), tipoRegistro: seguimientoForm.tipoRegistro, siniestro: seguimientoForm.siniestro || null, alcance: seguimientoForm.alcance || null, incidencia: seguimientoForm.incidencia || null, perdidaEconomica: null, aplicacionAgroquimicos: seguimientoForm.tipoRegistro === "Posemergente", observaciones: seguimientoForm.observaciones };
+      const body = { fecha: seguimientoForm.fecha ? (/* @__PURE__ */ new Date(`${seguimientoForm.fecha}T00:00:00`)).toISOString() : null, longitud: seguimientoForm.longitud === "" ? null : Number(seguimientoForm.longitud), latitud: seguimientoForm.latitud === "" ? null : Number(seguimientoForm.latitud), tipoRegistro: seguimientoForm.tipoRegistro, siniestro: seguimientoForm.siniestro || null, alcance: seguimientoForm.alcance || null, incidencia: seguimientoForm.incidencia || null, perdidaEconomica: null, aplicacionAgroquimicos: seguimientoForm.tipoRegistro === "Posemergente", observaciones: esRefertilizacion ? "" : seguimientoForm.observaciones, ureaKgHa: esRefertilizacion ? Number(seguimientoForm.ureaKgHa) : null, hectareasHora: esRefertilizacion ? Number(seguimientoForm.hectareasHora) : null };
       if (seguimientoForm.tipoRegistro === "Posemergente" && seguimientoInsumos.length === 0) {
         throw new Error("Debes agregar al menos un agroqu\xEDmico para registrar el posemergente.");
       }
@@ -659,10 +667,15 @@ function Siembras({ permisos = PERMISOS_TODOS, session, lotes, parentFilters, se
   }
   async function handleEliminarSeguimiento(seguimiento) {
     try {
-      await fetch(`${API_BASE_URL}/api/siembras/${selectedSiembra.siembraId}/seguimientos/${seguimiento.siembraSeguimientoId}`, { method: "DELETE", headers: authHeaders() });
+      setSeguimientoSaving(true);
+      const response = await fetch(`${API_BASE_URL}/api/siembras/${selectedSiembra.siembraId}/seguimientos/${seguimiento.siembraSeguimientoId}`, { method: "DELETE", headers: authHeaders() });
+      if (!response.ok) throw new Error(await response.text());
+      setSeguimientoToDelete(null);
       await loadSeguimientos(selectedSiembra.siembraId);
     } catch (err) {
       setError(`No se pudo eliminar la recorrida: ${err.message}`);
+    } finally {
+      setSeguimientoSaving(false);
     }
   }
   async function handleFinalizarSeguimiento() {
@@ -770,7 +783,9 @@ function Siembras({ permisos = PERMISOS_TODOS, session, lotes, parentFilters, se
     return <SiembraDetalle siembra={selectedSiembra} insumos={insumos} documentos={documentos} onDescargarDocumento={handleDescargarDocumento} onBack={goToList} />;
   }
   if (view === "seguimientoHistorial") {
-    return <SeguimientoHistorialList permisos={permisos} siembra={selectedSiembra} seguimientos={seguimientos} error={error} onNuevoSiniestro={() => openNuevoSeguimiento(selectedSiembra, "Siniestro")} onNuevoPosemergente={() => openNuevoSeguimiento(selectedSiembra, "Posemergente")} onVer={openDetalleSeguimiento} onEditar={(seguimiento) => openEditarSeguimiento(selectedSiembra, seguimiento)} onEliminar={handleEliminarSeguimiento} onFinalizar={handleFinalizarSeguimiento} onBack={backFromHistorialSeguimiento} />;
+    return <><SeguimientoHistorialList permisos={permisos} siembra={selectedSiembra} seguimientos={seguimientos} error={error} onNuevoSiniestro={() => openNuevoSeguimiento(selectedSiembra, "Siniestro")} onNuevoPosemergente={() => openNuevoSeguimiento(selectedSiembra, "Posemergente")} onNuevoRefertilizacion={() => openNuevoSeguimiento(selectedSiembra, "Refertilizacion")} onVer={openDetalleSeguimiento} onEditar={(seguimiento) => openEditarSeguimiento(selectedSiembra, seguimiento)} onEliminar={(seguimiento) => { setError(""); setSeguimientoToDelete(seguimiento); }} onFinalizar={handleFinalizarSeguimiento} onBack={backFromHistorialSeguimiento} />
+      {seguimientoToDelete && createPortal(<div className="confirmation-modal-backdrop" role="presentation"><section className="confirmation-modal" role="dialog" aria-modal="true" aria-label="Confirmar eliminación"><span className="confirmation-modal-icon" aria-hidden="true"><Trash2 size={25} /></span><h2>Eliminar {seguimientoToDelete.tipoRegistro === "Refertilizacion" ? "refertilización" : seguimientoToDelete.tipoRegistro === "Siniestro" ? "siniestro" : "posemergente"}</h2><p>Se eliminará el registro del {formatFecha(seguimientoToDelete.fecha)}. Esta acción no se puede deshacer.</p>{error && <p className="field-error" role="alert">{error}</p>}<div className="confirmation-modal-actions"><button className="back-button" type="button" onClick={() => setSeguimientoToDelete(null)}>Cancelar</button><button className="green-button" type="button" disabled={seguimientoSaving} onClick={() => handleEliminarSeguimiento(seguimientoToDelete)}><Trash2 size={17} />{seguimientoSaving ? "Eliminando..." : "Eliminar"}</button></div></section></div>, document.body)}
+    </>;
   }
   if (view === "seguimientoForm") {
     const loteDeSiembra = lotes?.find((l) => String(l.loteId) === String(selectedSiembra?.loteId));
@@ -1397,18 +1412,90 @@ function SeguimientoMapa({ puntos, pendiente, poligono, onPick, readOnly }) {
   }, [puntos, pendiente, poligono]);
   return <div className="map-box seguimiento-map-box" style={{ height: 260, position: "relative", borderRadius: 12, overflow: "hidden" }}>      <div ref={mapNodeRef} style={{ width: "100%", height: "100%" }} />      {!readOnly && <div style={{ position: "absolute", bottom: 8, left: 8, background: "rgba(255,255,255,.92)", padding: "6px 10px", borderRadius: 8, fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>          <MapPin size={14} />          <span>Toca el mapa para marcar el punto de esta recorrida</span>        </div>}    </div>;
 }
-function SeguimientoHistorialList({ permisos = PERMISOS_TODOS, siembra, seguimientos, error, onNuevoSiniestro, onNuevoPosemergente, onVer, onEditar, onEliminar, onFinalizar, onBack }) {
+function SeguimientoHistorialList({ permisos = PERMISOS_TODOS, siembra, seguimientos, error, onNuevoSiniestro, onNuevoPosemergente, onNuevoRefertilizacion, onVer, onEditar, onEliminar, onFinalizar, onBack }) {
   if (!siembra) return null;
   const finalizado = siembra.estado === "Finalizado";
   const siniestros = seguimientos.filter((seguimiento) => seguimiento.tipoRegistro === "Siniestro");
-  const posemergentes = seguimientos.filter((seguimiento) => seguimiento.tipoRegistro !== "Siniestro");
+  const posemergentes = seguimientos.filter((seguimiento) => seguimiento.tipoRegistro === "Posemergente");
+  const refertilizaciones = seguimientos.filter((seguimiento) => seguimiento.tipoRegistro === "Refertilizacion");
   const esInicioDeEtapaAnterior = (registros, indice) => indice > 0 && registros[indice - 1].siembraId !== registros[indice].siembraId;
   const separadorDeResiembra = (colSpan, key) => <tr className="seguimiento-resiembra-separator" key={key}>      <td colSpan={colSpan}><span><Leaf size={18} />Resiembra</span></td>    </tr>;
   const actions = (seguimiento) => <td className="actions-cell">      <button className="table-action-tooltip" data-tooltip="Ver detalle" type="button" aria-label="Ver detalle" onClick={() => onVer(seguimiento)}><Eye size={18} /></button>      {!finalizado && !seguimiento.esHistorialAnterior && <>        <button className="table-action-tooltip" data-tooltip="Editar" type="button" hidden={!permisos.registroCampo} aria-label="Editar registro" onClick={() => onEditar(seguimiento)}><Edit size={18} /></button>        <button className="table-action-tooltip" data-tooltip="Eliminar" type="button" hidden={!permisos.registroCampo} aria-label="Eliminar registro" onClick={() => onEliminar(seguimiento)}><Trash2 size={18} /></button>      </>}    </td>;
-  return <section className="content-panel create-panel seguimiento-history-page">      <div className="seguimiento-history-hero">        <div className="seguimiento-history-title">          <div className="seguimiento-history-title-icon"><Sprout size={34} /></div>          <div>            <h1>Historial {siembra.nombre}</h1>            <p>{siembra.loteNombre} - {siembra.producto}</p>          </div>        </div>        {!finalizado && <div className="seguimiento-history-actions">            <button className="green-button" type="button" hidden={!permisos.registroCampo} onClick={onNuevoSiniestro}><PlusCircle size={18} />Registrar siniestro</button>            <button className="green-button" type="button" hidden={!permisos.registroCampo} onClick={onNuevoPosemergente}><Leaf size={18} />Registrar posemergente</button>            <button className="green-button" type="button" hidden={!permisos.estructura} onClick={onFinalizar}><Flag size={18} />Finalizar seguimiento</button>          </div>}      </div>      {error && <p style={{ color: "#c0392b", fontWeight: 700 }}>{error}</p>}      {finalizado && <p style={{ color: "#6b7280" }}>Este seguimiento ya fue finalizado: queda disponible solo para consulta.</p>}      <section className="seguimiento-history-card dashboard-card">        <div className="seguimiento-history-card-header">          <div className="seguimiento-history-card-icon"><AlertTriangle size={21} /></div>          <div><h2>Siniestros</h2><p>Registro de eventos que afectaron el cultivo.</p></div>        </div>        <div className="table-shell">        <table className="lotes-table">          <thead>            <tr>              <th><CalendarDays size={16} />Fecha</th>              <th><Sprout size={16} />Cultivo</th>              <th><AlertTriangle size={16} />Siniestro</th>              <th><Gauge size={16} />Alcance / pérdida</th>              <th><Leaf size={16} />Resiembra</th>              <th><FileText size={16} />Observaciones</th>              <th><Settings2 size={16} />Acciones</th>            </tr>          </thead>          <tbody>            {siniestros.map((s, indice) => <Fragment key={s.siembraSeguimientoId}>                {esInicioDeEtapaAnterior(siniestros, indice) && separadorDeResiembra(7, `separador-siniestro-${s.siembraSeguimientoId}`)}                <tr className={s.esResiembra ? "seguimiento-resiembra-row" : s.esHistorialAnterior ? "seguimiento-historico-row" : ""}>                  <td>{formatFecha(s.fecha)}</td>                  <td>{s.cultivo || "-"}</td>                  <td>{s.siniestro || "-"}</td>                  <td>{s.alcance || "-"}</td>                  <td>{s.esResiembra ? "S\xED" : "No"}</td>                  <td>{s.observaciones}</td>                  {actions(s)}                </tr>              </Fragment>)}            {siniestros.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center" }}>Todavía no hay siniestros registrados.</td></tr>}          </tbody>        </table>        </div>      </section>      <section className="seguimiento-history-card dashboard-card">        <div className="seguimiento-history-card-header">          <div className="seguimiento-history-card-icon"><Leaf size={21} /></div>          <div><h2>Posemergentes</h2><p>Aplicaciones realizadas luego de la emergencia del cultivo.</p></div>        </div>        <div className="table-shell">        <table className="lotes-table">          <thead><tr><th><CalendarDays size={16} />Fecha de aplicación</th><th><Sprout size={16} />Motivo de aplicación</th><th><Gauge size={16} />Alcance</th><th><FlaskConical size={16} />Drogas aplicadas</th><th><FileText size={16} />Observaciones</th><th><Settings2 size={16} />Acciones</th></tr></thead>          <tbody>            {posemergentes.map((s, indice) => <Fragment key={s.siembraSeguimientoId}>                {esInicioDeEtapaAnterior(posemergentes, indice) && separadorDeResiembra(6, `separador-posemergente-${s.siembraSeguimientoId}`)}                <tr className={s.esHistorialAnterior ? "seguimiento-historico-row" : ""}>                  <td>{formatFecha(s.fecha)}</td><td>{s.incidencia || "-"}</td><td>{s.alcance || "-"}</td>                  <td>{s.drogasAplicadas || "-"}</td><td>{s.observaciones}</td>{actions(s)}                </tr>              </Fragment>)}            {posemergentes.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center" }}>Todavía no hay posemergentes registrados.</td></tr>}          </tbody>        </table>        </div>      </section>      <div className="form-actions">        <button className="back-button" type="button" onClick={onBack}>Volver</button>      </div>    </section>;
+  return <section className="content-panel create-panel seguimiento-history-page">      <div className="seguimiento-history-hero">        <div className="seguimiento-history-title">          <div className="seguimiento-history-title-icon"><Sprout size={34} /></div>          <div>            <h1>Historial {siembra.nombre}</h1>            <p>{siembra.loteNombre} - {siembra.producto}</p>          </div>        </div>        {!finalizado && <div className="seguimiento-history-actions">            <button className="green-button" type="button" hidden={!permisos.registroCampo} onClick={onNuevoSiniestro}><PlusCircle size={18} />Registrar siniestro</button>            <button className="green-button" type="button" hidden={!permisos.registroCampo} onClick={onNuevoPosemergente}><Leaf size={18} />Registrar posemergente</button>            <button className="green-button" type="button" hidden={!permisos.registroCampo} onClick={onNuevoRefertilizacion}><Sprout size={18} />Registrar refertilización</button>            <button className="green-button" type="button" hidden={!permisos.estructura} onClick={onFinalizar}><Flag size={18} />Finalizar seguimiento</button>          </div>}      </div>      {error && <p style={{ color: "#c0392b", fontWeight: 700 }}>{error}</p>}      {finalizado && <p style={{ color: "#6b7280" }}>Este seguimiento ya fue finalizado: queda disponible solo para consulta.</p>}      <section className="seguimiento-history-card dashboard-card">        <div className="seguimiento-history-card-header">          <div className="seguimiento-history-card-icon"><AlertTriangle size={21} /></div>          <div><h2>Siniestros</h2><p>Registro de eventos que afectaron el cultivo.</p></div>        </div>        <div className="table-shell">        <table className="lotes-table">          <thead>            <tr>              <th><CalendarDays size={16} />Fecha</th>              <th><Sprout size={16} />Cultivo</th>              <th><AlertTriangle size={16} />Siniestro</th>              <th><Gauge size={16} />Alcance / pérdida</th>              <th><Leaf size={16} />Resiembra</th>              <th><FileText size={16} />Observaciones</th>              <th><Settings2 size={16} />Acciones</th>            </tr>          </thead>          <tbody>            {siniestros.map((s, indice) => <Fragment key={s.siembraSeguimientoId}>                {esInicioDeEtapaAnterior(siniestros, indice) && separadorDeResiembra(7, `separador-siniestro-${s.siembraSeguimientoId}`)}                <tr className={s.esResiembra ? "seguimiento-resiembra-row" : s.esHistorialAnterior ? "seguimiento-historico-row" : ""}>                  <td>{formatFecha(s.fecha)}</td>                  <td>{s.cultivo || "-"}</td>                  <td>{s.siniestro || "-"}</td>                  <td>{s.alcance || "-"}</td>                  <td>{s.esResiembra ? "S\xED" : "No"}</td>                  <td>{s.observaciones}</td>                  {actions(s)}                </tr>              </Fragment>)}            {siniestros.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center" }}>Todavía no hay siniestros registrados.</td></tr>}          </tbody>        </table>        </div>      </section>      <section className="seguimiento-history-card dashboard-card">        <div className="seguimiento-history-card-header">          <div className="seguimiento-history-card-icon"><Leaf size={21} /></div>          <div><h2>Posemergentes</h2><p>Aplicaciones realizadas luego de la emergencia del cultivo.</p></div>        </div>        <div className="table-shell">        <table className="lotes-table">          <thead><tr><th><CalendarDays size={16} />Fecha de aplicación</th><th><Sprout size={16} />Motivo de aplicación</th><th><Gauge size={16} />Alcance</th><th><FlaskConical size={16} />Drogas aplicadas</th><th><FileText size={16} />Observaciones</th><th><Settings2 size={16} />Acciones</th></tr></thead>          <tbody>            {posemergentes.map((s, indice) => <Fragment key={s.siembraSeguimientoId}>                {esInicioDeEtapaAnterior(posemergentes, indice) && separadorDeResiembra(6, `separador-posemergente-${s.siembraSeguimientoId}`)}                <tr className={s.esHistorialAnterior ? "seguimiento-historico-row" : ""}>                  <td>{formatFecha(s.fecha)}</td><td>{s.incidencia || "-"}</td><td>{s.alcance || "-"}</td>                  <td>{s.drogasAplicadas || "-"}</td><td>{s.observaciones}</td>{actions(s)}                </tr>              </Fragment>)}            {posemergentes.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center" }}>Todavía no hay posemergentes registrados.</td></tr>}          </tbody>        </table>        </div>      </section>      <section className="seguimiento-history-card dashboard-card">
+        <div className="seguimiento-history-card-header">
+          <div className="seguimiento-history-card-icon"><Sprout size={21} /></div>
+          <div><h2>Refertilizaciones</h2><p>Urea aplicada sobre la superficie sembrada.</p></div>
+        </div>
+        <div className="table-shell"><table className="lotes-table">
+          <thead><tr><th>Fecha</th><th>Hectáreas sembradas</th><th>Urea (kg/ha)</th><th>Hectáreas/hora</th><th>Horas trabajadas</th><th>Urea total (kg)</th><th>Acciones</th></tr></thead>
+          <tbody>
+            {refertilizaciones.map((r, indice) => <Fragment key={r.siembraSeguimientoId}>
+              {esInicioDeEtapaAnterior(refertilizaciones, indice) && separadorDeResiembra(7, "separador-refertilizacion-" + r.siembraSeguimientoId)}
+              <tr className={r.esHistorialAnterior ? "seguimiento-historico-row" : ""}>
+                <td>{formatFecha(r.fecha)}</td>
+                <td className="aligned-table-number-cell"><AlignedTableNumber value={r.hectareasSembradas} unit=" ha" /></td>
+                <td className="aligned-table-number-cell"><AlignedTableNumber value={r.ureaKgHa} unit=" kg/ha" /></td>
+                <td className="aligned-table-number-cell"><AlignedTableNumber value={r.hectareasHora} unit=" ha/h" /></td>
+                <td className="aligned-table-number-cell"><AlignedTableNumber value={r.horasTrabajadas} unit=" h" /></td>
+                <td className="aligned-table-number-cell"><AlignedTableNumber value={r.ureaTotalKg} unit=" kg" /></td>
+                {actions(r)}
+              </tr>
+            </Fragment>)}
+            {refertilizaciones.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center" }}>Todavía no hay refertilizaciones registradas.</td></tr>}
+          </tbody>
+        </table></div>
+      </section>
+      <div className="form-actions">        <button className="back-button" type="button" onClick={onBack}>Volver</button>      </div>    </section>;
 }
 function SeguimientoForm({ siembra, lotePoligono, modoEdicion, seguimientoForm, insumoForm, marcasAgroquimicos, drogasAgroquimicos, onAgregarValorCatalogo, insumos, documentos, saving, error, onFieldChange, onPickPunto, onGuardar, onInsumoFieldChange, onAgregarInsumo, onEliminarInsumo, onSubirDocumento, onDescargarDocumento, onEliminarDocumento, onBack }) {
   if (!siembra) return null;
+  if (seguimientoForm.tipoRegistro === "Refertilizacion") {
+    const hectareas = Number(siembra.cantidadHectareasTrabajadas);
+    const urea = Number(seguimientoForm.ureaKgHa);
+    const ritmo = Number(seguimientoForm.hectareasHora);
+    const fechaInicio = toDateInput(siembra.fechaInicio);
+    const fechaLimite = addMonthsToDateInput(fechaInicio, 4);
+    return <section className="content-panel create-panel">
+      <div className="page-heading create-heading"><div><h1>{modoEdicion ? "Editar" : "Registrar"} refertilización</h1><p>{siembra.nombre} · {siembra.loteNombre} · {siembra.producto}</p></div></div>
+      {error && <p className="field-error" role="alert">{error}</p>}
+      <div className="create-form-card dashboard-card">
+        <SectionTitle icon={Sprout} title="Aplicación de urea" description="Los cálculos se basan en las hectáreas efectivamente sembradas." />
+        <div className="create-grid refertilizacion-grid">
+          <label className="field">
+            <span className="field-label">Fecha de refertilización <b>*</b></span>
+            <input type="date" required min={fechaInicio} max={fechaLimite} value={seguimientoForm.fecha} onChange={(event) => onFieldChange("fecha", event.target.value)} />
+            <FieldRule>Debe ser posterior a la siembra y hasta el {formatDateInputLabel(fechaLimite)}.</FieldRule>
+          </label>
+          <label className="field">
+            <span className="field-label">Hectáreas sembradas</span>
+            <input readOnly value={formatNumber(siembra.cantidadHectareasTrabajadas, " ha")} />
+            <FieldRule>Superficie efectivamente sembrada en este registro.</FieldRule>
+          </label>
+          <label className="field">
+            <span className="field-label">Urea (kg/ha) <b>*</b></span>
+            <input type="number" required min="1" max="500" step="0.01" value={seguimientoForm.ureaKgHa} onChange={(event) => onFieldChange("ureaKgHa", event.target.value)} />
+            <FieldRule>Debe estar entre 1 y 500 kg/ha.</FieldRule>
+          </label>
+          <label className="field">
+            <span className="field-label">Hectáreas por hora <b>*</b></span>
+            <input type="number" required min="0.01" max="10000" step="0.01" value={seguimientoForm.hectareasHora} onChange={(event) => onFieldChange("hectareasHora", event.target.value)} />
+            <FieldRule>Ingresá una productividad mayor que cero.</FieldRule>
+          </label>
+          <label className="field">
+            <span className="field-label">Horas trabajadas</span>
+            <input readOnly value={hectareas > 0 && ritmo > 0 ? formatNumber(hectareas / ritmo, " h") : "Se calcula al completar hectáreas por hora"} />
+            <FieldRule>Hectáreas sembradas divididas por hectáreas por hora.</FieldRule>
+          </label>
+          <label className="field">
+            <span className="field-label">Urea total</span>
+            <input readOnly value={hectareas > 0 && urea >= 1 && urea <= 500 ? formatNumber(hectareas * urea, " kg") : "Se calcula al completar kg/ha"} />
+            <FieldRule>Hectáreas sembradas multiplicadas por kg/ha.</FieldRule>
+          </label>
+        </div>
+      </div>
+      <div className="form-actions"><button className="green-button" type="button" disabled={saving} onClick={onGuardar}>{saving ? "Guardando..." : modoEdicion ? "Guardar cambios" : "Registrar refertilización"}</button><button className="back-button" type="button" onClick={onBack}>Cancelar</button></div>
+    </section>;
+  }
   const puntoPendiente = seguimientoForm.latitud !== "" && seguimientoForm.longitud !== "" ? { lat: Number(seguimientoForm.latitud), lng: Number(seguimientoForm.longitud) } : null;
   const esSiniestro = seguimientoForm.tipoRegistro === "Siniestro";
   const fechaMinima = addMonthsToDateInput(toDateInput(siembra.fechaInicio), 0);
@@ -1417,6 +1504,20 @@ function SeguimientoForm({ siembra, lotePoligono, modoEdicion, seguimientoForm, 
 }
 function SeguimientoDetalle({ siembra, lotePoligono, seguimiento, insumos, documentos, onDescargarDocumento, onBack }) {
   if (!siembra || !seguimiento) return null;
+  if (seguimiento.tipoRegistro === "Refertilizacion") return <section className="content-panel create-panel">
+    <div className="page-heading create-heading"><div><h1>Detalle de refertilización</h1><p>{siembra.nombre} · {siembra.loteNombre} · {siembra.producto}</p></div></div>
+    <div className="create-form-card dashboard-card"><SectionTitle icon={Sprout} title="Aplicación de urea" description="Superficie y totales registrados al aplicar la refertilización." />
+      <div className="create-grid" style={{ marginTop: 18 }}>
+        <label className="field">Fecha<input readOnly value={formatFecha(seguimiento.fecha)} /></label>
+        <label className="field">Hectáreas sembradas<input readOnly value={formatNumber(seguimiento.hectareasSembradas, " ha")} /></label>
+        <label className="field">Urea (kg/ha)<input readOnly value={formatNumber(seguimiento.ureaKgHa, " kg/ha")} /></label>
+        <label className="field">Hectáreas por hora<input readOnly value={formatNumber(seguimiento.hectareasHora, " ha/h")} /></label>
+        <label className="field">Horas trabajadas<input readOnly value={formatNumber(seguimiento.horasTrabajadas, " h")} /></label>
+        <label className="field">Urea total<input readOnly value={formatNumber(seguimiento.ureaTotalKg, " kg")} /></label>
+      </div>
+    </div>
+    <div className="form-actions"><button className="back-button" type="button" onClick={onBack}>Volver</button></div>
+  </section>;
   const punto = seguimiento.latitud != null && seguimiento.longitud != null ? [{ lat: Number(seguimiento.latitud), lng: Number(seguimiento.longitud) }] : [];
   const esSiniestro = seguimiento.tipoRegistro === "Siniestro";
   return <section className="content-panel create-panel">      <div className="page-heading create-heading">        <div>          <h1>Detalle - Historial {siembra.nombre}</h1>          <p>{siembra.loteNombre} - {siembra.producto}</p>        </div>      </div>      <div className="create-form-card dashboard-card">        {punto.length > 0 && <div style={{ marginBottom: 16 }}>            <SeguimientoMapa puntos={punto} pendiente={null} poligono={lotePoligono} onPick={() => {

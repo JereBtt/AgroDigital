@@ -17,7 +17,8 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
                 WHERE i.SiembraSeguimientoId = s.SiembraSeguimientoId) AS DrogasAplicadas,
                COALESCE(s.Cultivo, origen.Producto) AS Cultivo,
                s.EsResiembra,
-               CAST(CASE WHEN s.SiembraId <> @SiembraId THEN 1 ELSE 0 END AS bit) AS EsHistorialAnterior
+               CAST(CASE WHEN s.SiembraId <> @SiembraId THEN 1 ELSE 0 END AS bit) AS EsHistorialAnterior,
+               s.HectareasSembradas, s.UreaKgHa, s.HectareasHora, s.HorasTrabajadas, s.UreaTotalKg
         FROM dbo.SiembraSeguimientos AS s
         INNER JOIN dbo.Siembras AS origen ON origen.SiembraId = s.SiembraId
         """;
@@ -63,14 +64,14 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
         return await reader.ReadAsync() ? MapearSeguimiento(reader) : null;
     }
 
-    public async Task<SiembraSeguimientoDto?> CrearAsync(int siembraId, CrearSiembraSeguimientoRequest request, int? creadoPorUsuarioId = null)
+    public async Task<SiembraSeguimientoDto?> CrearAsync(int siembraId, CrearSiembraSeguimientoRequest request, decimal? hectareasSembradas, int? creadoPorUsuarioId = null)
     {
         const string insertSql = """
             INSERT INTO dbo.SiembraSeguimientos
-                (SiembraId, Fecha, Longitud, Latitud, TipoRegistro, Siniestro, Alcance, Incidencia, PerdidaEconomica, AplicacionAgroquimicos, Observaciones, CreadoPorUsuarioId)
+                (SiembraId, Fecha, Longitud, Latitud, TipoRegistro, Siniestro, Alcance, Incidencia, PerdidaEconomica, AplicacionAgroquimicos, Observaciones, CreadoPorUsuarioId, HectareasSembradas, UreaKgHa, HectareasHora, HorasTrabajadas, UreaTotalKg)
             OUTPUT INSERTED.SiembraSeguimientoId
             VALUES
-                (@SiembraId, @Fecha, @Longitud, @Latitud, @TipoRegistro, @Siniestro, @Alcance, @Incidencia, @PerdidaEconomica, @AplicacionAgroquimicos, @Observaciones, @CreadoPorUsuarioId);
+                (@SiembraId, @Fecha, @Longitud, @Latitud, @TipoRegistro, @Siniestro, @Alcance, @Incidencia, @PerdidaEconomica, @AplicacionAgroquimicos, @Observaciones, @CreadoPorUsuarioId, @HectareasSembradas, @UreaKgHa, @HectareasHora, @HorasTrabajadas, @UreaTotalKg);
             """;
 
         await using var connection = new SqlConnection(_connectionString);
@@ -92,7 +93,8 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
             command.Parameters.AddWithValue("@Incidencia", string.IsNullOrWhiteSpace(request.Incidencia) ? DBNull.Value : request.Incidencia.Trim());
             command.Parameters.AddWithValue("@PerdidaEconomica", (object?)request.PerdidaEconomica ?? DBNull.Value);
             command.Parameters.AddWithValue("@AplicacionAgroquimicos", (object?)request.AplicacionAgroquimicos ?? DBNull.Value);
-            command.Parameters.AddWithValue("@Observaciones", request.Observaciones.Trim());
+            command.Parameters.AddWithValue("@Observaciones", (request.Observaciones ?? string.Empty).Trim());
+            AgregarParametrosRefertilizacion(command, request.TipoRegistro, hectareasSembradas, request.UreaKgHa, request.HectareasHora);
 
             var seguimientoId = (int)(await command.ExecuteScalarAsync()
                 ?? throw new InvalidOperationException("No se pudo registrar la recorrida."));
@@ -113,14 +115,16 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
         }
     }
 
-    public async Task<bool> ActualizarAsync(int siembraId, int seguimientoId, ActualizarSiembraSeguimientoRequest request)
+    public async Task<bool> ActualizarAsync(int siembraId, int seguimientoId, ActualizarSiembraSeguimientoRequest request, decimal? hectareasSembradas)
     {
         const string sql = """
             UPDATE dbo.SiembraSeguimientos
             SET Fecha = @Fecha, Longitud = @Longitud, Latitud = @Latitud, TipoRegistro = @TipoRegistro,
                 Siniestro = @Siniestro, Alcance = @Alcance, Incidencia = @Incidencia,
                 PerdidaEconomica = @PerdidaEconomica, AplicacionAgroquimicos = @AplicacionAgroquimicos,
-                Observaciones = @Observaciones
+                Observaciones = @Observaciones, HectareasSembradas = @HectareasSembradas,
+                UreaKgHa = @UreaKgHa, HectareasHora = @HectareasHora,
+                HorasTrabajadas = @HorasTrabajadas, UreaTotalKg = @UreaTotalKg
             WHERE SiembraSeguimientoId = @Id AND SiembraId = @SiembraId;
             """;
 
@@ -138,7 +142,8 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
         command.Parameters.AddWithValue("@Incidencia", string.IsNullOrWhiteSpace(request.Incidencia) ? DBNull.Value : request.Incidencia.Trim());
         command.Parameters.AddWithValue("@PerdidaEconomica", (object?)request.PerdidaEconomica ?? DBNull.Value);
         command.Parameters.AddWithValue("@AplicacionAgroquimicos", (object?)request.AplicacionAgroquimicos ?? DBNull.Value);
-        command.Parameters.AddWithValue("@Observaciones", request.Observaciones.Trim());
+        command.Parameters.AddWithValue("@Observaciones", (request.Observaciones ?? string.Empty).Trim());
+        AgregarParametrosRefertilizacion(command, request.TipoRegistro, hectareasSembradas, request.UreaKgHa, request.HectareasHora);
 
         return await command.ExecuteNonQueryAsync() > 0;
     }
@@ -378,6 +383,19 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
         return count > 0;
     }
 
+    private static void AgregarParametrosRefertilizacion(SqlCommand command, string tipo, decimal? hectareas, decimal? ureaKgHa, decimal? hectareasHora)
+    {
+        var esRefertilizacion = tipo == "Refertilizacion";
+        var superficie = esRefertilizacion ? hectareas : null;
+        command.Parameters.AddWithValue("@HectareasSembradas", (object?)superficie ?? DBNull.Value);
+        command.Parameters.AddWithValue("@UreaKgHa", esRefertilizacion ? (object?)ureaKgHa ?? DBNull.Value : DBNull.Value);
+        command.Parameters.AddWithValue("@HectareasHora", esRefertilizacion ? (object?)hectareasHora ?? DBNull.Value : DBNull.Value);
+        command.Parameters.AddWithValue("@HorasTrabajadas", esRefertilizacion && superficie.HasValue && hectareasHora > 0
+            ? (object)decimal.Round(superficie.Value / hectareasHora.Value, 2) : DBNull.Value);
+        command.Parameters.AddWithValue("@UreaTotalKg", esRefertilizacion && superficie.HasValue && ureaKgHa.HasValue
+            ? (object)decimal.Round(superficie.Value * ureaKgHa.Value, 2) : DBNull.Value);
+    }
+
     private static SiembraSeguimientoDto MapearSeguimiento(SqlDataReader reader)
     {
         return new SiembraSeguimientoDto
@@ -397,7 +415,12 @@ public class SeguimientoRepository(IConfiguration configuration) : ISeguimientoR
             DrogasAplicadas = reader.IsDBNull(12) ? null : reader.GetString(12),
             Cultivo = reader.IsDBNull(13) ? null : reader.GetString(13),
             EsResiembra = reader.GetBoolean(14),
-            EsHistorialAnterior = reader.GetBoolean(15)
+            EsHistorialAnterior = reader.GetBoolean(15),
+            HectareasSembradas = reader.IsDBNull(16) ? null : reader.GetDecimal(16),
+            UreaKgHa = reader.IsDBNull(17) ? null : reader.GetDecimal(17),
+            HectareasHora = reader.IsDBNull(18) ? null : reader.GetDecimal(18),
+            HorasTrabajadas = reader.IsDBNull(19) ? null : reader.GetDecimal(19),
+            UreaTotalKg = reader.IsDBNull(20) ? null : reader.GetDecimal(20)
         };
     }
 }

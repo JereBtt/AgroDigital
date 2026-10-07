@@ -18,6 +18,11 @@ public class SiembraSeguimientoDto
     public bool? PerdidaEconomica { get; set; }
     public bool? AplicacionAgroquimicos { get; set; }
     public string Observaciones { get; set; } = string.Empty;
+    public decimal? HectareasSembradas { get; set; }
+    public decimal? UreaKgHa { get; set; }
+    public decimal? HectareasHora { get; set; }
+    public decimal? HorasTrabajadas { get; set; }
+    public decimal? UreaTotalKg { get; set; }
 }
 
 public class CrearSiembraSeguimientoRequest
@@ -32,6 +37,8 @@ public class CrearSiembraSeguimientoRequest
     public bool? PerdidaEconomica { get; set; }
     public bool? AplicacionAgroquimicos { get; set; }
     public string Observaciones { get; set; } = string.Empty;
+    public decimal? UreaKgHa { get; set; }
+    public decimal? HectareasHora { get; set; }
 }
 
 public class ActualizarSiembraSeguimientoRequest
@@ -46,4 +53,6 @@ public class ActualizarSiembraSeguimientoRequest
     public bool? PerdidaEconomica { get; set; }
     public bool? AplicacionAgroquimicos { get; set; }
     public string Observaciones { get; set; } = string.Empty;
+    public decimal? UreaKgHa { get; set; }
+    public decimal? HectareasHora { get; set; }
 }

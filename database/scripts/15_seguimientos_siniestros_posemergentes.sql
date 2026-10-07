@@ -35,7 +35,7 @@ GO
 
 UPDATE dbo.SiembraSeguimientos
 SET TipoRegistro = N'Posemergente'
-WHERE TipoRegistro IS NULL OR TipoRegistro NOT IN (N'Siniestro', N'Posemergente');
+WHERE TipoRegistro IS NULL OR TipoRegistro NOT IN (N'Siniestro', N'Posemergente', N'Refertilizacion');
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_SiembraSeguimientos_TipoRegistro')
