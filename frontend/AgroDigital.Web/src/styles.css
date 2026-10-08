@@ -11769,3 +11769,66 @@ textarea::placeholder {
   border-radius: 12px;
   font-weight: 800;
 }
+
+/* Trazabilidad de aplicaciones de la cadena de siembras */
+.seguimiento-trace-button {
+  margin-left: auto;
+  min-height: 40px;
+  white-space: nowrap;
+  gap: 8px;
+}
+.application-trace-page { max-width: 1180px; margin: 0 auto; }
+.application-trace-hero { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin: 0 0 22px; }
+.application-trace-hero h1 { margin: 6px 0 3px; color: #123b25; font-size: clamp(2rem, 3vw, 2.55rem); }
+.application-trace-hero p { margin: 0; color: #617468; font-weight: 600; }
+.application-trace-eyebrow { display: inline-flex; align-items: center; gap: 8px; color: #168d3b; font-weight: 800; font-size: .88rem; }
+.application-trace-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.application-trace-summary > div { border: 1px solid #dceadd; border-radius: 16px; background: linear-gradient(135deg, #f3fbf4, #fff); padding: 16px 20px; box-shadow: 0 8px 24px rgba(21, 70, 38, .05); }
+.application-trace-summary span { display: block; color: #587161; font-size: .85rem; font-weight: 700; }
+.application-trace-summary strong { display: block; margin-top: 5px; color: #103923; font-size: 1.75rem; line-height: 1; }
+.application-trace-legend { display: flex; flex-wrap: wrap; gap: 22px; margin: 25px 0 6px 49px; color: #476250; font-size: .83rem; font-weight: 700; }
+.application-trace-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.application-trace-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+.application-trace-dot-pre { background: #bd8125; }
+.application-trace-dot-post { background: #17883e; }
+.application-trace-timeline { list-style: none; margin: 0; padding: 8px 0 0 0; position: relative; }
+.application-trace-timeline::before { content: ""; position: absolute; top: 25px; bottom: 35px; left: 22px; width: 2px; background: linear-gradient(#dab47d, #8dc99c); }
+.application-trace-event { position: relative; display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 16px; margin: 0 0 16px; }
+.application-trace-marker { z-index: 1; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; border: 4px solid #fff; box-shadow: 0 2px 10px rgba(23, 73, 36, .15); }
+.application-trace-event-pre .application-trace-marker { color: #8c5c13; background: #fff0d7; }
+.application-trace-event-post .application-trace-marker { color: #0c7d34; background: #e0f4e6; }
+.application-trace-card { border: 1px solid #dce8de; border-radius: 18px; background: #fff; padding: 17px 20px; box-shadow: 0 8px 25px rgba(22, 67, 34, .06); }
+.application-trace-event-pre .application-trace-card { border-left: 4px solid #c59246; }
+.application-trace-event-post .application-trace-card { border-left: 4px solid #24a34c; }
+.application-trace-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.application-trace-phase { color: #218243; text-transform: uppercase; font-size: .96rem; letter-spacing: .06em; font-weight: 900; }
+.application-trace-event-pre .application-trace-phase { color: #95641d; }
+.application-trace-card h2 { margin: 4px 0 0; color: #153c27; font-size: 1.22rem; }
+.application-trace-card time { flex: 0 0 auto; color: #28593a; background: #f0f7f1; border-radius: 9px; padding: 7px 10px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.application-trace-context { display: flex; flex-wrap: wrap; gap: 8px; margin: 13px 0; }
+.application-trace-context span { padding: 5px 9px; border-radius: 999px; color: #37604a; background: #f0f7f1; font-weight: 700; font-size: .78rem; }
+.application-trace-products { border-top: 1px solid #e9efe9; padding-top: 12px; }
+.application-trace-products h3 { margin: 0 0 9px; color: #415c49; font-size: .82rem; }
+.application-trace-products ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.application-trace-products li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 11px; padding: 9px 11px; border-radius: 9px; background: #f7faf7; }
+.application-trace-products li strong { color: #173e29; }
+.application-trace-products li span { color: #66806b; font-size: .82rem; }
+.application-trace-products li b { margin-left: auto; color: #226b38; font-size: .84rem; font-variant-numeric: tabular-nums; }
+.application-trace-products p, .application-trace-note { margin: 8px 0 0; color: #66776a; font-size: .86rem; }
+.application-trace-note { border-top: 1px solid #e9efe9; padding-top: 10px; }
+.application-trace-message { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 12px; min-height: 180px; padding: 24px; color: #587161; background: #f8fbf8; border: 1px dashed #c9ddce; border-radius: 18px; text-align: center; font-weight: 700; }
+.application-trace-message p { width: 100%; margin: 0; }
+.application-trace-spinner { animation: application-trace-spin 1s linear infinite; }
+@keyframes application-trace-spin { to { transform: rotate(360deg); } }
+@media (max-width: 700px) {
+  .seguimiento-history-card-header { flex-wrap: wrap; }
+  .seguimiento-trace-button { margin-left: 54px; white-space: normal; }
+  .application-trace-hero { align-items: flex-start; flex-direction: column; }
+  .application-trace-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+  .application-trace-summary > div { padding: 12px; }
+  .application-trace-summary span { font-size: .7rem; }
+  .application-trace-summary strong { font-size: 1.4rem; }
+  .application-trace-card { padding: 13px; }
+  .application-trace-event { gap: 8px; }
+  .application-trace-card-top { flex-direction: column-reverse; gap: 6px; }
+}

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { calculateSowingQuantities } from "./siembraCalculations.js";
+import { buildApplicationTraceability, getCadenaSiembras } from "./applicationTraceability.js";
 import DisableLoteModal from "./DisableLoteModal.jsx";
 import AlignedTableNumber from "./AlignedTableNumber.jsx";
 import { RANGOS_DENSIDAD_SIEMBRA, RANGOS_PMG, RANGOS_PROFUNDIDAD, RANGOS_UREA, fueraDeRangoOrientativo } from "./agronomicRanges.js";
@@ -104,6 +105,7 @@ function Siembras({ permisos = PERMISOS_TODOS, session, lotes, parentFilters, se
   const [documentos, setDocumentos] = useState([]);
   const [saving, setSaving] = useState(false);
   const [seguimientos, setSeguimientos] = useState([]);
+  const [trazabilidadAplicaciones, setTrazabilidadAplicaciones] = useState({ loading: false, error: "", eventos: [], cadena: [] });
   const [seguimientoForm, setSeguimientoForm] = useState(getEmptySeguimientoForm);
   const [activeSeguimientoId, setActiveSeguimientoId] = useState(null);
   const [seguimientoInsumoForm, setSeguimientoInsumoForm] = useState(emptyInsumoForm);
@@ -559,6 +561,27 @@ function Siembras({ permisos = PERMISOS_TODOS, session, lotes, parentFilters, se
     await loadSeguimientos(siembra.siembraId);
     setView("seguimientoHistorial");
   }
+  async function openTrazabilidadAplicaciones() {
+    const cadena = getCadenaSiembras(selectedSiembra, siembras);
+    const posemergentes = seguimientos.filter((registro) => registro.tipoRegistro === "Posemergente");
+    setTrazabilidadAplicaciones({ loading: true, error: "", eventos: [], cadena });
+    setView("trazabilidadAplicaciones");
+    try {
+      const cargar = async (url) => {
+        const response = await fetch(`${API_BASE_URL}${url}`, { headers: authHeaders() });
+        if (!response.ok) throw new Error(`API ${response.status}`);
+        return response.json();
+      };
+      const [pre, post] = await Promise.all([
+        Promise.all(cadena.map(async (etapa) => [etapa.siembraId, await cargar(`/api/siembras/${etapa.siembraId}/insumos`)])),
+        Promise.all(posemergentes.map(async (registro) => [registro.siembraSeguimientoId, await cargar(`/api/siembras/${registro.siembraId}/seguimientos/${registro.siembraSeguimientoId}/insumos`)]))
+      ]);
+      const eventos = buildApplicationTraceability(cadena, posemergentes, Object.fromEntries(pre), Object.fromEntries(post));
+      setTrazabilidadAplicaciones({ loading: false, error: "", eventos, cadena });
+    } catch (err) {
+      setTrazabilidadAplicaciones({ loading: false, error: `No se pudo cargar la trazabilidad: ${err.message}`, eventos: [], cadena });
+    }
+  }
   function handleOpenSeguimiento(siembra) {
     const ultimaResiembra = siembras.filter((registro) => registro.tipoRegistro === "Resiembra" && String(registro.loteId) === String(siembra.loteId) && normalizeSearchText(registro.campaniaNombre || "") === normalizeSearchText(siembra.campaniaNombre || "")).sort((a, b) => b.siembraId - a.siembraId)[0];
     if (ultimaResiembra && ultimaResiembra.siembraId !== siembra.siembraId) {
@@ -782,8 +805,11 @@ function Siembras({ permisos = PERMISOS_TODOS, session, lotes, parentFilters, se
   if (view === "detail") {
     return <SiembraDetalle siembra={selectedSiembra} insumos={insumos} documentos={documentos} onDescargarDocumento={handleDescargarDocumento} onBack={goToList} />;
   }
+  if (view === "trazabilidadAplicaciones") {
+    return <TrazabilidadAplicaciones siembra={selectedSiembra} datos={trazabilidadAplicaciones} onBack={() => setView("seguimientoHistorial")} onRetry={openTrazabilidadAplicaciones} />;
+  }
   if (view === "seguimientoHistorial") {
-    return <><SeguimientoHistorialList permisos={permisos} siembra={selectedSiembra} seguimientos={seguimientos} error={error} onNuevoSiniestro={() => openNuevoSeguimiento(selectedSiembra, "Siniestro")} onNuevoPosemergente={() => openNuevoSeguimiento(selectedSiembra, "Posemergente")} onNuevoRefertilizacion={() => openNuevoSeguimiento(selectedSiembra, "Refertilizacion")} onVer={openDetalleSeguimiento} onEditar={(seguimiento) => openEditarSeguimiento(selectedSiembra, seguimiento)} onEliminar={(seguimiento) => { setError(""); setSeguimientoToDelete(seguimiento); }} onFinalizar={handleFinalizarSeguimiento} onBack={backFromHistorialSeguimiento} />
+    return <><SeguimientoHistorialList permisos={permisos} siembra={selectedSiembra} seguimientos={seguimientos} error={error} onNuevoSiniestro={() => openNuevoSeguimiento(selectedSiembra, "Siniestro")} onNuevoPosemergente={() => openNuevoSeguimiento(selectedSiembra, "Posemergente")} onNuevoRefertilizacion={() => openNuevoSeguimiento(selectedSiembra, "Refertilizacion")} onVerTrazabilidad={openTrazabilidadAplicaciones} onVer={openDetalleSeguimiento} onEditar={(seguimiento) => openEditarSeguimiento(selectedSiembra, seguimiento)} onEliminar={(seguimiento) => { setError(""); setSeguimientoToDelete(seguimiento); }} onFinalizar={handleFinalizarSeguimiento} onBack={backFromHistorialSeguimiento} />
       {seguimientoToDelete && createPortal(<div className="confirmation-modal-backdrop" role="presentation"><section className="confirmation-modal" role="dialog" aria-modal="true" aria-label="Confirmar eliminación"><span className="confirmation-modal-icon" aria-hidden="true"><Trash2 size={25} /></span><h2>Eliminar {seguimientoToDelete.tipoRegistro === "Refertilizacion" ? "refertilización" : seguimientoToDelete.tipoRegistro === "Siniestro" ? "siniestro" : "posemergente"}</h2><p>Se eliminará el registro del {formatFecha(seguimientoToDelete.fecha)}. Esta acción no se puede deshacer.</p>{error && <p className="field-error" role="alert">{error}</p>}<div className="confirmation-modal-actions"><button className="back-button" type="button" onClick={() => setSeguimientoToDelete(null)}>Cancelar</button><button className="green-button" type="button" disabled={seguimientoSaving} onClick={() => handleEliminarSeguimiento(seguimientoToDelete)}><Trash2 size={17} />{seguimientoSaving ? "Eliminando..." : "Eliminar"}</button></div></section></div>, document.body)}
     </>;
   }
@@ -1412,7 +1438,58 @@ function SeguimientoMapa({ puntos, pendiente, poligono, onPick, readOnly }) {
   }, [puntos, pendiente, poligono]);
   return <div className="map-box seguimiento-map-box" style={{ height: 260, position: "relative", borderRadius: 12, overflow: "hidden" }}>      <div ref={mapNodeRef} style={{ width: "100%", height: "100%" }} />      {!readOnly && <div style={{ position: "absolute", bottom: 8, left: 8, background: "rgba(255,255,255,.92)", padding: "6px 10px", borderRadius: 8, fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>          <MapPin size={14} />          <span>Toca el mapa para marcar el punto de esta recorrida</span>        </div>}    </div>;
 }
-function SeguimientoHistorialList({ permisos = PERMISOS_TODOS, siembra, seguimientos, error, onNuevoSiniestro, onNuevoPosemergente, onNuevoRefertilizacion, onVer, onEditar, onEliminar, onFinalizar, onBack }) {
+function TrazabilidadAplicaciones({ siembra, datos, onBack, onRetry }) {
+  const { loading, error, eventos, cadena } = datos;
+  const previas = eventos.filter((evento) => evento.fase === "Preemergente").length;
+  const posteriores = eventos.length - previas;
+  const productos = new Set(eventos.flatMap((evento) => evento.insumos.map((insumo) => insumo.variedad?.trim().toLocaleLowerCase("es")).filter(Boolean)));
+  return <section className="content-panel create-panel application-trace-page">
+    <div className="application-trace-hero">
+      <div>
+        <span className="application-trace-eyebrow"><Route size={16} /> Trazabilidad de aplicaciones</span>
+        <h1>{siembra?.loteNombre || "Lote"}</h1>
+        <p>Aplicaciones antes y después de la emergencia · {cadena.length} {cadena.length === 1 ? "etapa" : "etapas"} de siembra</p>
+      </div>
+      <button className="back-button" type="button" onClick={onBack}><ArrowLeft size={17} />Volver al historial</button>
+    </div>
+    {loading ? <div className="application-trace-message" role="status"><LoaderCircle size={24} className="application-trace-spinner" />Cargando aplicaciones...</div> :
+      error ? <div className="application-trace-message" role="alert"><p>{error}</p><button className="back-button" type="button" onClick={onRetry}>Reintentar</button></div> :
+      <>
+        <div className="application-trace-summary" aria-label="Resumen de aplicaciones">
+          <div><span>Aplicaciones previas</span><strong>{previas}</strong></div>
+          <div><span>Posemergentes</span><strong>{posteriores}</strong></div>
+          <div><span>Drogas distintas</span><strong>{productos.size}</strong></div>
+        </div>
+        <div className="application-trace-legend"><span><i className="application-trace-dot application-trace-dot-pre" />Preemergente</span><span><i className="application-trace-dot application-trace-dot-post" />Posemergente</span></div>
+        {eventos.length === 0 ? <div className="application-trace-message">Todavía no hay aplicaciones registradas en esta cadena de siembras.</div> :
+          <ol className="application-trace-timeline" aria-label="Aplicaciones en orden cronológico">
+            {eventos.map((evento) => <li className={`application-trace-event ${evento.fase === "Preemergente" ? "application-trace-event-pre" : "application-trace-event-post"}`} key={evento.id}>
+              <span className="application-trace-marker" aria-hidden="true">{evento.fase === "Preemergente" ? <FlaskConical size={16} /> : <Leaf size={16} />}</span>
+              <article className="application-trace-card">
+                <div className="application-trace-card-top">
+                  <div><span className="application-trace-phase">{evento.fase}</span><h2>{evento.motivo}</h2></div>
+                  <time dateTime={evento.fecha}>{formatDateInputLabel(evento.fecha)}</time>
+                </div>
+                <div className="application-trace-context">
+                  <span>{evento.etapa.nombre} · {evento.etapa.cultivo}</span>
+                  {evento.alcance && <span>Alcance: {evento.alcance}</span>}
+                </div>
+                <div className="application-trace-products">
+                  <h3>Productos aplicados</h3>
+                  {evento.insumos.length ? <ul>{evento.insumos.map((insumo, indice) => <li key={insumo.siembraInsumoId || insumo.seguimientoInsumoId || indice}>
+                    <strong>{insumo.variedad || "Producto sin especificar"}</strong>
+                    <span>{[insumo.tipo, insumo.marca].filter(Boolean).join(" · ") || "Sin tipo o marca"}</span>
+                    {insumo.cantidadAplicada != null && <b>{formatNumber(insumo.cantidadAplicada)} {insumo.unidadMedida || ""}</b>}
+                  </li>)}</ul> : <p>Sin productos detallados.</p>}
+                </div>
+                {evento.observaciones && <p className="application-trace-note">{evento.observaciones}</p>}
+              </article>
+            </li>)}
+          </ol>}
+      </>}
+  </section>;
+}
+function SeguimientoHistorialList({ permisos = PERMISOS_TODOS, siembra, seguimientos, error, onNuevoSiniestro, onNuevoPosemergente, onNuevoRefertilizacion, onVerTrazabilidad, onVer, onEditar, onEliminar, onFinalizar, onBack }) {
   if (!siembra) return null;
   const finalizado = siembra.estado === "Finalizado";
   const siniestros = seguimientos.filter((seguimiento) => seguimiento.tipoRegistro === "Siniestro");
@@ -1421,7 +1498,7 @@ function SeguimientoHistorialList({ permisos = PERMISOS_TODOS, siembra, seguimie
   const esInicioDeEtapaAnterior = (registros, indice) => indice > 0 && registros[indice - 1].siembraId !== registros[indice].siembraId;
   const separadorDeResiembra = (colSpan, key) => <tr className="seguimiento-resiembra-separator" key={key}>      <td colSpan={colSpan}><span><Leaf size={18} />Resiembra</span></td>    </tr>;
   const actions = (seguimiento) => <td className="actions-cell">      <button className="table-action-tooltip" data-tooltip="Ver detalle" type="button" aria-label="Ver detalle" onClick={() => onVer(seguimiento)}><Eye size={18} /></button>      {!finalizado && !seguimiento.esHistorialAnterior && <>        <button className="table-action-tooltip" data-tooltip="Editar" type="button" hidden={!permisos.registroCampo} aria-label="Editar registro" onClick={() => onEditar(seguimiento)}><Edit size={18} /></button>        <button className="table-action-tooltip" data-tooltip="Eliminar" type="button" hidden={!permisos.registroCampo} aria-label="Eliminar registro" onClick={() => onEliminar(seguimiento)}><Trash2 size={18} /></button>      </>}    </td>;
-  return <section className="content-panel create-panel seguimiento-history-page">      <div className="seguimiento-history-hero">        <div className="seguimiento-history-title">          <div className="seguimiento-history-title-icon"><Sprout size={34} /></div>          <div>            <h1>Historial {siembra.nombre}</h1>            <p>{siembra.loteNombre} - {siembra.producto}</p>          </div>        </div>        {!finalizado && <div className="seguimiento-history-actions">            <button className="green-button" type="button" hidden={!permisos.registroCampo} onClick={onNuevoSiniestro}><PlusCircle size={18} />Registrar siniestro</button>            <button className="green-button" type="button" hidden={!permisos.registroCampo} onClick={onNuevoPosemergente}><Leaf size={18} />Registrar posemergente</button>            <button className="green-button" type="button" hidden={!permisos.registroCampo} onClick={onNuevoRefertilizacion}><Sprout size={18} />Registrar refertilización</button>            <button className="green-button" type="button" hidden={!permisos.estructura} onClick={onFinalizar}><Flag size={18} />Finalizar seguimiento</button>          </div>}      </div>      {error && <p style={{ color: "#c0392b", fontWeight: 700 }}>{error}</p>}      {finalizado && <p style={{ color: "#6b7280" }}>Este seguimiento ya fue finalizado: queda disponible solo para consulta.</p>}      <section className="seguimiento-history-card dashboard-card">        <div className="seguimiento-history-card-header">          <div className="seguimiento-history-card-icon"><AlertTriangle size={21} /></div>          <div><h2>Siniestros</h2><p>Registro de eventos que afectaron el cultivo.</p></div>        </div>        <div className="table-shell">        <table className="lotes-table">          <thead>            <tr>              <th><CalendarDays size={16} />Fecha</th>              <th><Sprout size={16} />Cultivo</th>              <th><AlertTriangle size={16} />Siniestro</th>              <th><Gauge size={16} />Alcance / pérdida</th>              <th><Leaf size={16} />Resiembra</th>              <th><FileText size={16} />Observaciones</th>              <th><Settings2 size={16} />Acciones</th>            </tr>          </thead>          <tbody>            {siniestros.map((s, indice) => <Fragment key={s.siembraSeguimientoId}>                {esInicioDeEtapaAnterior(siniestros, indice) && separadorDeResiembra(7, `separador-siniestro-${s.siembraSeguimientoId}`)}                <tr className={s.esResiembra ? "seguimiento-resiembra-row" : s.esHistorialAnterior ? "seguimiento-historico-row" : ""}>                  <td>{formatFecha(s.fecha)}</td>                  <td>{s.cultivo || "-"}</td>                  <td>{s.siniestro || "-"}</td>                  <td>{s.alcance || "-"}</td>                  <td>{s.esResiembra ? "S\xED" : "No"}</td>                  <td>{s.observaciones}</td>                  {actions(s)}                </tr>              </Fragment>)}            {siniestros.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center" }}>Todavía no hay siniestros registrados.</td></tr>}          </tbody>        </table>        </div>      </section>      <section className="seguimiento-history-card dashboard-card">        <div className="seguimiento-history-card-header">          <div className="seguimiento-history-card-icon"><Leaf size={21} /></div>          <div><h2>Posemergentes</h2><p>Aplicaciones realizadas luego de la emergencia del cultivo.</p></div>        </div>        <div className="table-shell">        <table className="lotes-table">          <thead><tr><th><CalendarDays size={16} />Fecha de aplicación</th><th><Sprout size={16} />Motivo de aplicación</th><th><Gauge size={16} />Alcance</th><th><FlaskConical size={16} />Drogas aplicadas</th><th><FileText size={16} />Observaciones</th><th><Settings2 size={16} />Acciones</th></tr></thead>          <tbody>            {posemergentes.map((s, indice) => <Fragment key={s.siembraSeguimientoId}>                {esInicioDeEtapaAnterior(posemergentes, indice) && separadorDeResiembra(6, `separador-posemergente-${s.siembraSeguimientoId}`)}                <tr className={s.esHistorialAnterior ? "seguimiento-historico-row" : ""}>                  <td>{formatFecha(s.fecha)}</td><td>{s.incidencia || "-"}</td><td>{s.alcance || "-"}</td>                  <td>{s.drogasAplicadas || "-"}</td><td>{s.observaciones}</td>{actions(s)}                </tr>              </Fragment>)}            {posemergentes.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center" }}>Todavía no hay posemergentes registrados.</td></tr>}          </tbody>        </table>        </div>      </section>      <section className="seguimiento-history-card dashboard-card">
+  return <section className="content-panel create-panel seguimiento-history-page">      <div className="seguimiento-history-hero">        <div className="seguimiento-history-title">          <div className="seguimiento-history-title-icon"><Sprout size={34} /></div>          <div>            <h1>Historial {siembra.nombre}</h1>            <p>{siembra.loteNombre} - {siembra.producto}</p>          </div>        </div>        {!finalizado && <div className="seguimiento-history-actions">            <button className="green-button" type="button" hidden={!permisos.registroCampo} onClick={onNuevoSiniestro}><PlusCircle size={18} />Registrar siniestro</button>            <button className="green-button" type="button" hidden={!permisos.registroCampo} onClick={onNuevoPosemergente}><Leaf size={18} />Registrar posemergente</button>            <button className="green-button" type="button" hidden={!permisos.registroCampo} onClick={onNuevoRefertilizacion}><Sprout size={18} />Registrar refertilización</button>            <button className="green-button" type="button" hidden={!permisos.estructura} onClick={onFinalizar}><Flag size={18} />Finalizar seguimiento</button>          </div>}      </div>      {error && <p style={{ color: "#c0392b", fontWeight: 700 }}>{error}</p>}      {finalizado && <p style={{ color: "#6b7280" }}>Este seguimiento ya fue finalizado: queda disponible solo para consulta.</p>}      <section className="seguimiento-history-card dashboard-card">        <div className="seguimiento-history-card-header">          <div className="seguimiento-history-card-icon"><AlertTriangle size={21} /></div>          <div><h2>Siniestros</h2><p>Registro de eventos que afectaron el cultivo.</p></div>        </div>        <div className="table-shell">        <table className="lotes-table">          <thead>            <tr>              <th><CalendarDays size={16} />Fecha</th>              <th><Sprout size={16} />Cultivo</th>              <th><AlertTriangle size={16} />Siniestro</th>              <th><Gauge size={16} />Alcance / pérdida</th>              <th><Leaf size={16} />Resiembra</th>              <th><FileText size={16} />Observaciones</th>              <th><Settings2 size={16} />Acciones</th>            </tr>          </thead>          <tbody>            {siniestros.map((s, indice) => <Fragment key={s.siembraSeguimientoId}>                {esInicioDeEtapaAnterior(siniestros, indice) && separadorDeResiembra(7, `separador-siniestro-${s.siembraSeguimientoId}`)}                <tr className={s.esResiembra ? "seguimiento-resiembra-row" : s.esHistorialAnterior ? "seguimiento-historico-row" : ""}>                  <td>{formatFecha(s.fecha)}</td>                  <td>{s.cultivo || "-"}</td>                  <td>{s.siniestro || "-"}</td>                  <td>{s.alcance || "-"}</td>                  <td>{s.esResiembra ? "S\xED" : "No"}</td>                  <td>{s.observaciones}</td>                  {actions(s)}                </tr>              </Fragment>)}            {siniestros.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center" }}>Todavía no hay siniestros registrados.</td></tr>}          </tbody>        </table>        </div>      </section>      <section className="seguimiento-history-card dashboard-card">        <div className="seguimiento-history-card-header">          <div className="seguimiento-history-card-icon"><Leaf size={21} /></div>          <div><h2>Posemergentes</h2><p>Aplicaciones realizadas luego de la emergencia del cultivo.</p></div>          <button className="back-button seguimiento-trace-button" type="button" onClick={onVerTrazabilidad}><Route size={17} />Ver trazabilidad de aplicaciones</button>        </div>        <div className="table-shell">        <table className="lotes-table">          <thead><tr><th><CalendarDays size={16} />Fecha de aplicación</th><th><Sprout size={16} />Motivo de aplicación</th><th><Gauge size={16} />Alcance</th><th><FlaskConical size={16} />Drogas aplicadas</th><th><FileText size={16} />Observaciones</th><th><Settings2 size={16} />Acciones</th></tr></thead>          <tbody>            {posemergentes.map((s, indice) => <Fragment key={s.siembraSeguimientoId}>                {esInicioDeEtapaAnterior(posemergentes, indice) && separadorDeResiembra(6, `separador-posemergente-${s.siembraSeguimientoId}`)}                <tr className={s.esHistorialAnterior ? "seguimiento-historico-row" : ""}>                  <td>{formatFecha(s.fecha)}</td><td>{s.incidencia || "-"}</td><td>{s.alcance || "-"}</td>                  <td>{s.drogasAplicadas || "-"}</td><td>{s.observaciones}</td>{actions(s)}                </tr>              </Fragment>)}            {posemergentes.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center" }}>Todavía no hay posemergentes registrados.</td></tr>}          </tbody>        </table>        </div>      </section>      <section className="seguimiento-history-card dashboard-card">
         <div className="seguimiento-history-card-header">
           <div className="seguimiento-history-card-icon"><Sprout size={21} /></div>
           <div><h2>Refertilizaciones</h2><p>Urea aplicada sobre la superficie sembrada.</p></div>

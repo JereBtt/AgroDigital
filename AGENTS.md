@@ -164,6 +164,7 @@ AgroBot esta disponible para los cuatro roles, pero sus respuestas deben respeta
 
 ## Reglas funcionales destacadas
 
+- En el historial de Seguimiento de Siembra, el botón de trazabilidad junto a Posemergentes abre una línea de tiempo cronológica de las aplicaciones preemergentes y posemergentes de la siembra y sus resiembras anteriores. Cada evento conserva su fecha, motivo, etapa y productos aplicados.
 - Refertilización se registra en Seguimiento de Siembra después de Siniestros y Posemergentes. Usa la superficie efectivamente sembrada de la siembra, fecha posterior a su inicio y hasta cuatro meses después, urea entre 1 y 500 kg/ha y hectáreas/hora positivas. La API calcula horas trabajadas y urea total; alta, edición y eliminación comparten los permisos de registro de campo. La migración incremental es `database/scripts/30_refertilizacion_seguimientos.sql`. Las eliminaciones de los tres tipos de registro requieren confirmación en la interfaz.
 - En la consulta de Siembras, Desde/Hasta se ocultan inicialmente y el boton Mas filtros alterna su visibilidad. Ocultarlos conserva el rango aplicado; Limpiar restablece sus valores.
 - En Editar Siembra, el boton final dice Guardar cambios y permanece deshabilitado hasta que cambie algun dato editable del formulario. Volver al valor original lo deshabilita otra vez; los insumos y documentos que se guardan inmediatamente no cuentan como cambios pendientes del formulario.
