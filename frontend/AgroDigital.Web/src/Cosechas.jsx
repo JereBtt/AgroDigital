@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import L from 'leaflet';
 import { calcularAvanceApto, finPeriodoCampania } from './cosechaIndicators.js';
-import { calcularKgCosechados, calcularRindeKgHa } from './cosechaResultado.js';
+import { calcularKgCosechados, calcularRindeKgHa, formatearEnteroConMiles, parsearEnteroConMiles } from './cosechaResultado.js';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -1830,6 +1830,7 @@ function FinalizarCosechaModal({ cosecha, humedadBase, saving, onFinalizar, onCa
   const sugeridoDePartes = cosecha.cantidadPartes > 0;
 
   function cambiar(campo, valor) {
+    if (campo === 'cantidadGranoCosechado' || campo === 'rindeIngresado') valor = parsearEnteroConMiles(valor);
     const numericos = ['cantidadGranoCosechado', 'rindeIngresado', 'cantidadHectareasTrabajadas', 'humedadGrano', 'impurezas', 'hectareasHora'];
     if (numericos.includes(campo) && valor !== '' && (!Number.isFinite(Number(valor)) || Number(valor) < 0)) return;
     if (campo === 'cantidadGranoCosechado') setOrigenResultado('total');
@@ -1920,7 +1921,7 @@ function FinalizarCosechaModal({ cosecha, humedadBase, saving, onFinalizar, onCa
         <div className="cos-modal-grid cos-modal-grid-3">
           <label className="field">
             <span className="field-label">Total cosechado (kg) <b>*</b></span>
-            <input type="number" min="0" step="any" value={datos.cantidadGranoCosechado} onChange={(event) => cambiar('cantidadGranoCosechado', event.target.value)} />
+            <input type="text" inputMode="numeric" value={formatearEnteroConMiles(datos.cantidadGranoCosechado)} onChange={(event) => cambiar('cantidadGranoCosechado', event.target.value)} />
             {mostrar('cantidadGranoCosechado')}
             <span className="cos-hint">Ingresá el total o el rinde; el otro valor se calcula automáticamente.</span>
           </label>
@@ -1931,7 +1932,7 @@ function FinalizarCosechaModal({ cosecha, humedadBase, saving, onFinalizar, onCa
           </label>
           <label className="field">
             <span className="field-label">Rinde promedio (kg/ha) <b>*</b></span>
-            <input type="number" min="0" step="any" value={datos.rindeIngresado} onChange={(event) => cambiar('rindeIngresado', event.target.value)} />
+            <input type="text" inputMode="numeric" value={formatearEnteroConMiles(datos.rindeIngresado)} onChange={(event) => cambiar('rindeIngresado', event.target.value)} />
             <span className="cos-hint">Rinde húmedo: kg ÷ ha.</span>
           </label>
           <label className="field">
