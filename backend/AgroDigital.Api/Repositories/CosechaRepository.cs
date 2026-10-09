@@ -272,14 +272,17 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
                 SET EtapaActual = N'Cosecha'
                 FROM dbo.CampaniaCombinaciones AS cc
                 INNER JOIN dbo.Campanias AS ca ON ca.CampaniaId = cc.CampaniaId
+                INNER JOIN dbo.Siembras AS s ON s.SiembraId = @SiembraId
                 WHERE cc.LoteId = @LoteId
                   AND cc.Producto = @Producto
                   AND ca.Nombre = @CampaniaNombre
+                  AND cc.CicloEstacional = s.CicloEstacional
                   AND cc.Estado <> N'Finalizado';
                 """;
 
             await using (var etapa = new SqlCommand(etapaSql, connection, transaction))
             {
+                etapa.Parameters.AddWithValue("@SiembraId", siembra.SiembraId);
                 etapa.Parameters.AddWithValue("@LoteId", siembra.LoteId);
                 etapa.Parameters.AddWithValue("@Producto", siembra.Producto);
                 etapa.Parameters.AddWithValue("@CampaniaNombre", TextoONull(siembra.CampaniaNombre));
@@ -476,6 +479,8 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
                 INNER JOIN dbo.Cosechas AS c ON c.LoteId = cc.LoteId
                     AND c.CampaniaNombre = ca.Nombre
                     AND c.Producto = cc.Producto
+                INNER JOIN dbo.Siembras AS s ON s.SiembraId = c.SiembraId
+                    AND s.CicloEstacional = cc.CicloEstacional
                 WHERE c.CosechaId = @CosechaId;
                 """;
 
