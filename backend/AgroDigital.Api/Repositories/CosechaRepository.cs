@@ -33,7 +33,7 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
         ?? throw new InvalidOperationException("No se encontro la cadena de conexion AgroDigital.");
 
     private const string SelectCosecha = """
-        SELECT c.CosechaId, c.Nombre, c.SiembraId, s.Nombre AS SiembraNombre,
+        SELECT c.CosechaId, c.Nombre, c.SiembraId, s.Nombre AS SiembraNombre, s.CicloEstacional,
                c.LoteId, l.Nombre AS LoteNombre, COALESCE(c.EmpresaId, l.EmpresaId) AS EmpresaId,
                COALESCE(e.Nombre, c.Empresa) AS Empresa, c.CampaniaNombre, c.Producto,
                c.FechaInicio, c.FechaFin, c.FechaFinReal, c.JustificacionDesvioFin,
@@ -132,6 +132,7 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
     {
         const string sql = """
             SELECT s.SiembraId, s.Nombre, ISNULL(s.TipoRegistro, N'Siembra') AS TipoRegistro,
+                   ISNULL(s.CicloEstacional, N'Verano') AS CicloEstacional,
                    s.LoteId, l.Nombre AS LoteNombre, l.EmpresaId, e.Nombre AS Empresa,
                    s.Producto, s.CampaniaNombre, s.FechaFinReal,
                    COALESCE(s.CantidadHectareasTrabajadas, l.Hectareas) AS HectareasSembradas, s.PMG
@@ -139,9 +140,12 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
             INNER JOIN dbo.Lotes AS l ON l.LoteId = s.LoteId
             LEFT JOIN dbo.Empresas AS e ON e.EmpresaId = l.EmpresaId
             WHERE s.EstadoSiembra = N'Finalizado'
+              AND s.Estado = N'Finalizado'
               AND s.DeshabilitacionId IS NULL
+              AND l.Activo = 1
               AND s.FechaFinReal IS NOT NULL
               AND NOT EXISTS (SELECT 1 FROM dbo.Siembras AS r WHERE r.SiembraOriginalId = s.SiembraId)
+              AND l.EstadoCultivo = N'Cultivado'
               AND NOT EXISTS (SELECT 1 FROM dbo.Cosechas AS c WHERE c.SiembraId = s.SiembraId)
               AND (@IncluirTodos = 1 OR EXISTS (
                     SELECT 1 FROM dbo.UsuarioEmpresas AS ue
@@ -164,6 +168,7 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
                 SiembraId = Int(reader, "SiembraId"),
                 Nombre = Str(reader, "Nombre"),
                 TipoRegistro = Str(reader, "TipoRegistro"),
+                CicloEstacional = Str(reader, "CicloEstacional"),
                 LoteId = Int(reader, "LoteId"),
                 LoteNombre = Str(reader, "LoteNombre"),
                 EmpresaId = IntN(reader, "EmpresaId"),
@@ -205,6 +210,10 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
                 throw new ReglaCosechaException(
                     $"La siembra {siembra.Nombre} todavía no está finalizada. Finalizala antes de registrar su cosecha.");
             }
+            if (siembra.EstadoSeguimiento != "Finalizado")
+                throw new ReglaCosechaException("Finalizá el seguimiento de la siembra antes de registrar la cosecha.");
+            if (!siembra.LoteActivo || siembra.EstadoCultivo != "Cultivado")
+                throw new ConflictoCosechaException("El lote debe estar activo y cultivado para registrar su cosecha.");
 
             if (siembra.TieneResiembraPosterior)
             {
@@ -222,6 +231,7 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
                 throw new ReglaCosechaException(
                     $"La fecha de inicio no puede ser anterior al fin real de la siembra ({siembra.FechaFinReal.Value:dd/MM/yyyy}).");
             }
+            ValidarInicioEnPeriodo(request.FechaInicio, siembra.CampaniaNombre);
 
             var nombre = await GenerarSiguienteNombreAsync(connection, transaction);
 
@@ -308,6 +318,7 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
             }
 
             var inicio = request.FechaInicio.Date;
+            ValidarInicioEnPeriodo(inicio, actual.CampaniaNombre);
             if (actual.SiembraFechaFinReal is not null && inicio < actual.SiembraFechaFinReal.Value.Date)
             {
                 throw new ReglaCosechaException(
@@ -1072,7 +1083,7 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
     // =====================================================================
 
     private sealed record SiembraParaCosecha(
-        int SiembraId, string Nombre, int LoteId, string Producto, string? CampaniaNombre, string EstadoSiembra,
+        int SiembraId, string Nombre, int LoteId, string Producto, string? CampaniaNombre, string EstadoSiembra, string EstadoSeguimiento, bool LoteActivo, string EstadoCultivo,
         DateTime? FechaFinReal, int? EmpresaId, string? EmpresaNombre, bool Deshabilitada, bool TieneResiembraPosterior, bool TieneCosecha);
 
     private static async Task<SiembraParaCosecha?> LeerSiembraParaCosechaAsync(
@@ -1080,7 +1091,7 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
     {
         // UPDLOCK/HOLDLOCK: dos altas simultaneas sobre la misma siembra no pasan las dos.
         const string sql = """
-            SELECT s.SiembraId, s.Nombre, s.LoteId, s.Producto, s.CampaniaNombre, s.EstadoSiembra, s.FechaFinReal,
+            SELECT s.SiembraId, s.Nombre, s.LoteId, s.Producto, s.CampaniaNombre, s.EstadoSiembra, s.Estado AS EstadoSeguimiento, l.Activo AS LoteActivo, l.EstadoCultivo, s.FechaFinReal,
                    s.DeshabilitacionId,
                    l.EmpresaId, e.Nombre AS EmpresaNombre,
                    CASE WHEN EXISTS (SELECT 1 FROM dbo.Siembras AS r WHERE r.SiembraOriginalId = s.SiembraId)
@@ -1105,6 +1116,9 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
             Str(reader, "Producto"),
             StrN(reader, "CampaniaNombre"),
             Str(reader, "EstadoSiembra"),
+            Str(reader, "EstadoSeguimiento"),
+            reader.GetBoolean(reader.GetOrdinal("LoteActivo")),
+            Str(reader, "EstadoCultivo"),
             FechaN(reader, "FechaFinReal"),
             IntN(reader, "EmpresaId"),
             StrN(reader, "EmpresaNombre"),
@@ -1184,6 +1198,16 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
             Dec(reader, "KgIngresadosSilo"),
             Dec(reader, "KgDistribuidosDirecto"),
             Dec(reader, "HectareasPartes"));
+    }
+
+    private static void ValidarInicioEnPeriodo(DateTime inicio, string? campaniaNombre)
+    {
+        var periodo = System.Text.RegularExpressions.Regex.Match(campaniaNombre ?? "", @"(?<!\d)\d{4}-(\d{4})(?!\d)");
+        if (!periodo.Success || !int.TryParse(periodo.Groups[1].Value, out var anioFin) || anioFin is < 1900 or > 9998)
+            return;
+        var ultimoDia = new DateTime(anioFin, 12, 31);
+        if (inicio.Date > ultimoDia)
+            throw new ReglaCosechaException($"La fecha de inicio no puede superar el 31/12/{anioFin}, fin del período de campaña.");
     }
 
     private static void ValidarResultado(
@@ -1424,8 +1448,8 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
         command.Parameters.AddWithValue("@ResponsableACargo", TextoONull(responsable));
         command.Parameters.AddWithValue("@TipoServicio", TextoONull(tipoServicio));
         command.Parameters.AddWithValue("@Contratista", tipoServicio == "Contratada" ? TextoONull(contratista) : DBNull.Value);
-        command.Parameters.AddWithValue("@Cosechadora", TextoONull(cosechadora));
-        command.Parameters.AddWithValue("@AnchoCabezalM", (object?)anchoCabezal ?? DBNull.Value);
+        command.Parameters.AddWithValue("@Cosechadora", tipoServicio is "Propia" or "Contratada" ? TextoONull(cosechadora?.ToUpperInvariant()) : DBNull.Value);
+        command.Parameters.AddWithValue("@AnchoCabezalM", tipoServicio is "Propia" or "Contratada" ? (object?)anchoCabezal ?? DBNull.Value : DBNull.Value);
     }
 
     private static void AgregarParametrosTirada(
@@ -1471,6 +1495,7 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
         Nombre = Str(reader, "Nombre"),
         SiembraId = IntN(reader, "SiembraId"),
         SiembraNombre = StrN(reader, "SiembraNombre"),
+        CicloEstacional = StrN(reader, "CicloEstacional"),
         LoteId = Int(reader, "LoteId"),
         LoteNombre = Str(reader, "LoteNombre"),
         EmpresaId = IntN(reader, "EmpresaId"),

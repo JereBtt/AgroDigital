@@ -15,6 +15,7 @@ public class CosechaDto
     public string Nombre { get; set; } = string.Empty;
     public int? SiembraId { get; set; }
     public string? SiembraNombre { get; set; }
+    public string? CicloEstacional { get; set; }
     public int LoteId { get; set; }
     public string LoteNombre { get; set; } = string.Empty;
     public int? EmpresaId { get; set; }
@@ -122,6 +123,7 @@ public class SiembraParaCosechaDto
     public int SiembraId { get; set; }
     public string Nombre { get; set; } = string.Empty;
     public string TipoRegistro { get; set; } = "Siembra";
+    public string CicloEstacional { get; set; } = "Verano";
     public int LoteId { get; set; }
     public string LoteNombre { get; set; } = string.Empty;
     public int? EmpresaId { get; set; }

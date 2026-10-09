@@ -3356,6 +3356,41 @@ button {
   align-items: flex-start;
 }
 
+.siembras-list-filters {
+  grid-template-columns: minmax(180px, 1.2fr) minmax(140px, 1.2fr) repeat(2, minmax(130px, 0.8fr)) minmax(140px, 0.8fr) minmax(120px, 0.7fr);
+}
+
+.siembras-extra-filters {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: end;
+  min-width: 0;
+}
+
+.siembras-extra-filters > .field {
+  flex: 1 1 210px;
+  min-width: 0;
+  max-width: 300px;
+}
+
+.siembras-extra-filters .siembras-date-filter {
+  flex: 1 1 100%;
+}
+
+@media (max-width: 1280px) {
+  .filters-card.siembras-list-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .filters-card.siembras-list-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 520px) {
+  .filters-card.siembras-list-filters { grid-template-columns: 1fr; }
+}
+
 .siembras-date-filter {
   grid-column: 1 / -1;
   display: flex;
@@ -11831,4 +11866,16 @@ textarea::placeholder {
   .application-trace-card { padding: 13px; }
   .application-trace-event { gap: 8px; }
   .application-trace-card-top { flex-direction: column-reverse; gap: 6px; }
+}
+
+/* Cosechas: indicadores por grano, foco visual y catalogos de maquinaria */
+.cos-summary-grid { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.cos-lote-name { display: block; color: #123b25; font-size: calc(15px * var(--text-scale, 1)); font-weight: 900; line-height: 1.25; }
+.cos-related-sowing { display: block; margin-top: 3px; color: #64736a; font-size: calc(11px * var(--text-scale, 1)); font-weight: 600; }
+.cos-catalog-field { display: flex; gap: 8px; align-items: stretch; }
+.cos-catalog-field input { min-width: 0; flex: 1 1 auto; }
+.cos-catalog-add { flex: 0 0 auto; min-height: 42px; padding: 0 11px; gap: 6px; white-space: nowrap; }
+@media (max-width: 720px) {
+  .cos-summary-grid { grid-template-columns: 1fr; }
+  .cos-catalog-field { flex-wrap: wrap; }
 }

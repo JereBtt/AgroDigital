@@ -28,7 +28,17 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
                                 JOIN dbo.CampaniaCombinaciones cc ON cc.CampaniaId = ca.CampaniaId
                                 JOIN dbo.Lotes la ON la.LoteId = cc.LoteId AND la.Activo = 1
                                 WHERE ca.Nombre = s.CampaniaNombre AND cc.Estado <> N'Finalizado')
-                    THEN 1 ELSE 0 END AS bit) AS PuedeRestaurar
+                    THEN 1 ELSE 0 END AS bit) AS PuedeRestaurar,
+               CAST(CASE WHEN EXISTS (
+                    SELECT 1 FROM dbo.Cosechas AS c
+                    JOIN dbo.Siembras AS etapa ON etapa.SiembraId = c.SiembraId
+                    WHERE etapa.LoteId = s.LoteId AND etapa.CampaniaNombre = s.CampaniaNombre
+                      AND etapa.CicloEstacional = s.CicloEstacional
+               ) OR EXISTS (
+                    SELECT 1 FROM dbo.Cosechas AS c
+                    WHERE c.SiembraId IS NULL AND c.LoteId = s.LoteId
+                      AND c.CampaniaNombre = s.CampaniaNombre AND c.Producto = s.Producto
+               ) THEN 1 ELSE 0 END AS bit) AS TieneCosecha
         FROM dbo.Siembras AS s
         INNER JOIN dbo.Lotes AS l ON l.LoteId = s.LoteId
         LEFT JOIN dbo.LoteDeshabilitaciones AS d ON d.LoteDeshabilitacionId = s.DeshabilitacionId
@@ -594,7 +604,8 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
             TipoImplantacion = reader.IsDBNull(33) ? null : reader.GetString(33),
             Deshabilitada = reader.GetBoolean(34),
             CicloEstacional = reader.GetString(35),
-            PuedeRestaurar = reader.GetBoolean(36)
+            PuedeRestaurar = reader.GetBoolean(36),
+            TieneCosecha = reader.GetBoolean(37)
         };
     }
 }

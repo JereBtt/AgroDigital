@@ -8,7 +8,7 @@ namespace AgroDigital.Api.Controllers;
 [Route("api/catalogos")]
 public class CatalogosController(IConfiguration configuration, IAuthTokenService authTokenService) : ControllerBase
 {
-    private static readonly HashSet<string> TiposPermitidos = ["MarcaAgroquimico", "DrogaAgroquimico", "VariedadSemilla"];
+    private static readonly HashSet<string> TiposPermitidos = ["MarcaAgroquimico", "DrogaAgroquimico", "VariedadSemilla", "ContratistaCosecha", "Cosechadora", "AnchoCabezalCosecha"];
 
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<CatalogoValorResponse>>> Obtener([FromQuery] string? tipo)
@@ -46,7 +46,11 @@ public class CatalogosController(IConfiguration configuration, IAuthTokenService
         if (!TiposPermitidos.Contains(tipo)) return BadRequest("Tipo de catálogo inválido.");
         if (tipo == "VariedadSemilla" && string.IsNullOrWhiteSpace(grano)) return BadRequest("Selecciona primero un grano para agregar una variedad.");
         if (string.IsNullOrWhiteSpace(nombre) || nombre.Length > 100) return BadRequest("El nombre es obligatorio y admite hasta 100 caracteres.");
-        if (tipo == "VariedadSemilla") nombre = nombre.ToUpperInvariant();
+        if (tipo == "AnchoCabezalCosecha"
+            && (!decimal.TryParse(nombre, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var ancho)
+                || ancho <= 0 || ancho > 30))
+            return BadRequest("El ancho de cabezal debe ser mayor a 0 y hasta 30 m.");
+        if (tipo is "VariedadSemilla" or "Cosechadora") nombre = nombre.ToUpperInvariant();
 
         var connectionString = configuration.GetConnectionString("AgroDigital");
         if (string.IsNullOrWhiteSpace(connectionString)) return Problem("No se configuró la conexión a la base de datos.");

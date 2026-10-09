@@ -465,7 +465,7 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
                 harvest.Parameters.AddWithValue("@LoteId", loteId);
                 harvest.Parameters.AddWithValue("@CampaniaNombre", await ObtenerNombreCampaniaAsync(connection, transaction, campaniaId));
                 harvest.Parameters.AddWithValue("@Ciclo", ciclo);
-                if (Convert.ToInt32(await harvest.ExecuteScalarAsync()) > 0) throw new LoteDeshabilitacionBloqueadaException("La siembra ya tiene una cosecha registrada.");
+                if (Convert.ToInt32(await harvest.ExecuteScalarAsync()) > 0) throw new LoteDeshabilitacionBloqueadaException("No se puede deshabilitar esta siembra: su cosecha ya se inició o finalizó.");
             }
             var winterPlan = false;
             if (ciclo == "Verano")

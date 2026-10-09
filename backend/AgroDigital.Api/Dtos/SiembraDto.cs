@@ -40,6 +40,7 @@ public class SiembraDto
     public string Estado { get; set; } = string.Empty;
     public bool Deshabilitada { get; set; }
     public bool PuedeRestaurar { get; set; }
+    public bool TieneCosecha { get; set; }
 }
 
 public class CrearSiembraRequest
