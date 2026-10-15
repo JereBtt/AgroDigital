@@ -144,7 +144,13 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
               AND s.DeshabilitacionId IS NULL
               AND l.Activo = 1
               AND s.FechaFinReal IS NOT NULL
-              AND NOT EXISTS (SELECT 1 FROM dbo.Siembras AS r WHERE r.SiembraOriginalId = s.SiembraId)
+              AND NOT EXISTS (
+                  SELECT 1 FROM dbo.Siembras AS posterior
+                  WHERE posterior.LoteId = s.LoteId
+                    AND posterior.CampaniaNombre = s.CampaniaNombre
+                    AND ISNULL(posterior.CicloEstacional, N'Verano') = ISNULL(s.CicloEstacional, N'Verano')
+                    AND posterior.DeshabilitacionId IS NULL
+                    AND posterior.SiembraId > s.SiembraId)
               AND l.EstadoCultivo = N'Cultivado'
               AND NOT EXISTS (SELECT 1 FROM dbo.Cosechas AS c WHERE c.SiembraId = s.SiembraId)
               AND (@IncluirTodos = 1 OR EXISTS (
@@ -218,7 +224,7 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
             if (siembra.TieneResiembraPosterior)
             {
                 throw new ReglaCosechaException(
-                    $"{siembra.Nombre} tiene una resiembra posterior: registrá la cosecha sobre la última resiembra del lote.");
+                    $"{siembra.Nombre} tiene una siembra o resiembra activa posterior: registrá la cosecha sobre la última etapa del lote.");
             }
 
             if (siembra.TieneCosecha)
@@ -233,7 +239,9 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
             }
             ValidarInicioEnPeriodo(request.FechaInicio, siembra.CampaniaNombre);
 
-            var nombre = await GenerarSiguienteNombreAsync(connection, transaction);
+            var empresaId = siembra.EmpresaId
+                ?? throw new ReglaCosechaException("El lote debe pertenecer a una empresa para registrar una cosecha.");
+            var nombre = await GenerarSiguienteNombreAsync(connection, transaction, empresaId, siembra.CampaniaNombre);
 
             const string insertSql = """
                 INSERT INTO dbo.Cosechas
@@ -252,7 +260,7 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
                 insert.Parameters.AddWithValue("@Nombre", nombre);
                 insert.Parameters.AddWithValue("@SiembraId", siembra.SiembraId);
                 insert.Parameters.AddWithValue("@LoteId", siembra.LoteId);
-                insert.Parameters.AddWithValue("@EmpresaId", (object?)siembra.EmpresaId ?? DBNull.Value);
+                insert.Parameters.AddWithValue("@EmpresaId", empresaId);
                 insert.Parameters.AddWithValue("@CampaniaNombre", TextoONull(siembra.CampaniaNombre));
                 insert.Parameters.AddWithValue("@Producto", siembra.Producto);
                 insert.Parameters.AddWithValue("@Empresa", TextoONull(siembra.EmpresaNombre));
@@ -1099,7 +1107,13 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
             SELECT s.SiembraId, s.Nombre, s.LoteId, s.Producto, s.CampaniaNombre, s.EstadoSiembra, s.Estado AS EstadoSeguimiento, l.Activo AS LoteActivo, l.EstadoCultivo, s.FechaFinReal,
                    s.DeshabilitacionId,
                    l.EmpresaId, e.Nombre AS EmpresaNombre,
-                   CASE WHEN EXISTS (SELECT 1 FROM dbo.Siembras AS r WHERE r.SiembraOriginalId = s.SiembraId)
+                   CASE WHEN EXISTS (
+                       SELECT 1 FROM dbo.Siembras AS posterior
+                       WHERE posterior.LoteId = s.LoteId
+                         AND posterior.CampaniaNombre = s.CampaniaNombre
+                         AND ISNULL(posterior.CicloEstacional, N'Verano') = ISNULL(s.CicloEstacional, N'Verano')
+                         AND posterior.DeshabilitacionId IS NULL
+                         AND posterior.SiembraId > s.SiembraId)
                         THEN 1 ELSE 0 END AS TieneResiembraPosterior,
                    CASE WHEN EXISTS (SELECT 1 FROM dbo.Cosechas AS c WITH (UPDLOCK, HOLDLOCK) WHERE c.SiembraId = s.SiembraId)
                         THEN 1 ELSE 0 END AS TieneCosecha
@@ -1430,15 +1444,29 @@ public class CosechaRepository(IConfiguration configuration, IAlmacenamientoRepo
         return null;
     }
 
-    private static async Task<string> GenerarSiguienteNombreAsync(SqlConnection connection, SqlTransaction transaction)
+    private static async Task<string> GenerarSiguienteNombreAsync(SqlConnection connection, SqlTransaction transaction, int empresaId, string? campaniaNombre)
     {
-        // Dentro de la transaccion del alta y con bloqueo: dos altas simultaneas no repiten nombre.
+        // Cada campaña de la empresa tiene su propia secuencia.
         const string sql = """
-            SELECT ISNULL(MAX(TRY_CAST(RIGHT(Nombre, 4) AS INT)), 0) + 1
-            FROM dbo.Cosechas WITH (UPDLOCK, HOLDLOCK);
+            DECLARE @ResultadoBloqueo INT;
+            DECLARE @Recurso NVARCHAR(255) = N'CosechaNombreCampania:' + CONVERT(NVARCHAR(20), @EmpresaId) + N':' + ISNULL(@CampaniaNombre, N'');
+            EXEC @ResultadoBloqueo = sys.sp_getapplock
+                @Resource = @Recurso,
+                @LockMode = N'Exclusive', @LockOwner = N'Transaction';
+            IF @ResultadoBloqueo < 0
+                THROW 50001, N'No se pudo reservar el numero de cosecha. Intenta de nuevo.', 1;
+
+            SELECT ISNULL(MAX(TRY_CONVERT(INT, SUBSTRING(c.Nombre, 7, 24))), 0) + 1
+            FROM dbo.Cosechas AS c WITH (UPDLOCK, HOLDLOCK)
+            INNER JOIN dbo.Lotes AS l ON l.LoteId = c.LoteId
+            WHERE COALESCE(c.EmpresaId, l.EmpresaId) = @EmpresaId
+              AND c.CampaniaNombre = @CampaniaNombre
+              AND c.Nombre LIKE N'COS - %';
             """;
 
         await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@EmpresaId", empresaId);
+        command.Parameters.AddWithValue("@CampaniaNombre", (object?)campaniaNombre ?? DBNull.Value);
         var siguiente = Convert.ToInt32(await command.ExecuteScalarAsync() ?? 1);
         return $"COS - {siguiente:D4}";
     }

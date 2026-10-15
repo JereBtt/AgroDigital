@@ -38,7 +38,13 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
                     SELECT 1 FROM dbo.Cosechas AS c
                     WHERE c.SiembraId IS NULL AND c.LoteId = s.LoteId
                       AND c.CampaniaNombre = s.CampaniaNombre AND c.Producto = s.Producto
-               ) THEN 1 ELSE 0 END AS bit) AS TieneCosecha
+               ) THEN 1 ELSE 0 END AS bit) AS TieneCosecha,
+               COALESCE((SELECT SUM(r.UreaTotalKg)
+                         FROM dbo.SiembraSeguimientos AS r
+                         WHERE r.SiembraId = s.SiembraId AND r.TipoRegistro = N'Refertilizacion'), 0) AS UreaRefertilizacionTotalKg,
+               CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.Cosechas AS co
+                                      WHERE co.SiembraId = s.SiembraId AND co.Estado = N'Finalizado')
+                         THEN 1 ELSE 0 END AS bit) AS CosechaFinalizada
         FROM dbo.Siembras AS s
         INNER JOIN dbo.Lotes AS l ON l.LoteId = s.LoteId
         LEFT JOIN dbo.LoteDeshabilitaciones AS d ON d.LoteDeshabilitacionId = s.DeshabilitacionId
@@ -102,19 +108,82 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
 
-        var nombre = await GenerarSiguienteNombreAsync(connection);
-
         var insertSql = """
             SET XACT_ABORT ON;
             BEGIN TRANSACTION;
             DECLARE @NuevaSiembra TABLE (SiembraId INT NOT NULL);
             DECLARE @NuevoSiembraId INT;
+            DECLARE @EmpresaId INT = (SELECT EmpresaId FROM dbo.Lotes WHERE LoteId = @LoteId);
+            DECLARE @BloqueoNombre INT;
+            DECLARE @SiguienteNombre INT;
+            DECLARE @NombreSiembra NVARCHAR(30);
+            DECLARE @RecursoNombre NVARCHAR(255);
+            IF @EmpresaId IS NULL
+                THROW 50001, N'El lote debe pertenecer a una empresa para registrar una siembra.', 1;
+            IF EXISTS (SELECT 1 FROM dbo.Lotes WITH (UPDLOCK, HOLDLOCK)
+                       WHERE LoteId = @LoteId AND @CantidadHectareasTrabajadas > Hectareas)
+                THROW 50001, N'Las hectáreas cultivables no pueden superar la superficie del lote.', 1;
+            IF @TipoRegistro <> N'Resiembra' AND EXISTS (
+                SELECT 1 FROM dbo.Cosechas AS anterior WITH (UPDLOCK, HOLDLOCK)
+                LEFT JOIN dbo.Siembras AS cosechada ON cosechada.SiembraId = anterior.SiembraId
+                WHERE anterior.LoteId = @LoteId AND anterior.Estado = N'Finalizado'
+                  AND (LEFT(LTRIM(RTRIM(ISNULL(anterior.CampaniaNombre, N''))), 9) < LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)
+                       OR (@CicloEstacional = N'Invierno' AND cosechada.CicloEstacional = N'Verano'
+                           AND LEFT(LTRIM(RTRIM(ISNULL(anterior.CampaniaNombre, N''))), 9) = LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)))
+                  AND CAST(anterior.FechaFinReal AS date) > CAST(@FechaInicio AS date)
+            ) THROW 50001, N'La fecha de inicio de siembra no puede ser anterior al fin real de la última cosecha del lote.', 1;
+
+            SET @RecursoNombre = N'SiembraNombreCampania:' + CONVERT(NVARCHAR(20), @EmpresaId) + N':' + ISNULL(@CampaniaNombre, N'');
+            EXEC @BloqueoNombre = sys.sp_getapplock
+                @Resource = @RecursoNombre,
+                @LockMode = N'Exclusive', @LockOwner = N'Transaction';
+            IF @BloqueoNombre < 0
+                THROW 50001, N'No se pudo reservar el número de siembra. Intentá de nuevo.', 1;
+
+            SELECT @SiguienteNombre = ISNULL(MAX(TRY_CONVERT(INT, SUBSTRING(s.Nombre, 8, 23))), 0) + 1
+            FROM dbo.Siembras AS s
+            JOIN dbo.Lotes AS l ON l.LoteId = s.LoteId
+            WHERE l.EmpresaId = @EmpresaId AND s.CampaniaNombre = @CampaniaNombre
+              AND s.Nombre LIKE N'SIEM - %';
+            SET @NombreSiembra = N'SIEM - ' + CASE WHEN @SiguienteNombre < 10000
+                THEN RIGHT(N'0000' + CONVERT(NVARCHAR(11), @SiguienteNombre), 4)
+                ELSE CONVERT(NVARCHAR(11), @SiguienteNombre) END;
+            IF @ProductoPlanificadoAnterior IS NOT NULL
+            BEGIN
+                IF @TipoRegistro = N'Resiembra'
+                    THROW 50001, N'El grano planificado solo se cambia al registrar una siembra original.', 1;
+                UPDATE cc SET Producto = @Producto, FechaModificacion = SYSDATETIME()
+                FROM dbo.CampaniaCombinaciones AS cc WITH (UPDLOCK, HOLDLOCK)
+                JOIN dbo.Campanias AS c ON c.CampaniaId = cc.CampaniaId
+                WHERE cc.LoteId = @LoteId AND cc.CicloEstacional = @CicloEstacional
+                  AND c.Nombre = @CampaniaNombre AND c.EmpresaId = @EmpresaId
+                  AND cc.Producto = @ProductoPlanificadoAnterior
+                  AND cc.Estado = N'Pendiente' AND cc.EtapaActual = N'Sin etapa';
+                IF @@ROWCOUNT <> 1
+                    THROW 50001, N'La planificación cambió o ya fue iniciada. Actualizá la campaña y volvé a intentar.', 1;
+            END;
             IF @TipoRegistro <> N'Resiembra' AND NOT EXISTS (
                 SELECT 1 FROM dbo.CampaniaCombinaciones cc WITH (UPDLOCK, HOLDLOCK)
                 JOIN dbo.Campanias c ON c.CampaniaId = cc.CampaniaId
                 WHERE cc.LoteId = @LoteId AND cc.Producto = @Producto
                   AND cc.CicloEstacional = @CicloEstacional AND c.Nombre = @CampaniaNombre
             ) THROW 50001, N'El lote y cultivo deben estar planificados para el ciclo estacional elegido.', 1;
+            IF @TipoRegistro <> N'Resiembra' AND EXISTS (
+                SELECT 1 FROM dbo.Siembras AS invierno WITH (UPDLOCK, HOLDLOCK)
+                WHERE invierno.LoteId = @LoteId AND invierno.CicloEstacional = N'Invierno'
+                  AND invierno.DeshabilitacionId IS NULL
+                  AND LEFT(LTRIM(RTRIM(ISNULL(invierno.CampaniaNombre, N''))), 9) < LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)
+                  AND invierno.SiembraId = (
+                      SELECT MAX(etapa.SiembraId) FROM dbo.Siembras AS etapa
+                      WHERE etapa.LoteId = @LoteId AND etapa.CicloEstacional = N'Invierno'
+                        AND etapa.DeshabilitacionId IS NULL
+                        AND LEFT(LTRIM(RTRIM(ISNULL(etapa.CampaniaNombre, N''))), 9) = LEFT(LTRIM(RTRIM(ISNULL(invierno.CampaniaNombre, N''))), 9)
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM dbo.Cosechas AS cosecha WITH (UPDLOCK, HOLDLOCK)
+                      WHERE cosecha.SiembraId = invierno.SiembraId AND cosecha.Estado = N'Finalizado'
+                  )
+            ) THROW 50001, N'Para sembrar este lote, primero finalizá la cosecha del cultivo de Invierno de la campaña anterior.', 1;
             IF @TipoRegistro <> N'Resiembra' AND @CicloEstacional = N'Invierno'
                AND EXISTS (
                    SELECT 1 FROM dbo.CampaniaCombinaciones cc
@@ -162,6 +231,42 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
                   AND LEFT(LTRIM(RTRIM(ISNULL(CampaniaNombre, N''))), 9) = LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)
             )
                 THROW 50001, N'La nueva siembra original debe planificarse con otro cultivo; la anterior queda como historial deshabilitado.', 1;
+            IF @TipoRegistro = N'Resiembra'
+            BEGIN
+                -- La cosecha bloquea esta misma etapa al iniciarse. Mantener el bloqueo
+                -- hasta insertar la resiembra evita que ambas altas pasen a la vez.
+                IF NOT EXISTS (
+                    SELECT 1 FROM dbo.Siembras AS anterior WITH (UPDLOCK, HOLDLOCK)
+                    WHERE anterior.SiembraId = @SiembraOriginalId AND anterior.LoteId = @LoteId
+                      AND anterior.DeshabilitacionId IS NULL
+                      AND anterior.EstadoSiembra = N'Finalizado' AND anterior.Estado = N'Finalizado'
+                      AND anterior.CicloEstacional = @CicloEstacional
+                      AND LEFT(LTRIM(RTRIM(ISNULL(anterior.CampaniaNombre, N''))), 9) = LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)
+                      AND anterior.SiembraId = (
+                          SELECT MAX(etapa.SiembraId) FROM dbo.Siembras AS etapa
+                          WHERE etapa.LoteId = @LoteId AND etapa.DeshabilitacionId IS NULL
+                            AND etapa.CicloEstacional = @CicloEstacional
+                            AND LEFT(LTRIM(RTRIM(ISNULL(etapa.CampaniaNombre, N''))), 9) = LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)
+                      )
+                ) THROW 50001, N'La resiembra debe continuar la última etapa finalizada del lote y ciclo elegidos.', 1;
+
+                IF EXISTS (
+                    SELECT 1 FROM dbo.Cosechas AS cosecha WITH (UPDLOCK, HOLDLOCK)
+                    INNER JOIN dbo.Siembras AS etapa ON etapa.SiembraId = cosecha.SiembraId
+                    WHERE etapa.LoteId = @LoteId AND etapa.CicloEstacional = @CicloEstacional
+                      AND LEFT(LTRIM(RTRIM(ISNULL(etapa.CampaniaNombre, N''))), 9) = LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)
+                ) OR EXISTS (
+                    SELECT 1 FROM dbo.Cosechas AS cosecha WITH (UPDLOCK, HOLDLOCK)
+                    WHERE cosecha.SiembraId IS NULL AND cosecha.LoteId = @LoteId
+                      AND LEFT(LTRIM(RTRIM(ISNULL(cosecha.CampaniaNombre, N''))), 9) = LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)
+                      AND EXISTS (
+                          SELECT 1 FROM dbo.Siembras AS etapa
+                          WHERE etapa.LoteId = @LoteId AND etapa.CicloEstacional = @CicloEstacional
+                            AND etapa.Producto = cosecha.Producto
+                            AND LEFT(LTRIM(RTRIM(ISNULL(etapa.CampaniaNombre, N''))), 9) = LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)
+                      )
+                ) THROW 50001, N'No se puede registrar una resiembra: ya se inició la cosecha de este lote en la campaña y ciclo elegidos.', 1;
+            END;
             IF @TipoRegistro = N'Resiembra' AND 4 <= (
                 SELECT COUNT(1) FROM dbo.Siembras WITH (UPDLOCK, HOLDLOCK)
                 WHERE LoteId = @LoteId AND TipoRegistro = N'Resiembra' AND DeshabilitacionId IS NULL AND CicloEstacional = @CicloEstacional
@@ -176,7 +281,7 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
                  ProductoAntecesor, ObservacionesPreSiembra, CreadoPorUsuarioId)
             OUTPUT INSERTED.SiembraId INTO @NuevaSiembra
             VALUES
-                (@Nombre, @LoteId, @CampaniaNombre, @Producto, @Empresa, @TipoRegistro, @CicloEstacional, @SiembraOriginalId, @TipoResiembra, @Siniestro,
+                (@NombreSiembra, @LoteId, @CampaniaNombre, @Producto, @Empresa, @TipoRegistro, @CicloEstacional, @SiembraOriginalId, @TipoResiembra, @Siniestro,
                  @FechaInicio, @FechaFin,
                  @VariedadSemilla, @CicloCultivo, @TipoImplantacion, @PMG, @DensidadSiembra, @Profundidad, @CantidadHectareasTrabajadas, @UreaKgHa,
                  @CantidadSemillas, @ResponsableACargo, @FechaMuestreo, @FechaAnalisis, @CantidadMuestras,
@@ -211,7 +316,6 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
             """;
 
         await using var command = new SqlCommand(insertSql, connection);
-        command.Parameters.AddWithValue("@Nombre", nombre);
         AgregarParametrosSiembra(command, request.LoteId, request.CampaniaNombre, request.Producto, request.Empresa,
             request.TipoRegistro, request.SiembraOriginalId, request.TipoResiembra, request.Siniestro,
             request.FechaInicio, request.FechaFin, request.VariedadSemilla, request.CicloCultivo, request.TipoImplantacion, request.PMG, request.DensidadSiembra,
@@ -220,6 +324,7 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
             request.ObservacionesPreSiembra);
         command.Parameters.AddWithValue("@CreadoPorUsuarioId", (object?)usuarioId ?? DBNull.Value);
         command.Parameters.AddWithValue("@CicloEstacional", request.CicloEstacional);
+        command.Parameters.AddWithValue("@ProductoPlanificadoAnterior", string.IsNullOrWhiteSpace(request.ProductoPlanificadoAnterior) ? DBNull.Value : request.ProductoPlanificadoAnterior.Trim());
 
         var siembraId = (int)(await command.ExecuteScalarAsync()
             ?? throw new InvalidOperationException("No se pudo registrar la siembra."));
@@ -235,9 +340,11 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
             DECLARE @LoteAnteriorId INT;
             DECLARE @TipoRegistroAnterior NVARCHAR(20);
             DECLARE @CicloEstacionalAnterior NVARCHAR(20);
+            DECLARE @ProductoAnterior NVARCHAR(60);
             SELECT @LoteAnteriorId = LoteId,
                    @TipoRegistroAnterior = ISNULL(TipoRegistro, N'Siembra'),
-                   @CicloEstacionalAnterior = CicloEstacional
+                   @CicloEstacionalAnterior = CicloEstacional,
+                   @ProductoAnterior = Producto
             FROM dbo.Siembras WITH (UPDLOCK, HOLDLOCK)
             WHERE SiembraId = @SiembraId;
             IF @LoteId <> @LoteAnteriorId
@@ -246,6 +353,18 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
                 THROW 50001, N'No se puede cambiar el tipo de registro de una siembra existente.', 1;
             IF @CicloEstacional <> @CicloEstacionalAnterior
                 THROW 50001, N'No se puede cambiar el ciclo estacional de una siembra existente.', 1;
+            IF EXISTS (SELECT 1 FROM dbo.Lotes WITH (UPDLOCK, HOLDLOCK)
+                       WHERE LoteId = @LoteId AND @CantidadHectareasTrabajadas > Hectareas)
+                THROW 50001, N'Las hectáreas cultivables no pueden superar la superficie del lote.', 1;
+            IF @TipoRegistro <> N'Resiembra' AND EXISTS (
+                SELECT 1 FROM dbo.Cosechas AS anterior WITH (UPDLOCK, HOLDLOCK)
+                LEFT JOIN dbo.Siembras AS cosechada ON cosechada.SiembraId = anterior.SiembraId
+                WHERE anterior.LoteId = @LoteId AND anterior.Estado = N'Finalizado'
+                  AND (LEFT(LTRIM(RTRIM(ISNULL(anterior.CampaniaNombre, N''))), 9) < LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)
+                       OR (@CicloEstacional = N'Invierno' AND cosechada.CicloEstacional = N'Verano'
+                           AND LEFT(LTRIM(RTRIM(ISNULL(anterior.CampaniaNombre, N''))), 9) = LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)))
+                  AND CAST(anterior.FechaFinReal AS date) > CAST(@FechaInicio AS date)
+            ) THROW 50001, N'La fecha de inicio de siembra no puede ser anterior al fin real de la última cosecha del lote.', 1;
             IF @TipoRegistro <> N'Resiembra' AND EXISTS (
                 SELECT 1 FROM dbo.Siembras WITH (UPDLOCK, HOLDLOCK)
                 WHERE LoteId = @LoteId AND SiembraId <> @SiembraId
@@ -268,6 +387,25 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
                   AND SiembraId <> @SiembraId
             )
                 THROW 50001, N'Este lote ya alcanzó el máximo de 4 resiembras en este periodo de campaña.', 1;
+            IF @ProductoPlanificadoAnterior IS NOT NULL
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM dbo.Siembras WHERE SiembraId = @SiembraId AND DeshabilitacionId IS NULL)
+                    THROW 50001, N'La siembra ya no está disponible para editar.', 1;
+                IF @TipoRegistro = N'Resiembra' OR @ProductoAnterior <> @ProductoPlanificadoAnterior
+                    THROW 50001, N'El cultivo del registro ya no coincide con la planificación anterior.', 1;
+                IF EXISTS (SELECT 1 FROM dbo.Cosechas WITH (UPDLOCK, HOLDLOCK) WHERE SiembraId = @SiembraId)
+                   OR EXISTS (SELECT 1 FROM dbo.Siembras WITH (UPDLOCK, HOLDLOCK) WHERE SiembraOriginalId = @SiembraId)
+                    THROW 50001, N'No se puede cambiar el grano de una siembra que ya tiene cosecha o resiembra.', 1;
+                UPDATE cc SET Producto = @Producto, FechaModificacion = SYSDATETIME()
+                FROM dbo.CampaniaCombinaciones AS cc WITH (UPDLOCK, HOLDLOCK)
+                JOIN dbo.Campanias AS c ON c.CampaniaId = cc.CampaniaId
+                JOIN dbo.Lotes AS l ON l.LoteId = cc.LoteId
+                WHERE cc.LoteId = @LoteId AND cc.CicloEstacional = @CicloEstacional
+                  AND c.Nombre = @CampaniaNombre AND c.EmpresaId = l.EmpresaId
+                  AND cc.Producto = @ProductoPlanificadoAnterior;
+                IF @@ROWCOUNT <> 1
+                    THROW 50001, N'La planificación cambió. Actualizá la campaña y volvé a intentar.', 1;
+            END;
             UPDATE dbo.Siembras
             SET LoteId = @LoteId, CampaniaNombre = @CampaniaNombre, Producto = @Producto, Empresa = @Empresa,
                 TipoRegistro = @TipoRegistro, CicloEstacional = @CicloEstacional, SiembraOriginalId = @SiembraOriginalId,
@@ -300,6 +438,7 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
             request.FechaMuestreo, request.FechaAnalisis, request.CantidadMuestras, request.ProductoAntecesor,
             request.ObservacionesPreSiembra);
         command.Parameters.AddWithValue("@CicloEstacional", request.CicloEstacional);
+        command.Parameters.AddWithValue("@ProductoPlanificadoAnterior", string.IsNullOrWhiteSpace(request.ProductoPlanificadoAnterior) ? DBNull.Value : request.ProductoPlanificadoAnterior.Trim());
 
         return (int)(await command.ExecuteScalarAsync() ?? 0) == 1;
     }
@@ -513,18 +652,6 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
         return await command.ExecuteNonQueryAsync() > 0;
     }
 
-    private static async Task<string> GenerarSiguienteNombreAsync(SqlConnection connection)
-    {
-        const string sql = """
-            SELECT ISNULL(MAX(TRY_CAST(RIGHT(Nombre, 4) AS INT)), 0) + 1
-            FROM dbo.Siembras;
-            """;
-
-        await using var command = new SqlCommand(sql, connection);
-        var siguiente = (int)(await command.ExecuteScalarAsync() ?? 1);
-        return $"SIEM - {siguiente:D4}";
-    }
-
     private static void AgregarParametrosSiembra(
         SqlCommand command, int loteId, string? campaniaNombre, string producto, string? empresa,
         string tipoRegistro, int? siembraOriginalId, string? tipoResiembra, string? siniestro,
@@ -605,7 +732,9 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
             Deshabilitada = reader.GetBoolean(34),
             CicloEstacional = reader.GetString(35),
             PuedeRestaurar = reader.GetBoolean(36),
-            TieneCosecha = reader.GetBoolean(37)
+            TieneCosecha = reader.GetBoolean(37),
+            UreaRefertilizacionTotalKg = reader.GetDecimal(38),
+            CosechaFinalizada = reader.GetBoolean(39)
         };
     }
 }

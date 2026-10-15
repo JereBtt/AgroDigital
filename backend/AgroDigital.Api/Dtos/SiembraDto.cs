@@ -30,6 +30,7 @@ public class SiembraDto
     public decimal? UreaKgHa { get; set; }
     // Los registros nuevos lo derivan de densidad y superficie; los históricos conservan el valor anterior.
     public decimal? CantidadSemillas { get; set; }
+    public decimal UreaRefertilizacionTotalKg { get; set; }
     public string? ResponsableACargo { get; set; }
     public DateTime? FechaMuestreo { get; set; }
     public DateTime? FechaAnalisis { get; set; }
@@ -41,6 +42,7 @@ public class SiembraDto
     public bool Deshabilitada { get; set; }
     public bool PuedeRestaurar { get; set; }
     public bool TieneCosecha { get; set; }
+    public bool CosechaFinalizada { get; set; }
 }
 
 public class CrearSiembraRequest
@@ -48,6 +50,7 @@ public class CrearSiembraRequest
     public int LoteId { get; set; }
     public string? CampaniaNombre { get; set; }
     public string Producto { get; set; } = string.Empty;
+    public string? ProductoPlanificadoAnterior { get; set; }
     public string? Empresa { get; set; }
     public string TipoRegistro { get; set; } = "Siembra";
     public string CicloEstacional { get; set; } = "Verano";

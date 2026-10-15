@@ -17,6 +17,19 @@ public class EstadisticasController(
 {
     private const int MaximoMeses = 60;
 
+    [HttpGet("agricolas")]
+    public async Task<ActionResult> ObtenerAgricolas([FromQuery] int empresaId)
+    {
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        if (empresaId <= 0) return BadRequest("Debe indicar la empresa.");
+        try
+        {
+            return Content(await estadisticasRepository.ObtenerAgricolasAsync(empresaId, usuario.UsuarioId, EsAdmin(usuario)), "application/json");
+        }
+        catch (KeyNotFoundException ex) { return NotFound(ex.Message); }
+        catch (UnauthorizedAccessException ex) { return StatusCode(403, ex.Message); }
+    }
+
     [HttpGet("almacenamiento")]
     public Task<ActionResult> ObtenerAlmacenamiento(
         [FromQuery] int empresaId, [FromQuery] DateOnly? desde, [FromQuery] DateOnly? hasta, [FromQuery] string? grano) =>

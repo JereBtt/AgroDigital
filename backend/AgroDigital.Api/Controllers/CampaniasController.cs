@@ -30,7 +30,7 @@ public class CampaniasController(ICampaniaRepository campaniaRepository, IAuthTo
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
 
-        var validation = ValidarCampania(request);
+        var validation = ValidarCampania(request, requireCurrentPeriod: true);
         if (validation is not null) return validation;
 
         // La campania pertenece a la empresa de sus lotes (CampaniaRepository usa el primero).
@@ -60,10 +60,14 @@ public class CampaniasController(ICampaniaRepository campaniaRepository, IAuthTo
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
 
+        await permisos.ExigirAsync(usuario, RecursoOperativo.Campania, campaniaId, RolesPermiso.Estructura, "editar campañas");
+        var existente = await campaniaRepository.ObtenerPorIdAsync(campaniaId, usuario.UsuarioId, usuario.Rol == "Admin");
+        if (existente is null) return NotFound();
+        if (!string.IsNullOrWhiteSpace(request.Periodo) && request.Periodo != existente.Periodo)
+            return Conflict("El período de una campaña registrada no puede modificarse.");
+        request.Periodo = existente.Periodo;
         var validation = ValidarCampania(request, allowEmpty: true);
         if (validation is not null) return validation;
-
-        await permisos.ExigirAsync(usuario, RecursoOperativo.Campania, campaniaId, RolesPermiso.Estructura, "editar campañas");
 
         try
         {
@@ -111,7 +115,7 @@ public class CampaniasController(ICampaniaRepository campaniaRepository, IAuthTo
         }
     }
 
-    private static ActionResult? ValidarCampania(CrearCampaniaRequest request, bool allowEmpty = false)
+    private static ActionResult? ValidarCampania(CrearCampaniaRequest request, bool allowEmpty = false, bool requireCurrentPeriod = false)
     {
         if (request.FechaInicio == default) return new BadRequestObjectResult("La Fecha de Inicio de la campania es obligatoria.");
         if (request.FechaFin == default) return new BadRequestObjectResult("La Fecha tentativa de Fin de la campania es obligatoria.");
@@ -119,7 +123,16 @@ public class CampaniasController(ICampaniaRepository campaniaRepository, IAuthTo
         if (request.FechaFin.Date < request.FechaInicio.Date.AddMonths(4))
             return new BadRequestObjectResult("La Fecha tentativa de Fin debe ser al menos cuatro meses posterior a la Fecha de Inicio.");
 
-        var (fechaMinima, fechaMaxima) = ObtenerLimitesFechasCampania();
+        if (!TryObtenerLimitesFechasCampania(request.Periodo, out var fechaMinima, out var fechaMaxima))
+            return new BadRequestObjectResult("Seleccioná un período de campaña válido, de dos años consecutivos y no futuro.");
+        if (requireCurrentPeriod)
+        {
+            var hoy = DateTime.Today;
+            var anioInicio = hoy.Month >= 6 ? hoy.Year : hoy.Year - 1;
+            var periodoVigente = $"{anioInicio}-{anioInicio + 1}";
+            if (request.Periodo != periodoVigente)
+                return new BadRequestObjectResult($"Solo se pueden registrar campañas del período vigente ({periodoVigente}).");
+        }
         if (request.FechaInicio.Date < fechaMinima || request.FechaInicio.Date > fechaMaxima)
             return new BadRequestObjectResult($"La Fecha de Inicio debe estar entre {fechaMinima:dd/MM/yyyy} y {fechaMaxima:dd/MM/yyyy}.");
         if (request.FechaFin.Date < fechaMinima || request.FechaFin.Date > fechaMaxima)
@@ -150,11 +163,18 @@ public class CampaniasController(ICampaniaRepository campaniaRepository, IAuthTo
         return null;
     }
 
-    private static (DateTime FechaMinima, DateTime FechaMaxima) ObtenerLimitesFechasCampania()
+    private static bool TryObtenerLimitesFechasCampania(string? periodo, out DateTime fechaMinima, out DateTime fechaMaxima)
     {
+        fechaMinima = fechaMaxima = default;
+        if (periodo is null || !System.Text.RegularExpressions.Regex.IsMatch(periodo, @"^\d{4}-\d{4}$")) return false;
+        var inicio = int.Parse(periodo[..4]);
+        var fin = int.Parse(periodo[5..]);
         var hoy = DateTime.Today;
-        var anioInicio = hoy.Month >= 6 ? hoy.Year : hoy.Year - 1;
-        return (new DateTime(anioInicio, 1, 1), new DateTime(anioInicio + 1, 12, 31));
+        var anioActual = hoy.Month >= 6 ? hoy.Year : hoy.Year - 1;
+        if (inicio < 2000 || fin != inicio + 1 || inicio > anioActual) return false;
+        fechaMinima = new DateTime(inicio, 1, 1);
+        fechaMaxima = new DateTime(fin, 12, 31);
+        return true;
     }
 
     private static string? ValidarMotivoOmisionVerano(OmisionVeranoRequest request)

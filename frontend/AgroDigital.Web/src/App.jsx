@@ -211,7 +211,7 @@ function getPreviousCampaignOptions(date = new Date()) {
 
   return Array.from({ length: 3 }, (_, index) => {
     const year = firstEnabledYear - index;
-    return `${year}-${year - 1}`;
+    return `${year - 1}-${year}`;
   });
 }
 
@@ -236,8 +236,9 @@ function formFromLote(lote) {
   };
 }
 
-function lotePayloadFromForm(form, areaHa, areaM2) {
+function lotePayloadFromForm(form, areaHa, areaM2, empresaId = null) {
   return {
+    ...(empresaId ? { empresaId: Number(empresaId) } : {}),
     nombre: form.nombre,
     pais: form.pais,
     provincia: form.provincia,
@@ -585,6 +586,7 @@ function App() {
   const [parentCampanias, setParentCampanias] = useState([]);
   const [selectedParentEmpresaId, setSelectedParentEmpresaId] = useState(() => localStorage.getItem('agrodigital.parentEmpresaId') || '');
   const [selectedParentCampaniaId, setSelectedParentCampaniaId] = useState(() => localStorage.getItem('agrodigital.parentCampaniaId') || '');
+  const [selectedParentCicloEstacional, setSelectedParentCicloEstacional] = useState('Verano');
   const [selectedLote, setSelectedLote] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -663,12 +665,15 @@ function App() {
     [parentCampanias, selectedParentCampaniaId]
   );
   const empresaDestinoNuevoLoteId = useMemo(() => (
-    empresasDisponibles.find((empresa) => empresa.esPrincipal)?.empresaId
+    selectedParentEmpresaId || (empresasDisponibles.find((empresa) => empresa.esPrincipal)?.empresaId
       ?? empresasDisponibles[0]?.empresaId
-      ?? ''
-  ), [empresasDisponibles]);
+      ?? '')
+  ), [empresasDisponibles, selectedParentEmpresaId]);
   const activeCampaignsByEmpresa = useMemo(() => {
     const campaigns = new Map();
+    const today = new Date();
+    const currentStartYear = today.getMonth() >= 5 ? today.getFullYear() : today.getFullYear() - 1;
+    const currentPeriod = `${currentStartYear}-${currentStartYear + 1}`;
 
     parentCampanias
       .forEach((item) => {
@@ -686,7 +691,7 @@ function App() {
       });
 
     return [...campaigns.values()]
-      .filter((campania) => campania.combinaciones.some((item) => item.estado !== 'Finalizado' && lotes.some((lote) => String(lote.loteId) === String(item.loteId) && lote.activo)))
+      .filter((campania) => campania.periodo === currentPeriod && campania.combinaciones.some((item) => item.estado !== 'Finalizado' && lotes.some((lote) => String(lote.loteId) === String(item.loteId) && lote.activo)))
       .reduce((result, campania) => {
         const existing = result.get(String(campania.empresaId));
         if (!existing || new Date(campania.fechaInicio) > new Date(existing.fechaInicio)) {
@@ -1358,6 +1363,9 @@ function App() {
       if (field === 'provincia') {
         return { ...current, provincia: value, ciudad: '' };
       }
+      if (field === 'nombre') {
+        return { ...current, nombre: formatPersonName(value) };
+      }
 
       return { ...current, [field]: value };
     });
@@ -1449,7 +1457,7 @@ function App() {
       const response = await fetch(`${API_BASE_URL}/api/lotes/validar-registro${query}`, {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify(lotePayloadFromForm(form, areaHa, areaM2))
+        body: JSON.stringify(lotePayloadFromForm(form, areaHa, areaM2, excluirLoteId ? selectedLote?.empresaId : empresaDestinoNuevoLoteId))
       });
 
       if (response.ok) return true;
@@ -1489,7 +1497,7 @@ function App() {
     setLoteFieldErrors({});
     setStatus('Guardando lote...');
     const payload = {
-      ...lotePayloadFromForm(form, areaHa, areaM2),
+      ...lotePayloadFromForm(form, areaHa, areaM2, empresaDestinoNuevoLoteId),
       registrarDeshabilitado: disableAfterRegister,
       deshabilitacion
     };
@@ -2246,6 +2254,32 @@ function App() {
     </ParentFiltersBar>
   );
 
+  const parentFiltersForEmpresaCampaniaCiclo = (
+    <ParentFiltersBar>
+      <ParentSearchSelect
+        label="Empresa"
+        value={selectedParentEmpresaId}
+        options={empresasDisponibles.map((empresa) => ({ value: String(empresa.empresaId), label: empresa.nombre }))}
+        placeholder="Seleccionar empresa"
+        onChange={setSelectedParentEmpresaId}
+      />
+      <ParentSearchSelect
+        label="Campaña"
+        value={selectedParentCampaniaId}
+        options={campaniasDisponibles.map((campania) => ({ value: String(campania.campaniaId), label: campania.campaniaNombre }))}
+        placeholder="Seleccionar campaña"
+        onChange={setSelectedParentCampaniaId}
+      />
+      <ParentSearchSelect
+        label="Ciclo estacional"
+        value={selectedParentCicloEstacional}
+        options={[{ value: 'Verano', label: 'Verano' }, { value: 'Invierno', label: 'Invierno' }]}
+        placeholder="Seleccionar ciclo"
+        onChange={setSelectedParentCicloEstacional}
+      />
+    </ParentFiltersBar>
+  );
+
   const currentCrumb = activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Empresas' : {
     create: 'Registrar lote',
     detail: selectedLote ? `Detalle ${selectedLote.nombre}` : 'Detalle lote',
@@ -2605,9 +2639,10 @@ function App() {
             permisos={permisosRol}
             session={session}
             lotes={parentFilteredLotes}
-            parentFilters={parentFiltersForEmpresaCampania}
+            parentFilters={parentFiltersForEmpresaCampaniaCiclo}
             selectedCampania={selectedParentCampania}
             selectedCampaniaCombinaciones={selectedParentCampaniaCombinaciones}
+            selectedCicloEstacional={selectedParentCicloEstacional}
             selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
             selectedCampaniaName={selectedParentCampania?.campaniaNombre || ''}
             registrationRequest={siembraRegistrationRequest}
@@ -2620,10 +2655,11 @@ function App() {
             permisos={permisosRol}
             session={session}
             lotes={parentFilteredLotes}
-            parentFilters={parentFiltersForEmpresaCampania}
+            parentFilters={parentFiltersForEmpresaCampaniaCiclo}
             selectedEmpresaId={selectedParentEmpresaId}
             selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
             selectedCampaniaName={selectedParentCampania?.campaniaNombre || ''}
+            selectedCicloEstacional={selectedParentCicloEstacional}
             onLotesChanged={loadLotes}
             onCampaniasChanged={loadParentCampanias}
           />
@@ -5680,7 +5716,7 @@ function LotesList({ permisos = { estructura: true }, lotes, loading, parentFilt
         <SummaryCard icon={<Handshake size={30} />} label="Hectareas alquiladas" value={`${formatHectares(summary.hectareasAlquiladas)} ha`} helper="Superficie total con condicion alquilado" />
       </div>
 
-      <div className="filters-card">
+      <div className="filters-card lotes-filters">
         <div className="status-segmented" role="group" aria-label="Estado de lotes">
           <button
             className={statusFilter === 'habilitados' ? 'status-segmented-active' : ''}
@@ -5754,11 +5790,13 @@ function LotesList({ permisos = { estructura: true }, lotes, loading, parentFilt
       ) : filteredLotes.length === 0 ? (
         <EmptyState
           icon={<Search size={92} strokeWidth={1.8} />}
-          title="No encontramos lotes con esos filtros"
-          description="Proba limpiar la busqueda para volver a ver los registros disponibles."
-          actionLabel="Limpiar filtros"
-          actionIcon={<RotateCcw size={18} />}
-          onAction={clearFilters}
+          title={statusFilteredLotes.length === 0 ? `No hay lotes ${statusFilter}` : 'No encontramos lotes con esos filtros'}
+          description={statusFilteredLotes.length === 0 && statusFilter === 'habilitados'
+            ? 'Los lotes deshabilitados se encuentran en la pestaña Deshabilitados.'
+            : 'Proba limpiar la busqueda para volver a ver los registros disponibles.'}
+          actionLabel={statusFilteredLotes.length === 0 && statusFilter === 'habilitados' ? 'Ver deshabilitados' : 'Limpiar filtros'}
+          actionIcon={statusFilteredLotes.length === 0 && statusFilter === 'habilitados' ? <Eye size={18} /> : <RotateCcw size={18} />}
+          onAction={statusFilteredLotes.length === 0 && statusFilter === 'habilitados' ? () => setStatusFilter('deshabilitados') : clearFilters}
           variant="compact"
         />
       ) : (

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { limitesPeriodoCampania, periodoOperativoDeFecha } from './periodoFechas';
 import {
   AlertTriangle,
   Building2,
@@ -540,6 +541,7 @@ function camionVacio() {
 function RegistrarDistribucion({ api, empresaId, empresaNombre, session, onCancel, onSaved }) {
   const [catalogos, setCatalogos] = useState({ choferes: [], camiones: [], destinos: [], transportistas: [] });
   const [cosechas, setCosechas] = useState([]);
+  const [periodos, setPeriodos] = useState([]);
   const [silos, setSilos] = useState([]);
   const [form, setForm] = useState({
     origenGrano: 'Silo',
@@ -574,12 +576,14 @@ function RegistrarDistribucion({ api, empresaId, empresaNombre, session, onCance
   useEffect(() => {
     (async () => {
       try {
-        const [silosData, cosechasData] = await Promise.all([
+        const [silosData, cosechasData, campaniasData] = await Promise.all([
           api.get('/api/silos'),
-          api.get(`/api/almacenamientos/cosechas-con-saldo?empresaId=${empresaId}`)
+          api.get(`/api/almacenamientos/cosechas-con-saldo?empresaId=${empresaId}`),
+          api.get('/api/campanias')
         ]);
         setSilos(silosData.filter((s) => String(s.empresaId) === String(empresaId) && Number(s.cantidadGranoAlmacenado) > 0));
         setCosechas(cosechasData);
+        setPeriodos(campaniasData);
         await cargarCatalogos();
       } catch (err) {
         setError(`No se pudieron cargar los datos del formulario: ${err.message}`);
@@ -608,6 +612,11 @@ function RegistrarDistribucion({ api, empresaId, empresaNombre, session, onCance
   const kgCamion = aNumero(camion.kgDespachados);
   const excedeDisponible = restante != null && kgCamion != null && kgCamion > restante;
   const cpeRepetida = camion.codigoCpe.trim() !== '' && camiones.some((c, i) => i !== editandoIndice && c.codigoCpe.trim().toUpperCase() === camion.codigoCpe.trim().toUpperCase());
+  const cosechaElegida = cosechas.find((c) => String(c.cosechaId) === String(form.cosechaId));
+  const periodoElegido = form.origenGrano === 'Cosecha'
+    ? periodos.find((c) => String(c.campaniaId) === String(cosechaElegida?.campaniaId))?.periodo ?? cosechaElegida?.campaniaNombre
+    : null;
+  const limitesFecha = limitesPeriodoCampania(periodoElegido);
 
   const choferSel = catalogos.choferes.find((c) => String(c.choferId) === String(camion.choferId));
   const camionSel = catalogos.camiones.find((c) => String(c.camionId) === String(camion.camionId));
@@ -647,6 +656,8 @@ function RegistrarDistribucion({ api, empresaId, empresaNombre, session, onCance
     setError('');
     if (form.origenGrano === 'Silo' && !form.siloId) return setError('Elegí el silo de origen.');
     if (form.origenGrano === 'Cosecha' && !form.cosechaId) return setError('Elegí la cosecha de origen.');
+    if (!form.fechaSalida || form.fechaSalida < limitesFecha.min || form.fechaSalida > limitesFecha.max)
+      return setError(`La fecha de salida debe estar entre el 01/01/${limitesFecha.min.slice(0, 4)} y el 31/12/${limitesFecha.max.slice(0, 4)}.`);
     if (!form.responsableACargo.trim()) return setError('Indicá el responsable a cargo del envío.');
     if (camiones.length === 0) return setError('Agregá al menos un camión al envío.');
     if (editandoIndice != null) return setError('Terminá de editar el camión antes de registrar.');
@@ -768,8 +779,8 @@ function RegistrarDistribucion({ api, empresaId, empresaNombre, session, onCance
             </label>
             <label className="field">
               <span className="field-label">Fecha de salida <b>*</b></span>
-              <input type="date" value={form.fechaSalida} max={todayIso()} onChange={(e) => setForm((f) => ({ ...f, fechaSalida: e.target.value }))} />
-              <Regla>No posterior a hoy.</Regla>
+              <input type="date" value={form.fechaSalida} min={limitesFecha.min} max={limitesFecha.max} onChange={(e) => setForm((f) => ({ ...f, fechaSalida: e.target.value }))} />
+              <Regla>Entre el 01/01/{limitesFecha.min.slice(0, 4)} y el 31/12/{limitesFecha.max.slice(0, 4)}.</Regla>
             </label>
             <label className="field">
               <span className="field-label">Responsable a cargo <b>*</b></span>
@@ -960,6 +971,7 @@ function RegistrarDistribucion({ api, empresaId, empresaNombre, session, onCance
 
 function ConciliarCamion({ api, camionId, puedeGestionar, onCancel, onSaved }) {
   const [traza, setTraza] = useState(null);
+  const [periodo, setPeriodo] = useState(null);
   const [form, setForm] = useState(null);
   const [analisis, setAnalisis] = useState(null);
   const [calculando, setCalculando] = useState(false);
@@ -967,9 +979,11 @@ function ConciliarCamion({ api, camionId, puedeGestionar, onCancel, onSaved }) {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    api.get(`/api/distribuciones/camiones/${camionId}`)
-      .then((data) => {
+    Promise.all([api.get(`/api/distribuciones/camiones/${camionId}`), api.get('/api/campanias')])
+      .then(([data, campaniasData]) => {
         const c = data.camion;
+        setPeriodo(campaniasData.find((campania) => String(campania.campaniaId) === String(c.campaniaId))?.periodo
+          ?? c.campania ?? periodoOperativoDeFecha(c.fechaSalida));
         setTraza(data);
         setForm({
           fechaLlegada: c.fechaLlegada ?? todayIso(),
@@ -1024,6 +1038,7 @@ function ConciliarCamion({ api, camionId, puedeGestionar, onCancel, onSaved }) {
   }
 
   const c = traza.camion;
+  const limitesLlegada = limitesPeriodoCampania(periodo, c.fechaSalida);
   const conciliado = c.estado === 'Conciliado';
   const soloLectura = !puedeGestionar;
   const actualizar = (campo) => (e) => setForm((f) => ({ ...f, [campo]: e.target.value }));
@@ -1031,6 +1046,7 @@ function ConciliarCamion({ api, camionId, puedeGestionar, onCancel, onSaved }) {
   async function guardarRecepcion() {
     setError('');
     if (!form.fechaLlegada || valores.kgRecibidos == null || valores.kgRecibidos <= 0) return setError('Completá la fecha de llegada y los kg recibidos.');
+    if (form.fechaLlegada < c.fechaSalida || form.fechaLlegada > limitesLlegada.max) return setError(`La fecha de llegada debe estar entre la salida y el 31/12/${limitesLlegada.max.slice(0, 4)}.`);
     setGuardando(true);
     try {
       await api.put(`/api/distribuciones/camiones/${camionId}/recepcion`, { fechaLlegada: form.fechaLlegada, kgRecibidos: valores.kgRecibidos });
@@ -1046,6 +1062,7 @@ function ConciliarCamion({ api, camionId, puedeGestionar, onCancel, onSaved }) {
     event.preventDefault();
     setError('');
     if (!completo) return setError('Completá todos los datos de la recepción y de la liquidación.');
+    if (!form.fechaLlegada || form.fechaLlegada < c.fechaSalida || form.fechaLlegada > limitesLlegada.max) return setError(`La fecha de llegada debe estar entre la salida y el 31/12/${limitesLlegada.max.slice(0, 4)}.`);
     setGuardando(true);
     try {
       await api.put(`/api/distribuciones/camiones/${camionId}/conciliacion`, {
@@ -1092,8 +1109,8 @@ function ConciliarCamion({ api, camionId, puedeGestionar, onCancel, onSaved }) {
               <div className="create-grid">
                 <label className="field">
                   <span className="field-label">Fecha de llegada <b>*</b></span>
-                  <input type="date" value={form.fechaLlegada} min={c.fechaSalida} max={todayIso()} onChange={actualizar('fechaLlegada')} disabled={soloLectura} />
-                  <Regla>Entre la salida ({formatDate(c.fechaSalida)}) y hoy.</Regla>
+                  <input type="date" value={form.fechaLlegada} min={c.fechaSalida} max={limitesLlegada.max} onChange={actualizar('fechaLlegada')} disabled={soloLectura} />
+                  <Regla>Entre la salida ({formatDate(c.fechaSalida)}) y el 31/12/{limitesLlegada.max.slice(0, 4)}.</Regla>
                 </label>
                 <label className="field">
                   <span className="field-label">Kg recibidos (balanza de destino) <b>*</b></span>

@@ -34,14 +34,17 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
                 FROM (
                     SELECT ccx.Producto AS Cultivo, ccx.FechaInicio, 0 AS OrdenInicial
                     FROM dbo.CampaniaCombinaciones AS ccx
+                    INNER JOIN dbo.Campanias AS cx ON cx.CampaniaId = ccx.CampaniaId
                     WHERE ccx.LoteId = l.LoteId
                       AND ccx.CampaniaCombinacionId <> cc.CampaniaCombinacionId
+                      AND (cx.Periodo < c.Periodo OR (cx.CampaniaId = c.CampaniaId AND cc.CicloEstacional = N'Invierno' AND ccx.CicloEstacional = N'Verano'))
                     UNION ALL
                     SELECT l.CultivoAnterior, NULL, 1 AS OrdenInicial
                     WHERE NULLIF(LTRIM(RTRIM(l.CultivoAnterior)), N'') IS NOT NULL
                       AND NULLIF(LTRIM(RTRIM(l.CultivoAnteriorCampania)), N'') IS NOT NULL
                       AND LTRIM(RTRIM(l.CultivoAnterior)) <> N'Sin dato'
                       AND LTRIM(RTRIM(l.CultivoAnteriorCampania)) <> N'Sin dato'
+                      AND l.CultivoAnteriorCampania < c.Periodo
                 ) AS h
                 ORDER BY h.OrdenInicial, h.FechaInicio DESC
             ) AS ultimo
@@ -121,14 +124,17 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
                 FROM (
                     SELECT ccx.Producto AS Cultivo, ccx.FechaInicio, 0 AS OrdenInicial
                     FROM dbo.CampaniaCombinaciones AS ccx
+                    INNER JOIN dbo.Campanias AS cx ON cx.CampaniaId = ccx.CampaniaId
                     WHERE ccx.LoteId = l.LoteId
                       AND ccx.CampaniaCombinacionId <> cc.CampaniaCombinacionId
+                      AND (cx.Periodo < c.Periodo OR (cx.CampaniaId = c.CampaniaId AND cc.CicloEstacional = N'Invierno' AND ccx.CicloEstacional = N'Verano'))
                     UNION ALL
                     SELECT l.CultivoAnterior, NULL, 1 AS OrdenInicial
                     WHERE NULLIF(LTRIM(RTRIM(l.CultivoAnterior)), N'') IS NOT NULL
                       AND NULLIF(LTRIM(RTRIM(l.CultivoAnteriorCampania)), N'') IS NOT NULL
                       AND LTRIM(RTRIM(l.CultivoAnterior)) <> N'Sin dato'
                       AND LTRIM(RTRIM(l.CultivoAnteriorCampania)) <> N'Sin dato'
+                      AND l.CultivoAnteriorCampania < c.Periodo
                 ) AS h
                 ORDER BY h.OrdenInicial, h.FechaInicio DESC
             ) AS ultimo
@@ -220,9 +226,10 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
                 ?? throw new InvalidOperationException("No se pudo identificar la empresa de la campania.");
             var empresaNombre = await ObtenerEmpresaNombreAsync(connection, (SqlTransaction)transaction, empresaId)
                 ?? throw new InvalidOperationException("No se pudo identificar el nombre de la empresa.");
-            var periodo = CalcularPeriodoActual();
+            var periodo = request.Periodo!;
             await ValidarPeriodoDisponibleAsync(connection, (SqlTransaction)transaction, empresaId, periodo, null, empresaNombre);
-            await ValidarLotesHabilitadosAsociadosAsync(connection, (SqlTransaction)transaction, empresaId, request.Combinaciones, request.OmisionesVerano, periodo);
+            await ValidarCampaniaAnteriorAsync(connection, (SqlTransaction)transaction, empresaId, periodo);
+            await ValidarLotesHabilitadosAsociadosAsync(connection, (SqlTransaction)transaction, empresaId, request.Combinaciones, request.OmisionesVerano, periodo, exigirTodos: periodo == CalcularPeriodoActual());
             var nombre = GenerarNombreCampania(periodo, empresaNombre);
 
             const string insertCampaniaSql = """
@@ -271,9 +278,9 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
             var empresaNombre = await ObtenerEmpresaNombreAsync(connection, (SqlTransaction)transaction, existe.EmpresaId.Value)
                 ?? existe.EmpresaNombre
                 ?? "empresa seleccionada";
-            var periodo = CalcularPeriodoActual();
+            var periodo = existe.Periodo!;
             await ValidarPeriodoDisponibleAsync(connection, (SqlTransaction)transaction, existe.EmpresaId.Value, periodo, campaniaId, empresaNombre);
-            await ValidarLotesHabilitadosAsociadosAsync(connection, (SqlTransaction)transaction, existe.EmpresaId.Value, request.Combinaciones, request.OmisionesVerano, periodo, campaniaId);
+            await ValidarLotesHabilitadosAsociadosAsync(connection, (SqlTransaction)transaction, existe.EmpresaId.Value, request.Combinaciones, request.OmisionesVerano, periodo, campaniaId, exigirTodos: periodo == CalcularPeriodoActual());
             var nombre = GenerarNombreCampania(periodo, empresaNombre);
 
             const string updateSql = """
@@ -505,7 +512,7 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
         return result is null or DBNull ? null : (string)result;
     }
 
-    private static async Task ValidarLotesHabilitadosAsociadosAsync(SqlConnection connection, SqlTransaction transaction, int empresaId, IReadOnlyList<CrearCampaniaCombinacionRequest> combinaciones, IReadOnlyList<OmisionVeranoRequest> omisiones, string periodo, int? campaniaId = null)
+    private static async Task ValidarLotesHabilitadosAsociadosAsync(SqlConnection connection, SqlTransaction transaction, int empresaId, IReadOnlyList<CrearCampaniaCombinacionRequest> combinaciones, IReadOnlyList<OmisionVeranoRequest> omisiones, string periodo, int? campaniaId = null, bool exigirTodos = true)
     {
         const string sql = "SELECT LoteId, Nombre FROM dbo.Lotes WITH (UPDLOCK, HOLDLOCK) WHERE EmpresaId = @EmpresaId AND Activo = 1;";
         await using var command = new SqlCommand(sql, connection, transaction);
@@ -534,6 +541,7 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
             while (await reader.ReadAsync()) motivosVigentes.Add(reader.GetInt32(0));
         }
 
+        if (!exigirTodos) return;
         var sinAsociar = lotesActivos.Where(item => !verano.Contains(item.Key) && !invierno.Contains(item.Key)).Select(item => item.Value).ToList();
         if (sinAsociar.Count > 0)
             throw new CampaniaLotesSinAsociarException($"Asociá o deshabilitá estos lotes: {string.Join(", ", sinAsociar)}.");
@@ -593,6 +601,68 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
         {
             throw new CampaniaPeriodoDuplicadoException($"Ya existe una campania para {empresaNombre} en el periodo {periodo}. Solo se puede cargar una campania por empresa entre junio de {periodo[..4]} y junio de {periodo[5..]}.");
         }
+    }
+
+    private static async Task ValidarCampaniaAnteriorAsync(SqlConnection connection, SqlTransaction transaction, int empresaId, string periodo)
+    {
+        var anioAnterior = int.Parse(periodo[..4]) - 1;
+        var periodoAnterior = $"{anioAnterior}-{anioAnterior + 1}";
+        const string sql = """
+            SELECT l.Nombre, cc.CicloEstacional
+            FROM dbo.Campanias AS c WITH (UPDLOCK, HOLDLOCK)
+            JOIN dbo.CampaniaCombinaciones AS cc WITH (UPDLOCK, HOLDLOCK) ON cc.CampaniaId = c.CampaniaId
+            JOIN dbo.Lotes AS l ON l.LoteId = cc.LoteId
+            OUTER APPLY (
+                SELECT TOP (1) s.SiembraId, s.DeshabilitacionId
+                FROM dbo.Siembras AS s WITH (UPDLOCK, HOLDLOCK)
+                WHERE s.LoteId = cc.LoteId
+                  AND s.CicloEstacional = cc.CicloEstacional
+                  AND LEFT(LTRIM(RTRIM(ISNULL(s.CampaniaNombre, N''))), 9) = c.Periodo
+                ORDER BY s.SiembraId DESC
+            ) AS ultima
+            LEFT JOIN dbo.LoteDeshabilitaciones AS baja ON baja.LoteDeshabilitacionId = ultima.DeshabilitacionId
+            WHERE c.EmpresaId = @EmpresaId AND c.Periodo = @PeriodoAnterior
+              AND (
+                  (cc.CicloEstacional = N'Invierno' AND ultima.SiembraId IS NULL)
+                  OR
+                  (cc.CicloEstacional = N'Verano'
+                   AND cc.Estado <> N'Finalizado'
+                   AND NOT EXISTS (
+                       SELECT 1 FROM dbo.Cosechas AS co WITH (UPDLOCK, HOLDLOCK)
+                       WHERE co.SiembraId = ultima.SiembraId AND co.Estado = N'Finalizado'
+                   )
+                   AND NOT (
+                       ultima.DeshabilitacionId IS NOT NULL AND baja.Motivo = N'Siniestro'
+                       AND NOT EXISTS (
+                           SELECT 1 FROM dbo.Siembras AS activa WITH (UPDLOCK, HOLDLOCK)
+                           WHERE activa.LoteId = cc.LoteId AND activa.CicloEstacional = N'Verano'
+                             AND activa.DeshabilitacionId IS NULL
+                             AND LEFT(LTRIM(RTRIM(ISNULL(activa.CampaniaNombre, N''))), 9) = c.Periodo
+                       )
+                   ))
+              );
+            """;
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@EmpresaId", empresaId);
+        command.Parameters.AddWithValue("@PeriodoAnterior", periodoAnterior);
+        var sinCosechaVerano = new List<string>();
+        var sinSiembraInvierno = new List<string>();
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                var nombre = reader.GetString(0);
+                if (reader.GetString(1) == "Invierno") sinSiembraInvierno.Add(nombre);
+                else sinCosechaVerano.Add(nombre);
+            }
+        }
+        if (sinCosechaVerano.Count == 0 && sinSiembraInvierno.Count == 0) return;
+        var motivos = new List<string>();
+        if (sinCosechaVerano.Count > 0)
+            motivos.Add($"finalizá la cosecha de Verano de {string.Join(", ", sinCosechaVerano)} (o registrá su baja por siniestro)");
+        if (sinSiembraInvierno.Count > 0)
+            motivos.Add($"sembrá o retirá la planificación de Invierno de {string.Join(", ", sinSiembraInvierno)}");
+        throw new CampaniaPlanificacionBloqueadaException($"Para abrir {periodo}, primero {string.Join("; y ", motivos)} en la campaña {periodoAnterior}.");
     }
 
     private static async Task<int?> ObtenerEmpresaIdDesdePrimerLoteAsync(SqlConnection connection, SqlTransaction transaction, int loteId, int usuarioId, bool incluirTodos)

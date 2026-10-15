@@ -80,9 +80,14 @@ function addCalendarMonths(value, months) {
   return `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
 }
 
-function getCampaignDateLimits(referenceDate = new Date()) {
+function getCurrentCampaignPeriod(referenceDate = new Date()) {
   const currentYear = referenceDate.getFullYear();
   const periodStartYear = referenceDate.getMonth() >= 5 ? currentYear : currentYear - 1;
+  return `${periodStartYear}-${periodStartYear + 1}`;
+}
+
+function getCampaignDateLimits(period = getCurrentCampaignPeriod()) {
+  const periodStartYear = Number(period.slice(0, 4));
   const min = `${periodStartYear}-01-01`;
   const max = `${periodStartYear + 1}-12-31`;
 
@@ -93,9 +98,9 @@ function getCampaignDateLimits(referenceDate = new Date()) {
   };
 }
 
-function isWithinCampaignDateLimits(value) {
+function isWithinCampaignDateLimits(value, period) {
   if (!value) return false;
-  const { min, max } = getCampaignDateLimits();
+  const { min, max } = getCampaignDateLimits(period);
   return value >= min && value <= max;
 }
 
@@ -118,16 +123,18 @@ function getLatestCultivoFromHistory(lote) {
   return latest || lote?.cultivoActual || lote?.cultivoAnterior || '';
 }
 
-function getRotationAntecesor(lote, cicloEstacional, combinaciones) {
+function getRotationAntecesor(lote, cicloEstacional, combinaciones, periodo) {
   if (cicloEstacional === 'Invierno') {
     const verano = combinaciones.find((item) => Number(item.loteId) === Number(lote.loteId) && (item.cicloEstacional || 'Verano') === 'Verano');
     if (verano) return verano.producto;
   }
-  return lote?.historialCultivos?.[0]?.cultivo || lote?.cultivoAnterior || '';
+  const anterior = lote?.historialCultivos?.find((item) => item.campania?.slice(0, 9) < periodo);
+  return anterior?.cultivo || (lote?.cultivoAnteriorCampania < periodo ? lote?.cultivoAnterior : '') || '';
 }
 
 function campaignFormSignature(form) {
   return JSON.stringify({
+    periodo: form.periodo || '',
     fechaInicio: form.fechaInicio || '',
     fechaFin: form.fechaFin || '',
     observaciones: (form.observaciones || '').trim(),
@@ -141,7 +148,7 @@ export default function Campanias({ permisos = PERMISOS_TODOS, session, lotes, p
   const [view, setView] = useState('list');
   const [campanias, setCampanias] = useState([]);
   const [selectedCampania, setSelectedCampania] = useState(null);
-  const [form, setForm] = useState({ fechaInicio: '', fechaFin: '', observaciones: '', combinaciones: [] });
+  const [form, setForm] = useState({ periodo: getCurrentCampaignPeriod(), fechaInicio: '', fechaFin: '', observaciones: '', combinaciones: [] });
   const [initialForm, setInitialForm] = useState(null);
   const [comboForm, setComboForm] = useState(emptyCombo);
   const [selectorOpen, setSelectorOpen] = useState(false);
@@ -183,7 +190,7 @@ export default function Campanias({ permisos = PERMISOS_TODOS, session, lotes, p
     onPendingReactivationDone?.();
     setView('list');
     setSelectedCampania(null);
-    setForm({ fechaInicio: '', fechaFin: '', observaciones: '', combinaciones: [] });
+    setForm({ periodo: getCurrentCampaignPeriod(), fechaInicio: '', fechaFin: '', observaciones: '', combinaciones: [] });
     setInitialForm(null);
     setComboForm(emptyCombo);
     setSelectorOpen(false);
@@ -199,7 +206,7 @@ export default function Campanias({ permisos = PERMISOS_TODOS, session, lotes, p
 
   function startCreate() {
     setSelectedCampania(null);
-    setForm({ fechaInicio: '', fechaFin: '', observaciones: '', combinaciones: [] });
+    setForm({ periodo: getCurrentCampaignPeriod(), fechaInicio: '', fechaFin: '', observaciones: '', combinaciones: [] });
     setInitialForm(null);
     setSummerOmissionReasons({});
     setComboForm(emptyCombo);
@@ -216,6 +223,7 @@ export default function Campanias({ permisos = PERMISOS_TODOS, session, lotes, p
       const campania = await response.json();
       setSelectedCampania(campania);
       const nextForm = {
+        periodo: campania.periodo,
         fechaInicio: toDateInput(campania.fechaInicio),
         fechaFin: toDateInput(campania.fechaFin),
         observaciones: campania.observaciones || '',
@@ -295,8 +303,8 @@ export default function Campanias({ permisos = PERMISOS_TODOS, session, lotes, p
       setError('La Fecha tentativa de Fin debe estar al menos cuatro meses después de la Fecha de Inicio.');
       return;
     }
-    if (!isWithinCampaignDateLimits(form.fechaInicio) || !isWithinCampaignDateLimits(form.fechaFin)) {
-      setError(getCampaignDateLimits().label);
+    if (!isWithinCampaignDateLimits(form.fechaInicio, form.periodo) || !isWithinCampaignDateLimits(form.fechaFin, form.periodo)) {
+      setError(getCampaignDateLimits(form.periodo).label);
       return;
     }
     if (!comboForm.producto.trim()) {
@@ -317,7 +325,7 @@ export default function Campanias({ permisos = PERMISOS_TODOS, session, lotes, p
         loteNombre: lote.nombre,
         loteZona: lote.ciudad,
         loteHectareas: lote.hectareas,
-        cultivoAntecesor: getRotationAntecesor(lote, comboForm.cicloEstacional, form.combinaciones),
+        cultivoAntecesor: getRotationAntecesor(lote, comboForm.cicloEstacional, form.combinaciones, form.periodo),
         producto,
         cicloEstacional: comboForm.cicloEstacional,
         fechaInicio: form.fechaInicio,
@@ -338,6 +346,7 @@ export default function Campanias({ permisos = PERMISOS_TODOS, session, lotes, p
   }
 
   function getMissingEnabledLots(combinaciones = form.combinaciones, requireSummer = true) {
+    if (form.periodo !== getCurrentCampaignPeriod()) return [];
     const assignedLoteIds = new Set(combinaciones.map((item) => Number(item.loteId)));
     const summerLoteIds = new Set(combinaciones.filter((item) => (item.cicloEstacional || 'Verano') === 'Verano').map((item) => Number(item.loteId)));
     const firstAssignedLote = lotes.find((lote) => Number(lote.loteId) === Number(combinaciones[0]?.loteId));
@@ -363,6 +372,7 @@ export default function Campanias({ permisos = PERMISOS_TODOS, session, lotes, p
     setError('');
     try {
       const body = {
+        periodo: form.periodo,
         fechaInicio: form.fechaInicio,
         fechaFin: form.fechaFin,
         observaciones: form.observaciones || null,
@@ -499,7 +509,9 @@ export default function Campanias({ permisos = PERMISOS_TODOS, session, lotes, p
           saving={saving}
           error={error}
           hasChanges={campaignFormSignature(form) !== campaignFormSignature(initialForm ?? form)}
-          onFormChange={(field, value) => setForm((current) => ({ ...current, [field]: value }))}
+          onFormChange={(field, value) => setForm((current) => field === 'periodo'
+            ? { ...current, periodo: value, fechaInicio: '', fechaFin: '', combinaciones: [] }
+            : { ...current, [field]: value })}
           onGrainChange={updateGrain}
           onCycleChange={(cicloEstacional) => { setComboForm((current) => ({ ...current, cicloEstacional, grainMode: '', producto: '' })); setError(''); }}
           onCustomGrainChange={updateCustomGrain}
@@ -515,6 +527,7 @@ export default function Campanias({ permisos = PERMISOS_TODOS, session, lotes, p
             producto={comboForm.producto}
             cicloEstacional={comboForm.cicloEstacional}
             combinaciones={form.combinaciones}
+            periodo={form.periodo}
             excludedLoteIds={form.combinaciones.filter((item) => (item.cicloEstacional || 'Verano') === comboForm.cicloEstacional).map((item) => Number(item.loteId))}
             sortMode={loteSelectorSortMode}
             onSortModeChange={setLoteSelectorSortMode}
@@ -535,7 +548,7 @@ export default function Campanias({ permisos = PERMISOS_TODOS, session, lotes, p
           key={disableQueue[0].loteId}
           summerOmission
           lote={disableQueue[0]}
-          campaignPeriod={selectedCampania?.periodo || `${getCampaignDateLimits().min.slice(0, 4)}-${getCampaignDateLimits().max.slice(0, 4)}`}
+          campaignPeriod={form.periodo}
           saving={saving}
           onCancel={() => setDisableQueue([])}
           onConfirm={confirmSummerOmission}
@@ -818,13 +831,15 @@ function CampaniasList({ permisos = PERMISOS_TODOS, campanias, selectedEmpresaId
 function CampaniaForm({ mode, campania, form, comboForm, saving, error, hasChanges, onFormChange, onCycleChange, onGrainChange, onCustomGrainChange, onOpenLoteSelector, onRemoveCombo, onSave, onBack }) {
   const readonlyName = mode === 'edit' ? campania?.nombre : '';
   const selectedGrainMode = comboForm.grainMode || (commonGrains.includes(comboForm.producto) ? comboForm.producto : comboForm.producto ? 'Otro' : '');
-  const campaignDateLimits = getCampaignDateLimits();
-  const inicioOutsideRange = Boolean(form.fechaInicio && !isWithinCampaignDateLimits(form.fechaInicio));
-  const finOutsideRange = Boolean(form.fechaFin && !isWithinCampaignDateLimits(form.fechaFin));
+  const campaignDateLimits = getCampaignDateLimits(form.periodo);
+  const inicioOutsideRange = Boolean(form.fechaInicio && !isWithinCampaignDateLimits(form.fechaInicio, form.periodo));
+  const finOutsideRange = Boolean(form.fechaFin && !isWithinCampaignDateLimits(form.fechaFin, form.periodo));
+  const availablePeriods = mode === 'edit' ? [form.periodo] : [getCurrentCampaignPeriod()];
   const fechaFinMinima = addCalendarMonths(form.fechaInicio, 4);
   const finDemasiadoCerca = Boolean(fechaFinMinima && form.fechaFin && form.fechaFin < fechaFinMinima);
   const canRegister = Boolean(
-    form.fechaInicio
+    (mode === 'edit' || form.periodo === getCurrentCampaignPeriod())
+    && form.fechaInicio
     && form.fechaFin
     && !inicioOutsideRange
     && !finOutsideRange
@@ -844,9 +859,16 @@ function CampaniaForm({ mode, campania, form, comboForm, saving, error, hasChang
       {error && <p style={{ color: '#c0392b', fontWeight: 700 }}>{error}</p>}
 
       <div className="create-form-card dashboard-card">
-        <div className="create-grid">
+        <div className="create-grid campaign-form-grid">
           <label className="field">
-            Nombre
+            <span className="field-label">Período de campaña <b>*</b></span>
+            <select value={form.periodo || ''} disabled={mode === 'edit'} onChange={(event) => onFormChange('periodo', event.target.value)} required>
+              {availablePeriods.map((periodo) => <option key={periodo} value={periodo}>{periodo}</option>)}
+            </select>
+            <span className="field-rule"><Info size={13} /><span><strong>Regla:</strong> {mode === 'edit' ? 'El período registrado es fijo; las fechas se validan dentro de él.' : 'Solo se pueden registrar campañas del período vigente de junio a junio.'}</span></span>
+          </label>
+          <label className="field">
+            <span className="field-label">Nombre</span>
             <input readOnly value={readonlyName} placeholder="Se asigna automaticamente al guardar" />
           </label>
           <label className={`field${inicioOutsideRange ? ' field-with-error' : ''}`}>
@@ -911,26 +933,26 @@ function CampaniaForm({ mode, campania, form, comboForm, saving, error, hasChang
   );
 }
 
-function LoteSelectorModal({ lotes, producto, cicloEstacional, combinaciones = [], excludedLoteIds = [], allowedInactiveLoteId = null, sortMode, onSortModeChange, onClose, onAdd }) {
+function LoteSelectorModal({ lotes, producto, cicloEstacional, combinaciones = [], periodo, excludedLoteIds = [], allowedInactiveLoteId = null, sortMode, onSortModeChange, onClose, onAdd }) {
   const [selected, setSelected] = useState({});
   const [query, setQuery] = useState('');
   const excludedSet = useMemo(() => new Set(excludedLoteIds.map(Number)), [excludedLoteIds]);
   const availableLotes = useMemo(() => (
     lotes.filter((lote) => (lote.activo || Number(lote.loteId) === Number(allowedInactiveLoteId)) && !excludedSet.has(Number(lote.loteId))).sort((a, b) => {
       if (sortMode === 'all') return String(a.nombre).localeCompare(String(b.nombre), 'es');
-      const rotationA = getRotationInfo(producto, getRotationAntecesor(a, cicloEstacional, combinaciones));
-      const rotationB = getRotationInfo(producto, getRotationAntecesor(b, cicloEstacional, combinaciones));
+      const rotationA = getRotationInfo(producto, getRotationAntecesor(a, cicloEstacional, combinaciones, periodo));
+      const rotationB = getRotationInfo(producto, getRotationAntecesor(b, cicloEstacional, combinaciones, periodo));
       if (rotationA.rank !== rotationB.rank) return rotationA.rank - rotationB.rank;
       return String(a.nombre).localeCompare(String(b.nombre), 'es');
     })
-  ), [allowedInactiveLoteId, cicloEstacional, combinaciones, excludedSet, lotes, producto, sortMode]);
+  ), [allowedInactiveLoteId, cicloEstacional, combinaciones, excludedSet, lotes, periodo, producto, sortMode]);
 
   const filteredLotes = useMemo(() => {
     const text = normalizeSearchText(query.trim());
     if (!text) return availableLotes;
 
     return availableLotes.filter((lote) => {
-      const cultivoAntecesor = getRotationAntecesor(lote, cicloEstacional, combinaciones);
+      const cultivoAntecesor = getRotationAntecesor(lote, cicloEstacional, combinaciones, periodo);
       const rotation = getRotationInfo(producto, cultivoAntecesor);
       return [
         lote.nombre,
@@ -940,13 +962,13 @@ function LoteSelectorModal({ lotes, producto, cicloEstacional, combinaciones = [
         rotation.label
       ].some((field) => normalizeSearchText(field).includes(text));
     });
-  }, [availableLotes, cicloEstacional, combinaciones, producto, query]);
+  }, [availableLotes, cicloEstacional, combinaciones, periodo, producto, query]);
   const groupedLotes = useMemo(() => {
     const groups = [];
     const byCultivo = new Map();
 
     filteredLotes.forEach((lote) => {
-      const cultivoAntecesor = getRotationAntecesor(lote, cicloEstacional, combinaciones) || 'Sin dato';
+      const cultivoAntecesor = getRotationAntecesor(lote, cicloEstacional, combinaciones, periodo) || 'Sin dato';
       const key = normalizeSearchText(cultivoAntecesor);
       if (!byCultivo.has(key)) {
         const group = { key, cultivoAntecesor, lotes: [] };
@@ -981,7 +1003,7 @@ function LoteSelectorModal({ lotes, producto, cicloEstacional, combinaciones = [
   }
 
   function renderLoteRow(lote) {
-    const cultivoAntecesor = getRotationAntecesor(lote, cicloEstacional, combinaciones);
+    const cultivoAntecesor = getRotationAntecesor(lote, cicloEstacional, combinaciones, periodo);
     const rotation = getRotationInfo(producto, cultivoAntecesor);
     return (
       <tr key={lote.loteId} className={selected[lote.loteId] ? 'campaign-lote-row-selected' : ''}>

@@ -4,6 +4,9 @@ namespace AgroDigital.Api.Dtos;
 
 public class CrearLoteRequest
 {
+    [Range(1, int.MaxValue)]
+    public int? EmpresaId { get; set; }
+
     [Required]
     [StringLength(100)]
     public string Nombre { get; set; } = string.Empty;

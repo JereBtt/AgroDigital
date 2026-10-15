@@ -372,6 +372,7 @@ public class DistribucionRepository(IConfiguration configuration, IAlmacenamient
 
             var totalKg = request.Camiones.Sum(c => c.KgDespachados);
             var campaniaId = request.CampaniaId;
+            string? campaniaTexto = null;
             string producto;
 
             if (request.OrigenGrano == "Cosecha")
@@ -400,6 +401,7 @@ public class DistribucionRepository(IConfiguration configuration, IAlmacenamient
 
                 producto = saldo.Producto;
                 campaniaId = saldo.CampaniaId ?? campaniaId;
+                campaniaTexto = saldo.CampaniaNombre;
             }
             else
             {
@@ -438,13 +440,26 @@ public class DistribucionRepository(IConfiguration configuration, IAlmacenamient
                     }
 
                     campaniaId = saldo.CampaniaId ?? campaniaId;
+                    campaniaTexto = saldo.CampaniaNombre;
                 }
             }
 
-            if (campaniaId.HasValue)
+            // Los envíos desde silo no llevan una cosecha única; se asocian a la
+            // campaña operativa cuando existe para conservar su rango de fechas.
+            if (request.OrigenGrano == "Silo" && !campaniaId.HasValue)
             {
-                await ValidarCampaniaAsync(connection, transaction, campaniaId.Value, request.EmpresaId);
+                await using var campaniaActual = new SqlCommand(
+                    "SELECT TOP (1) CampaniaId FROM dbo.Campanias WHERE EmpresaId = @EmpresaId AND Periodo = @Periodo ORDER BY CampaniaId DESC;",
+                    connection, transaction);
+                campaniaActual.Parameters.AddWithValue("@EmpresaId", request.EmpresaId);
+                campaniaActual.Parameters.AddWithValue("@Periodo", AgroDigital.Api.Services.PeriodoCampaniaFechas.OperativoActual());
+                campaniaId = await campaniaActual.ExecuteScalarAsync() as int?;
             }
+
+            var periodo = campaniaId.HasValue
+                ? await ValidarCampaniaAsync(connection, transaction, campaniaId.Value, request.EmpresaId)
+                : campaniaTexto;
+            AgroDigital.Api.Services.PeriodoCampaniaFechas.Validar(request.FechaSalida, periodo, "fecha de salida");
 
             // Catalogos y CPE de cada camion.
             var camiones = new List<(CamionDistribucionRequest Datos, int? TransportistaId, string Cpe)>();
@@ -634,7 +649,7 @@ public class DistribucionRepository(IConfiguration configuration, IAlmacenamient
                     "El camion ya esta conciliado: corregi la recepcion desde la conciliacion.");
             }
 
-            ValidarFechaLlegada(request.FechaLlegada, camion.FechaSalida);
+            ValidarFechaLlegada(request.FechaLlegada, camion.FechaSalida, camion.Periodo);
 
             const string sql = """
                 UPDATE dbo.DistribucionCamiones
@@ -666,6 +681,7 @@ public class DistribucionRepository(IConfiguration configuration, IAlmacenamient
         var camion = await BloquearCamionAsync(connection, null, distribucionCamionId, bloquear: false)
             ?? throw new KeyNotFoundException("El camion no existe.");
         await ExigirAccesoAsync(connection, null, usuarioId, esAdmin, camion.EmpresaId);
+        ValidarFechaLlegada(request.FechaLlegada, camion.FechaSalida, camion.Periodo);
 
         var parametros = await LeerParametrosMermaAsync(connection, null, camion.EmpresaId, camion.Producto);
         return CalculadoraMermaDistribucion.Calcular(camion.KgDespachados, request.KgRecibidos,
@@ -684,7 +700,7 @@ public class DistribucionRepository(IConfiguration configuration, IAlmacenamient
             var camion = await BloquearCamionAsync(connection, transaction, distribucionCamionId)
                 ?? throw new KeyNotFoundException("El camion no existe.");
             await DistribucionAcceso.ExigirGestionAsync(connection, transaction, usuarioId, esAdmin, camion.EmpresaId);
-            ValidarFechaLlegada(request.FechaLlegada, camion.FechaSalida);
+            ValidarFechaLlegada(request.FechaLlegada, camion.FechaSalida, camion.Periodo);
 
             var parametros = await LeerParametrosMermaAsync(connection, transaction, camion.EmpresaId, camion.Producto);
             var analisis = CalculadoraMermaDistribucion.Calcular(camion.KgDespachados, request.KgRecibidos,
@@ -982,7 +998,7 @@ public class DistribucionRepository(IConfiguration configuration, IAlmacenamient
     }
 
     private sealed record SaldoCosecha(
-        int CosechaId, int? EmpresaId, string Nombre, string Producto, DateOnly FechaInicio, int? CampaniaId,
+        int CosechaId, int? EmpresaId, string Nombre, string Producto, DateOnly FechaInicio, int? CampaniaId, string? CampaniaNombre,
         decimal? KgCosechados, decimal KgAlmacenados, decimal KgDistribuidos)
     {
         public decimal KgDisponibles => KgCosechados is null ? 0 : Math.Max(0, KgCosechados.Value - KgAlmacenados - KgDistribuidos);
@@ -997,7 +1013,7 @@ public class DistribucionRepository(IConfiguration configuration, IAlmacenamient
         SqlConnection connection, SqlTransaction? transaction, int cosechaId, bool bloquear)
     {
         var sql = $"""
-            SELECT c.CosechaId, lo.EmpresaId, c.Nombre, c.Producto, c.FechaInicio, cp.CampaniaId,
+            SELECT c.CosechaId, lo.EmpresaId, c.Nombre, c.Producto, c.FechaInicio, cp.CampaniaId, c.CampaniaNombre,
                    c.CantidadGranoCosechado, ISNULL(alm.Kg, 0), ISNULL(dist.Kg, 0)
             FROM dbo.Cosechas AS c {(bloquear ? "WITH (UPDLOCK, ROWLOCK)" : string.Empty)}
             INNER JOIN dbo.Lotes AS lo ON lo.LoteId = c.LoteId
@@ -1033,9 +1049,10 @@ public class DistribucionRepository(IConfiguration configuration, IAlmacenamient
             r.GetString(3),
             DateOnly.FromDateTime(r.GetDateTime(4)),
             r.IsDBNull(5) ? null : r.GetInt32(5),
-            r.IsDBNull(6) ? null : r.GetDecimal(6),
-            r.GetDecimal(7),
-            r.GetDecimal(8));
+            r.IsDBNull(6) ? null : r.GetString(6),
+            r.IsDBNull(7) ? null : r.GetDecimal(7),
+            r.GetDecimal(8),
+            r.GetDecimal(9));
     }
 
     private static void ValidarCosecha(SaldoCosecha saldo, int empresaId)
@@ -1046,22 +1063,22 @@ public class DistribucionRepository(IConfiguration configuration, IAlmacenamient
         }
     }
 
-    private static async Task ValidarCampaniaAsync(SqlConnection connection, SqlTransaction transaction, int campaniaId, int empresaId)
+    private static async Task<string> ValidarCampaniaAsync(SqlConnection connection, SqlTransaction transaction, int campaniaId, int empresaId)
     {
-        const string sql = "SELECT EmpresaId FROM dbo.Campanias WHERE CampaniaId = @CampaniaId;";
+        const string sql = "SELECT EmpresaId, Periodo FROM dbo.Campanias WHERE CampaniaId = @CampaniaId;";
         await using var command = new SqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@CampaniaId", campaniaId);
-        var resultado = await command.ExecuteScalarAsync();
-
-        if (resultado is null)
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
         {
             throw new InvalidOperationException("La campania indicada no existe.");
         }
 
-        if (resultado is int empresaCampania && empresaCampania != empresaId)
+        if (reader.GetInt32(0) != empresaId)
         {
             throw new InvalidOperationException("La campania no pertenece a la empresa del envio.");
         }
+        return reader.GetString(1);
     }
 
     /// <summary>Chofer, camion y destino de la empresa y activos. Devuelve el transportista a registrar.</summary>
@@ -1145,15 +1162,18 @@ public class DistribucionRepository(IConfiguration configuration, IAlmacenamient
     }
 
     private sealed record CamionBloqueado(
-        int DistribucionCamionId, int EmpresaId, string Estado, decimal KgDespachados, DateOnly FechaSalida, string Producto);
+        int DistribucionCamionId, int EmpresaId, string Estado, decimal KgDespachados, DateOnly FechaSalida, string Producto, string? Periodo);
 
     private static async Task<CamionBloqueado?> BloquearCamionAsync(
         SqlConnection connection, SqlTransaction? transaction, int distribucionCamionId, bool bloquear = true)
     {
         var sql = $"""
-            SELECT dc.DistribucionCamionId, dc.EmpresaId, dc.Estado, dc.KgDespachados, d.FechaSalida, d.Producto
+            SELECT dc.DistribucionCamionId, dc.EmpresaId, dc.Estado, dc.KgDespachados, d.FechaSalida, d.Producto,
+                   COALESCE(cp.Periodo, co.CampaniaNombre)
             FROM dbo.DistribucionCamiones AS dc {(bloquear ? "WITH (UPDLOCK, ROWLOCK)" : string.Empty)}
             INNER JOIN dbo.Distribuciones AS d ON d.DistribucionId = dc.DistribucionId
+            LEFT JOIN dbo.Campanias AS cp ON cp.CampaniaId = d.CampaniaId
+            LEFT JOIN dbo.Cosechas AS co ON co.CosechaId = d.CosechaId
             WHERE dc.DistribucionCamionId = @Id;
             """;
         await using var command = new SqlCommand(sql, connection, transaction);
@@ -1162,7 +1182,7 @@ public class DistribucionRepository(IConfiguration configuration, IAlmacenamient
         if (!await r.ReadAsync()) return null;
 
         return new CamionBloqueado(r.GetInt32(0), r.GetInt32(1), r.GetString(2), r.GetDecimal(3),
-            DateOnly.FromDateTime(r.GetDateTime(4)), r.GetString(5));
+            DateOnly.FromDateTime(r.GetDateTime(4)), r.GetString(5), r.IsDBNull(6) ? null : r.GetString(6));
     }
 
     /// <summary>Humedad base (normativa) y parametros de la empresa para el grano, comparando sin tildes.</summary>
@@ -1206,17 +1226,14 @@ public class DistribucionRepository(IConfiguration configuration, IAlmacenamient
         return encontrado ? new ParametrosMerma(humedadBase, manipuleo, tolerancia, medio, alto) : null;
     }
 
-    private static void ValidarFechaLlegada(DateOnly fechaLlegada, DateOnly fechaSalida)
+    private static void ValidarFechaLlegada(DateOnly fechaLlegada, DateOnly fechaSalida, string? periodo)
     {
         if (fechaLlegada < fechaSalida)
         {
             throw new InvalidOperationException($"La fecha de llegada no puede ser anterior a la salida ({fechaSalida:dd/MM/yyyy}).");
         }
 
-        if (fechaLlegada > DateOnly.FromDateTime(DateTime.Today))
-        {
-            throw new InvalidOperationException("La fecha de llegada no puede ser posterior a hoy.");
-        }
+        AgroDigital.Api.Services.PeriodoCampaniaFechas.Validar(fechaLlegada, periodo, "fecha de llegada", fechaSalida);
     }
 
     /// <summary>CPE sin espacios en los extremos y en mayusculas, para comparar duplicados.</summary>

@@ -19,12 +19,6 @@ public class SeguimientosController(
 
     private static readonly string[] IncidenciasValidas = ["Plaga", "Maleza", "Enfermedad", "Ninguna"];
     private static readonly string[] TiposRegistroValidos = ["Siniestro", "Posemergente", "Refertilizacion"];
-    private static readonly string[] SiniestrosValidos =
-    [
-        "Granizo", "Sequia / Estres hidrico", "Helada tardia", "Anegamiento / Inundacion",
-        "Plagas de implantacion", "Fitotoxicidad por agroquimicos", "Encostramiento del suelo",
-        "Falla de germinacion", "Incendio"
-    ];
     private static readonly string[] AlcancesValidos = ["Parcial", "Total"];
     private static readonly string[] UnidadesInsumoValidas = ["Litros", "Kg"];
 
@@ -64,6 +58,7 @@ public class SeguimientosController(
             return NotFound();
         }
         if (siembra.Deshabilitada) return Conflict("La siembra deshabilitada se conserva como historial y no admite nuevos seguimientos.");
+        if (siembra.Estado == "Finalizado") return Conflict("El seguimiento finalizado queda disponible solo para consulta.");
 
         if (!string.Equals(siembra.EstadoSiembra, "Finalizado", StringComparison.OrdinalIgnoreCase))
         {
@@ -88,15 +83,14 @@ public class SeguimientosController(
         var siembra = await siembraRepository.ObtenerPorIdAsync(siembraId);
         if (siembra is null) return NotFound();
         if (siembra.Deshabilitada) return Conflict("La siembra deshabilitada se conserva como historial y no admite cambios.");
-
+        if (siembra.Estado == "Finalizado") return Conflict("El seguimiento finalizado queda disponible solo para consulta.");
         var lote = await loteRepository.ObtenerPorIdAsync(siembra.LoteId, usuario.UsuarioId, usuario.Rol == "Admin");
         if (lote is null) return NotFound();
-        var validationError = ValidarRegistro(request, siembra.FechaInicio, lote.Coordenadas, siembra.CantidadHectareasTrabajadas);
-        if (validationError is not null) return BadRequest(validationError);
-
         var actual = await seguimientoRepository.ObtenerPorIdAsync(siembraId, seguimientoId);
         if (actual is null) return NotFound();
         if (actual.TipoRegistro != request.TipoRegistro) return BadRequest("No se puede cambiar el tipo de registro.");
+        var validationError = ValidarRegistro(request, siembra.FechaInicio, lote.Coordenadas, siembra.CantidadHectareasTrabajadas);
+        if (validationError is not null) return BadRequest(validationError);
 
         var actualizado = await seguimientoRepository.ActualizarAsync(siembraId, seguimientoId, request, siembra.CantidadHectareasTrabajadas);
         return actualizado ? NoContent() : NotFound();
@@ -107,8 +101,7 @@ public class SeguimientosController(
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
         await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.Seguimiento, seguimientoId, "eliminar seguimientos");
-        if (await SiembraDeshabilitadaAsync(siembraId)) return Conflict("La siembra deshabilitada se conserva como historial y no admite cambios.");
-
+        if (await SeguimientoCerradoODeshabilitadoAsync(siembraId) is { } bloqueo) return Conflict(bloqueo);
         var rutas = await seguimientoRepository.ObtenerRutasDocumentosDeSeguimientoAsync(seguimientoId);
         var eliminado = await seguimientoRepository.EliminarAsync(siembraId, seguimientoId);
 
@@ -151,8 +144,7 @@ public class SeguimientosController(
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
         await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.Seguimiento, seguimientoId, "cargar insumos en seguimientos");
-        if (await SiembraDeshabilitadaAsync(siembraId)) return Conflict("La siembra deshabilitada se conserva como historial y no admite cambios.");
-
+        if (await SeguimientoCerradoODeshabilitadoAsync(siembraId) is { } bloqueo) return Conflict(bloqueo);
         if (!TiposInsumoValidos.Contains(request.Tipo ?? string.Empty))
         {
             return BadRequest("Tipo de insumo invalido.");
@@ -169,7 +161,7 @@ public class SeguimientosController(
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
         await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.Seguimiento, seguimientoId, "eliminar insumos de seguimientos");
-        if (await SiembraDeshabilitadaAsync(siembraId)) return Conflict("La siembra deshabilitada se conserva como historial y no admite cambios.");
+        if (await SeguimientoCerradoODeshabilitadoAsync(siembraId) is { } bloqueo) return Conflict(bloqueo);
         var eliminado = await seguimientoRepository.EliminarInsumoAsync(seguimientoId, insumoId);
         return eliminado ? NoContent() : NotFound();
     }
@@ -190,8 +182,7 @@ public class SeguimientosController(
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
         await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.Seguimiento, seguimientoId, "adjuntar documentos a seguimientos");
-        if (await SiembraDeshabilitadaAsync(siembraId)) return Conflict("La siembra deshabilitada se conserva como historial y no admite cambios.");
-
+        if (await SeguimientoCerradoODeshabilitadoAsync(siembraId) is { } bloqueo) return Conflict(bloqueo);
         if (archivo is null || archivo.Length == 0)
         {
             return BadRequest("Debes adjuntar un archivo.");
@@ -233,8 +224,7 @@ public class SeguimientosController(
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
         await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.Seguimiento, seguimientoId, "eliminar documentos de seguimientos");
-        if (await SiembraDeshabilitadaAsync(siembraId)) return Conflict("La siembra deshabilitada se conserva como historial y no admite cambios.");
-
+        if (await SeguimientoCerradoODeshabilitadoAsync(siembraId) is { } bloqueo) return Conflict(bloqueo);
         var ruta = await seguimientoRepository.ObtenerRutaDocumentoAsync(seguimientoId, documentoId);
         var eliminado = await seguimientoRepository.EliminarDocumentoAsync(seguimientoId, documentoId);
 
@@ -248,6 +238,14 @@ public class SeguimientosController(
 
     private async Task<bool> SiembraDeshabilitadaAsync(int siembraId) =>
         (await siembraRepository.ObtenerPorIdAsync(siembraId))?.Deshabilitada == true;
+
+    private async Task<string?> SeguimientoCerradoODeshabilitadoAsync(int siembraId)
+    {
+        var siembra = await siembraRepository.ObtenerPorIdAsync(siembraId);
+        if (siembra?.Deshabilitada == true) return "La siembra deshabilitada se conserva como historial y no admite cambios.";
+        if (siembra?.Estado == "Finalizado") return "El seguimiento finalizado queda disponible solo para consulta.";
+        return null;
+    }
 
     private bool TryGetAuthenticatedUser(out AuthenticatedUser usuario, out ActionResult error)
     {
@@ -298,15 +296,12 @@ public class SeguimientosController(
         if (fecha <= fechaInicioSiembra.Date || fecha > fechaInicioSiembra.Date.AddMonths(6))
             return $"La fecha debe ser posterior a la siembra y no superar los seis meses desde {fechaInicioSiembra:dd/MM/yyyy}.";
 
-        if (string.IsNullOrWhiteSpace(request.Observaciones))
-            return "Las observaciones son obligatorias.";
-
         if (!AlcancesValidos.Contains(request.Alcance ?? string.Empty))
             return "El alcance debe ser Parcial o Total.";
 
         if (request.TipoRegistro == "Siniestro")
         {
-            if (!SiniestrosValidos.Contains(request.Siniestro ?? string.Empty))
+            if (!SiniestroCatalogo.Valores.Contains(request.Siniestro ?? string.Empty))
                 return "Siniestro invalido.";
             if (!string.IsNullOrWhiteSpace(request.Incidencia))
                 return "Un siniestro no puede registrar un motivo de aplicacion.";

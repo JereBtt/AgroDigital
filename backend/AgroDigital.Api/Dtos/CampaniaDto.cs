@@ -45,6 +45,7 @@ public class CampaniaConsultaDto : CampaniaCombinacionDto
 
 public class CrearCampaniaRequest
 {
+    public string? Periodo { get; set; }
     public DateTime FechaInicio { get; set; }
     public DateTime FechaFin { get; set; }
     public string? Observaciones { get; set; }

@@ -8,7 +8,7 @@ export function calcularAvanceApto(siembrasDisponibles, cosechas, lotes, empresa
   const coincide = (item) =>
     (!empresa || normalizar(item.empresa) === normalizar(empresa))
     && (!campania || normalizar(item.campaniaNombre) === normalizar(campania));
-  const coincideCiclo = (item) => !cicloEstacional || item.cicloEstacional === cicloEstacional;
+  const coincideCiclo = (item) => !cicloEstacional || (item.cicloEstacional || 'Verano') === cicloEstacional;
   const lotesActivos = new Set(lotes.filter((lote) => lote.activo).map((lote) => String(lote.loteId)));
   const superficies = new Map();
   for (const siembra of siembrasDisponibles) {

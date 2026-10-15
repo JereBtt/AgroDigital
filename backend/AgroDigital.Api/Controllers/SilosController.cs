@@ -129,8 +129,10 @@ public class SilosController(
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
         await permisos.ExigirAsync(usuario, RecursoOperativo.Silo, siloId, RolesPermiso.Estructura, "editar silos");
         var esAdmin = usuario.Rol == "Admin";
+        var original = await siloRepository.ObtenerPorIdAsync(siloId, usuario.UsuarioId, esAdmin);
+        if (original is null) return NotFound();
 
-        var validacion = await ValidarFormularioAsync(request, usuario.UsuarioId, esAdmin);
+        var validacion = await ValidarFormularioAsync(request, usuario.UsuarioId, esAdmin, original.FechaEmbolsado);
         if (validacion is not null) return BadRequest(validacion);
 
         try
@@ -176,7 +178,8 @@ public class SilosController(
     /// Validaciones del formulario de silo, comunes al alta y a la edicion.
     /// Devuelve el mensaje de error, o null si todo esta bien.
     /// </summary>
-    private async Task<string?> ValidarFormularioAsync(ISiloFormulario request, int usuarioId, bool esAdmin)
+    private async Task<string?> ValidarFormularioAsync(ISiloFormulario request, int usuarioId, bool esAdmin,
+        DateOnly? fechaEmbolsadoOriginal = null)
     {
         if (string.IsNullOrWhiteSpace(request.Nombre)
             || string.IsNullOrWhiteSpace(request.TipoSilo)
@@ -213,7 +216,10 @@ public class SilosController(
             if (request.LargoM is null or <= 0) return "El largo del bolson es obligatorio y debe ser mayor a cero.";
             if (request.DiametroBolsonPies is null or <= 0) return "El diametro del bolson es obligatorio.";
             if (request.FechaEmbolsado is null) return "La fecha de embolsado es obligatoria.";
-            if (request.FechaEmbolsado > DateOnly.FromDateTime(DateTime.Today)) return "La fecha de embolsado no puede ser posterior a hoy.";
+            var (inicioPeriodo, finPeriodo, _) = PeriodoCampaniaFechas.Limites(null);
+            if (request.FechaEmbolsado != fechaEmbolsadoOriginal
+                && (request.FechaEmbolsado < inicioPeriodo || request.FechaEmbolsado > finPeriodo))
+                return $"La fecha de embolsado debe estar entre el 01/01/{inicioPeriodo.Year} y el 31/12/{finPeriodo.Year}.";
             if (request.FechaVencimientoEstimada is not null && request.FechaVencimientoEstimada < request.FechaEmbolsado)
                 return "El vencimiento estimado no puede ser anterior al embolsado.";
             if (request.IdentificacionEnLote?.Trim().Length > 120) return "La identificacion en el lote admite hasta 120 caracteres.";
@@ -308,9 +314,12 @@ public class SilosController(
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
         await permisos.ExigirEdicionRegistroCampoAsync(usuario, RecursoOperativo.ControlSilo, controlId, "editar controles de silo");
+        var original = await siloRepository.ObtenerControlPorIdAsync(siloId, controlId);
+        if (original is null) return NotFound();
 
         var fecha = request.Fecha ?? DateTime.Now;
-        var validacion = ValidarControl(request.HumedadGrano, request.Temperatura, request.EstadoGrano, fecha, request.FechaProximoControl);
+        var validacion = ValidarControl(request.HumedadGrano, request.Temperatura, request.EstadoGrano, fecha,
+            request.FechaProximoControl, DateOnly.FromDateTime(original.Fecha));
         if (validacion is not null) return BadRequest(validacion);
 
         var contexto = await siloRepository.ObtenerContextoControlAsync(siloId, fecha, controlId, usuario.UsuarioId, usuario.Rol == "Admin");
@@ -323,8 +332,13 @@ public class SilosController(
         return actualizado ? NoContent() : NotFound();
     }
 
-    private static string? ValidarControl(decimal humedad, decimal temperatura, string estadoGrano, DateTime fecha, DateOnly? fechaProximo)
+    private static string? ValidarControl(decimal humedad, decimal temperatura, string estadoGrano, DateTime fecha,
+        DateOnly? fechaProximo, DateOnly? fechaOriginal = null)
     {
+        var (inicioPeriodo, finPeriodo, _) = PeriodoCampaniaFechas.Limites(null);
+        var fechaControl = DateOnly.FromDateTime(fecha);
+        if (fechaControl != fechaOriginal && (fechaControl < inicioPeriodo || fechaControl > finPeriodo))
+            return $"La fecha del control debe estar entre el 01/01/{inicioPeriodo.Year} y el 31/12/{finPeriodo.Year}.";
         if (string.IsNullOrWhiteSpace(estadoGrano))
         {
             return "El Estado del grano es obligatorio.";
@@ -434,6 +448,13 @@ public class SilosController(
         if (!string.IsNullOrWhiteSpace(request.Tipo) && !TiposInsumoValidos.Contains(request.Tipo))
         {
             return BadRequest("Tipo de insumo invalido.");
+        }
+
+        if (request.FechaAplicacion.HasValue)
+        {
+            var (inicioPeriodo, finPeriodo, _) = PeriodoCampaniaFechas.Limites(null);
+            if (request.FechaAplicacion.Value < inicioPeriodo || request.FechaAplicacion.Value > finPeriodo)
+                return BadRequest($"La fecha de aplicación debe estar entre el 01/01/{inicioPeriodo.Year} y el 31/12/{finPeriodo.Year}.");
         }
 
         var insumo = await siloRepository.AgregarInsumoAsync(controlId, request);

@@ -6,6 +6,7 @@ namespace AgroDigital.Api.Repositories;
 
 public interface IEstadisticasRepository
 {
+    Task<string> ObtenerAgricolasAsync(int empresaId, int usuarioId, bool esAdmin);
     Task<EstadisticasAlmacenamientoDto> ObtenerAlmacenamientoAsync(
         int empresaId, DateOnly desde, DateOnly hasta, string? grano, int usuarioId, bool esAdmin);
 
@@ -32,7 +33,7 @@ public interface IEstadisticasRepository
         esa fecha. Los vencidos sin hacer cuentan como incumplidos, salvo que el silo
         ya no tenga grano. Los que todavia no vencieron no cuentan. No se filtra por grano.
 */
-public class EstadisticasRepository(IConfiguration configuration) : IEstadisticasRepository
+public partial class EstadisticasRepository(IConfiguration configuration) : IEstadisticasRepository
 {
     private readonly string _connectionString =
         configuration.GetConnectionString("AgroDigital")

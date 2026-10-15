@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { limitesPeriodoCampania } from './periodoFechas';
 import L from 'leaflet';
 import { Gauge } from 'lucide-react';
 import {
@@ -356,6 +357,7 @@ export default function Silos({ permisos = PERMISOS_TODOS, session, lotes, paren
   function openCrearControl(silo) {
     setSelectedSilo(silo);
     setActiveControlId(null);
+    setControlDetalle(null);
     setControlForm(getEmptyControlForm());
     setIncidenciaForm(emptyIncidenciaForm);
     setInsumoForm(emptyInsumoForm);
@@ -368,6 +370,7 @@ export default function Silos({ permisos = PERMISOS_TODOS, session, lotes, paren
 
   async function openEditarControl(silo, control) {
     setSelectedSilo(silo);
+    setControlDetalle(control);
     setActiveControlId(control.siloControlId);
     setControlForm({
       fecha: control.fecha ? control.fecha.slice(0, 10) : todayIso(),
@@ -399,6 +402,11 @@ export default function Silos({ permisos = PERMISOS_TODOS, session, lotes, paren
     setControlSaving(true);
     setError('');
     try {
+      const limites = limitesPeriodoCampania();
+      const fechaOriginal = controlDetalle?.fecha?.slice(0, 10);
+      if (!controlForm.fecha || (controlForm.fecha !== fechaOriginal
+        && (controlForm.fecha < limites.min || controlForm.fecha > limites.max)))
+        throw new Error(`La fecha del control debe estar entre el 01/01/${limites.min.slice(0, 4)} y el 31/12/${limites.max.slice(0, 4)}.`);
       const body = {
         fecha: controlForm.fecha ? new Date(`${controlForm.fecha}T00:00:00`).toISOString() : null,
         humedadGrano: Number(controlForm.humedadGrano),
@@ -530,6 +538,11 @@ export default function Silos({ permisos = PERMISOS_TODOS, session, lotes, paren
 
   async function handleAgregarInsumo(event) {
     event.preventDefault();
+    const limites = limitesPeriodoCampania();
+    if (insumoForm.fechaAplicacion && (insumoForm.fechaAplicacion < limites.min || insumoForm.fechaAplicacion > limites.max)) {
+      setError(`La fecha de aplicación debe estar entre el 01/01/${limites.min.slice(0, 4)} y el 31/12/${limites.max.slice(0, 4)}.`);
+      return;
+    }
     if (activeControlId) {
       setError('');
       try {
@@ -709,6 +722,7 @@ export default function Silos({ permisos = PERMISOS_TODOS, session, lotes, paren
       <SiloControlForm
         silo={selectedSilo}
         modoEdicion={Boolean(activeControlId)}
+        fechaOriginal={controlDetalle?.fecha?.slice(0, 10)}
         controlId={activeControlId}
         authHeaders={authHeaders}
         controlForm={controlForm}
@@ -1216,7 +1230,7 @@ function puntoDentroDelLote(latitud, longitud, coordenadas = []) {
 }
 
 // Valida un paso del wizard. Devuelve el mensaje de error o null.
-function validarPasoSilo(paso, form, { isCreate, lote, stockActual }) {
+function validarPasoSilo(paso, form, { isCreate, lote, stockActual, silo }) {
   if (paso === 1) {
     if (!String(form.nombre || '').trim()) return 'El nombre es obligatorio.';
     if (String(form.nombre).trim().length > 100) return 'El nombre admite hasta 100 caracteres.';
@@ -1234,7 +1248,10 @@ function validarPasoSilo(paso, form, { isCreate, lote, stockActual }) {
       if (!(Number(form.largoM) > 0)) return 'El largo del bolsón es obligatorio y debe ser mayor a cero.';
       if (!form.diametroBolsonPies) return 'Elegí el diámetro del bolsón.';
       if (!form.fechaEmbolsado) return 'La fecha de embolsado es obligatoria.';
-      if (form.fechaEmbolsado > todayIso()) return 'La fecha de embolsado no puede ser posterior a hoy.';
+      const limites = limitesPeriodoCampania();
+      if (form.fechaEmbolsado !== String(silo?.fechaEmbolsado ?? '').slice(0, 10)
+        && (form.fechaEmbolsado < limites.min || form.fechaEmbolsado > limites.max))
+        return `La fecha de embolsado debe estar entre el 01/01/${limites.min.slice(0, 4)} y el 31/12/${limites.max.slice(0, 4)}.`;
       if (form.fechaVencimientoEstimada && form.fechaVencimientoEstimada < form.fechaEmbolsado) {
         return 'El vencimiento estimado no puede ser anterior al embolsado.';
       }
@@ -1402,7 +1419,7 @@ function SiloWizard({ mode, form, silo, lotes = [], empresaNombre = '', saving, 
   }
 
   function siguiente() {
-    const mensaje = validarPasoSilo(paso, form, { isCreate, lote, stockActual });
+    const mensaje = validarPasoSilo(paso, form, { isCreate, lote, stockActual, silo });
     if (mensaje) {
       setErrorPaso(mensaje);
       return;
@@ -1420,7 +1437,7 @@ function SiloWizard({ mode, form, silo, lotes = [], empresaNombre = '', saving, 
       return;
     }
     for (let numero = 1; numero <= 4; numero += 1) {
-      const mensaje = validarPasoSilo(numero, form, { isCreate, lote, stockActual });
+      const mensaje = validarPasoSilo(numero, form, { isCreate, lote, stockActual, silo });
       if (mensaje) {
         setErrorPaso(mensaje);
         setPaso(numero);
@@ -1551,7 +1568,7 @@ function SiloWizard({ mode, form, silo, lotes = [], empresaNombre = '', saving, 
                     </label>
                     <label className="field">
                       <span className="field-label">Fecha de embolsado <b>*</b></span>
-                      <input type="date" max={todayIso()} value={form.fechaEmbolsado} onChange={(e) => cambiar('fechaEmbolsado', e.target.value)} />
+                      <input type="date" min={isCreate ? limitesPeriodoCampania().min : undefined} max={isCreate ? limitesPeriodoCampania().max : undefined} value={form.fechaEmbolsado} onChange={(e) => cambiar('fechaEmbolsado', e.target.value)} />
                     </label>
                     <label className="field">
                       Vencimiento estimado
@@ -2670,6 +2687,7 @@ function SiloHistorialList({ permisos = PERMISOS_TODOS, silo, controles, error, 
 function SiloControlForm({
   silo,
   modoEdicion,
+  fechaOriginal,
   controlId = null,
   authHeaders,
   controlForm,
@@ -2739,7 +2757,7 @@ function SiloControlForm({
         <div className="create-grid">
           <label className="field">
             <span className="field-label">Fecha <b>*</b></span>
-            <input type="date" required value={controlForm.fecha} onChange={(e) => onControlFieldChange('fecha', e.target.value)} />
+            <input type="date" required min={modoEdicion && fechaOriginal ? undefined : limitesPeriodoCampania().min} max={modoEdicion && fechaOriginal ? undefined : limitesPeriodoCampania().max} value={controlForm.fecha} onChange={(e) => onControlFieldChange('fecha', e.target.value)} />
             <small className="silo-hint">Se completa sola con la de hoy.</small>
           </label>
           <label className="field">
@@ -2924,7 +2942,7 @@ function SiloControlForm({
             <div className="create-grid">
               <label className="field">
                 <span className="field-label">Fecha de aplicacion <b>*</b></span>
-                <input type="date" value={insumoForm.fechaAplicacion} onChange={(e) => onInsumoFieldChange('fechaAplicacion', e.target.value)} />
+                <input type="date" min={limitesPeriodoCampania().min} max={limitesPeriodoCampania().max} value={insumoForm.fechaAplicacion} onChange={(e) => onInsumoFieldChange('fechaAplicacion', e.target.value)} />
               </label>
               <label className="field">
                 <span className="field-label">Marca <b>*</b></span>

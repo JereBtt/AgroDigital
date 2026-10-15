@@ -4,7 +4,7 @@ public static class SiniestroCatalogo
 {
     public static readonly string[] Valores =
     [
-        "Granizo", "Sequia / Estres hidrico", "Helada tardia", "Anegamiento / Inundacion",
+        "Granizo", "Sequia / Estres hidrico", "Helada", "Anegamiento / Inundacion",
         "Plagas de implantacion", "Fitotoxicidad por agroquimicos", "Encostramiento del suelo",
         "Falla de germinacion", "Incendio"
     ];

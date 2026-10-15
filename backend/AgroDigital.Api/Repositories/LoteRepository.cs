@@ -1,4 +1,5 @@
 using AgroDigital.Api.Dtos;
+using AgroDigital.Api.Services;
 using Microsoft.Data.SqlClient;
 using System.Globalization;
 
@@ -115,7 +116,7 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
         return lote;
     }
 
-    public async Task<bool> ExisteNombreAsync(string nombre, int usuarioId, bool incluirTodos = false, int? excluirLoteId = null)
+    public async Task<bool> ExisteNombreAsync(string nombre, int usuarioId, bool incluirTodos = false, int? excluirLoteId = null, int? empresaId = null)
     {
         const string sql = """
             SELECT CASE WHEN EXISTS (
@@ -124,6 +125,7 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
                 WHERE LOWER(LTRIM(RTRIM(l.Nombre))) COLLATE Latin1_General_100_CI_AI =
                       LOWER(LTRIM(RTRIM(@Nombre))) COLLATE Latin1_General_100_CI_AI
                   AND (@ExcluirLoteId IS NULL OR l.LoteId <> @ExcluirLoteId)
+                  AND l.EmpresaId = @EmpresaId
                   AND (
                         @IncluirTodos = 1
                         OR EXISTS (
@@ -139,7 +141,13 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
+        var empresaDestinoId = empresaId ?? (excluirLoteId.HasValue
+            ? await ObtenerEmpresaDelLoteAsync(connection, null, excluirLoteId.Value, usuarioId, incluirTodos)
+            : await ObtenerEmpresaPrincipalAsync(connection, null, usuarioId, incluirTodos));
+        if (empresaDestinoId is null) throw new RecursoNoEncontradoException("No se encontró la empresa del lote.");
+        await ValidarEmpresaDestinoAsync(connection, null, empresaDestinoId.Value, usuarioId, incluirTodos);
         await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@EmpresaId", empresaDestinoId.Value);
         command.Parameters.AddWithValue("@Nombre", nombre.Trim());
         command.Parameters.AddWithValue("@UsuarioId", usuarioId);
         command.Parameters.AddWithValue("@IncluirTodos", incluirTodos);
@@ -148,18 +156,17 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
         return Convert.ToInt32(await command.ExecuteScalarAsync()) == 1;
     }
 
-    public async Task<LoteSuperpuestoInfo?> ObtenerSuperposicionAsync(IEnumerable<LoteCoordenadaDto> coordenadas, int usuarioId, bool incluirTodos = false, int? excluirLoteId = null)
+    public async Task<LoteSuperpuestoInfo?> ObtenerSuperposicionAsync(IEnumerable<LoteCoordenadaDto> coordenadas, int usuarioId, bool incluirTodos = false, int? excluirLoteId = null, int? empresaId = null)
     {
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
 
-        var empresaId = excluirLoteId.HasValue
+        var empresaDestinoId = excluirLoteId.HasValue
             ? await ObtenerEmpresaDelLoteAsync(connection, null, excluirLoteId.Value, usuarioId, incluirTodos)
-            : await ObtenerEmpresaPrincipalAsync(connection, null, usuarioId, incluirTodos);
-
-        return empresaId is null
-            ? null
-            : await BuscarLoteSuperpuestoAsync(connection, null, empresaId.Value, coordenadas, excluirLoteId);
+            : empresaId ?? await ObtenerEmpresaPrincipalAsync(connection, null, usuarioId, incluirTodos);
+        if (empresaDestinoId is null) throw new RecursoNoEncontradoException("No se encontró la empresa del lote.");
+        await ValidarEmpresaDestinoAsync(connection, null, empresaDestinoId.Value, usuarioId, incluirTodos);
+        return await BuscarLoteSuperpuestoAsync(connection, null, empresaDestinoId.Value, coordenadas, excluirLoteId);
     }
 
     public async Task<LoteDto> CrearAsync(CrearLoteRequest request, int usuarioId, bool incluirTodos = false)
@@ -176,7 +183,8 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
 
         try
         {
-            var empresaId = await ObtenerEmpresaPrincipalAsync(connection, (SqlTransaction)transaction, usuarioId, incluirTodos);
+            var empresaId = request.EmpresaId ?? await ObtenerEmpresaPrincipalAsync(connection, (SqlTransaction)transaction, usuarioId, incluirTodos);
+            await ValidarEmpresaDestinoAsync(connection, (SqlTransaction)transaction, empresaId, usuarioId, incluirTodos);
             if (request.RegistrarDeshabilitado && request.Deshabilitacion?.Motivo == "Siniestro")
             {
                 var periodo = await BuscarPeriodoDeshabilitacionAsync(connection, (SqlTransaction)transaction, null, empresaId);
@@ -1061,6 +1069,27 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
         return Convert.ToInt32(await command.ExecuteScalarAsync());
     }
 
+    private static async Task ValidarEmpresaDestinoAsync(SqlConnection connection, SqlTransaction? transaction, int empresaId, int usuarioId, bool incluirTodos)
+    {
+        const string sql = """
+            SELECT CASE WHEN EXISTS (
+                SELECT 1 FROM dbo.Empresas AS e
+                WHERE e.EmpresaId = @EmpresaId AND e.Activo = 1
+                  AND (@IncluirTodos = 1 OR EXISTS (
+                      SELECT 1 FROM dbo.UsuarioEmpresas AS ue
+                      WHERE ue.UsuarioId = @UsuarioId AND ue.EmpresaId = e.EmpresaId
+                        AND ue.Activo = 1 AND ue.Rol IN (N'Gerente', N'Encargado')
+                  ))
+            ) THEN 1 ELSE 0 END;
+            """;
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@EmpresaId", empresaId);
+        command.Parameters.AddWithValue("@UsuarioId", usuarioId);
+        command.Parameters.AddWithValue("@IncluirTodos", incluirTodos);
+        if (Convert.ToInt32(await command.ExecuteScalarAsync()) != 1)
+            throw new RecursoNoEncontradoException("No se encontró una empresa activa con permisos para registrar el lote.");
+    }
+
     private static async Task<int> ObtenerEmpresaPrincipalAsync(SqlConnection connection, SqlTransaction? transaction, int usuarioId, bool incluirTodos)
     {
         var sql = incluirTodos
@@ -1222,9 +1251,14 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
         }
     }
 
+    private static string FormatearNombreLote(string nombre)
+    {
+        var cultura = CultureInfo.GetCultureInfo("es-AR");
+        return cultura.TextInfo.ToTitleCase(nombre.Trim().ToLower(cultura));
+    }
     private static void AgregarParametrosLote(SqlCommand command, CrearLoteRequest request)
     {
-        command.Parameters.AddWithValue("@Nombre", request.Nombre.Trim());
+        command.Parameters.AddWithValue("@Nombre", FormatearNombreLote(request.Nombre));
         command.Parameters.AddWithValue("@Pais", request.Pais.Trim());
         command.Parameters.AddWithValue("@Provincia", request.Provincia.Trim());
         command.Parameters.AddWithValue("@Ciudad", request.Ciudad.Trim());
@@ -1240,9 +1274,11 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
         const string sql = """
             SELECT COALESCE(c.CampaniaNombre, N'Sin campaña'), c.Producto,
                    MIN(c.FechaInicio) AS FechaInicio, MAX(c.FechaFinReal) AS FechaFin,
+                   COALESCE(s.CicloEstacional, N'Verano') AS CicloEstacional,
                    N'Cosechado', 0 AS OrdenInicial
             FROM dbo.Cosechas AS c
             INNER JOIN dbo.Lotes AS l ON l.LoteId = c.LoteId
+            LEFT JOIN dbo.Siembras AS s ON s.SiembraId = c.SiembraId
             WHERE c.LoteId = @LoteId
               AND c.Estado = N'Finalizado'
               AND (
@@ -1255,10 +1291,10 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
                           AND ue.Activo = 1
                     )
               )
-            GROUP BY c.CampaniaNombre, c.Producto
+            GROUP BY c.CampaniaNombre, c.Producto, COALESCE(s.CicloEstacional, N'Verano')
             UNION ALL
 
-            SELECT l.CultivoAnteriorCampania, l.CultivoAnterior, NULL, NULL, N'Cosechado', 1 AS OrdenInicial
+            SELECT l.CultivoAnteriorCampania, l.CultivoAnterior, NULL, NULL, NULL, N'Cosechado', 1 AS OrdenInicial
             FROM dbo.Lotes AS l
             WHERE l.LoteId = @LoteId
               AND NULLIF(LTRIM(RTRIM(l.CultivoAnterior)), N'') IS NOT NULL
@@ -1295,7 +1331,8 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
                 Cultivo = reader.GetString(1),
                 FechaInicio = reader.IsDBNull(2) ? null : reader.GetDateTime(2),
                 FechaFin = reader.IsDBNull(3) ? null : reader.GetDateTime(3),
-                EstadoCultivo = reader.GetString(4) switch
+                CicloEstacional = reader.IsDBNull(4) ? null : reader.GetString(4),
+                EstadoCultivo = reader.GetString(5) switch
                 {
                     "Finalizado" => "Cosechado",
                     "Cosechado" => "Cosechado",

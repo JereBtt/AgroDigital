@@ -220,7 +220,6 @@ public class DistribucionesController(
         if (request.OrigenGrano == "Cosecha" && request.CosechaId is not > 0) return "Indica la cosecha de la que sale el grano.";
         if (request.OrigenGrano == "Silo" && request.SiloId is not > 0) return "Indica el silo de origen.";
         if (request.FechaSalida == default) return "Debe indicar la fecha de salida.";
-        if (request.FechaSalida > DateOnly.FromDateTime(DateTime.Today)) return "La fecha de salida no puede ser posterior a hoy.";
         if (string.IsNullOrWhiteSpace(request.ResponsableACargo) || request.ResponsableACargo.Trim().Length > 150)
             return "El responsable a cargo es obligatorio (hasta 150 caracteres).";
         if (request.Observaciones?.Trim().Length > 1000) return "Las observaciones admiten hasta 1000 caracteres.";

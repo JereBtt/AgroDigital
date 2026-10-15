@@ -18,6 +18,11 @@ export const RANGOS_UREA = {
   "sorgo granifero": [0, 300], trigo: [0, 300], girasol: [0, 250]
 };
 
+export const RANGOS_RINDE_COSECHA = {
+  soja: [500, 6000], maiz: [2000, 18000], sorgo: [1000, 10000],
+  "sorgo granifero": [1000, 10000], trigo: [800, 7000], girasol: [500, 5000]
+};
+
 export function fueraDeRangoOrientativo(value, rango) {
   const numero = Number(value);
   return Boolean(rango && value !== "" && value != null && Number.isFinite(numero) && numero > 0 && (numero < rango[0] || numero > rango[1]));

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BarChart3, CalendarDays, ClipboardCheck, Clock, LoaderCircle, Scale, Truck, Warehouse, Wheat } from 'lucide-react';
+import EstadisticasAgricolas from './EstadisticasAgricolas.jsx';
 
 /*
-  Estadisticas (primera version, ver AGENTS.md).
-  - Pestanias: Silos y almacenamiento | Distribucion.
-  - Filtros comunes: empresa (barra superior de App), periodo con atajos y grano.
+  Estadisticas (ver AGENTS.md y docs/estadisticas-agricolas.md).
+  - Rinde, Siniestros y Productividad: filtros agrícolas propios por campaña y cultivo.
+  - Silos y almacenamiento y Distribucion: periodo con atajos y grano.
   - Cada indicador y grafico indica si responde al periodo o muestra el estado al dia de hoy.
   - Acceso: Gerente, Encargado y Admin (la API tambien lo valida).
   Los graficos son HTML/SVG propios, sin librerias, con la misma paleta del sistema.
@@ -147,7 +148,8 @@ function FilaBarra({ etiqueta, valor, porcentaje, color, chip }) {
 
 export default function Estadisticas({ session, parentFilters = null, selectedEmpresaId = '' }) {
   const puedeVer = ROLES_ESTADISTICAS.includes(session?.role);
-  const [tab, setTab] = useState('almacenamiento');
+  const [tab, setTab] = useState('rinde');
+  const agricola = ['rinde', 'siniestros', 'productividad'].includes(tab);
   const [preset, setPreset] = useState('6m');
   const [rango, setRango] = useState(() => rangoPreset('6m'));
   const [campaniaId, setCampaniaId] = useState('');
@@ -185,7 +187,7 @@ export default function Estadisticas({ session, parentFilters = null, selectedEm
 
   // Datos de la pestania activa.
   useEffect(() => {
-    if (!puedeVer || !selectedEmpresaId || rangoInvalido) return undefined;
+    if (!puedeVer || !selectedEmpresaId || rangoInvalido || agricola) return undefined;
     let vigente = true;
     const query = new URLSearchParams({ empresaId: selectedEmpresaId, desde: rango.desde, hasta: rango.hasta });
     if (grano) query.set('grano', grano);
@@ -206,7 +208,7 @@ export default function Estadisticas({ session, parentFilters = null, selectedEm
       .finally(() => vigente && setCargando(false));
 
     return () => { vigente = false; };
-  }, [puedeVer, selectedEmpresaId, tab, rango.desde, rango.hasta, grano, rangoInvalido, headers]);
+  }, [puedeVer, selectedEmpresaId, tab, agricola, rango.desde, rango.hasta, grano, rangoInvalido, headers]);
 
   function elegirPreset(id) {
     setPreset(id);
@@ -280,11 +282,20 @@ export default function Estadisticas({ session, parentFilters = null, selectedEm
   }
 
   const actual = datos[tab];
+  const pestanias = <div className="alm-tabs agr-tabs" role="tablist" aria-label="Secciones de estadísticas">
+    {[['rinde', 'Rinde'], ['siniestros', 'Siniestros'], ['productividad', 'Productividad'], ['almacenamiento', 'Silos y almacenamiento'], ['distribucion', 'Distribución']].map(([id, label]) =>
+      <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>{label}</button>)}
+  </div>;
+  if (agricola) return <section className="content-panel list-panel">
+    {encabezado}{parentFilters}{pestanias}
+    <EstadisticasAgricolas key={selectedEmpresaId} session={session} empresaId={selectedEmpresaId} tab={tab} />
+  </section>;
 
   return (
     <section className="content-panel list-panel">
       {encabezado}
       {parentFilters}
+      {pestanias}
 
       <section className="dashboard-card est-filtros" aria-label="Período y grano">
         <div className="est-filtros-grilla">
@@ -333,11 +344,6 @@ export default function Estadisticas({ session, parentFilters = null, selectedEm
         </div>
         {rangoInvalido && <p className="alm-error" role="alert">La fecha Desde no puede ser posterior a Hasta.</p>}
       </section>
-
-      <div className="alm-tabs" role="tablist" aria-label="Secciones de estadísticas">
-        <button type="button" role="tab" aria-selected={tab === 'almacenamiento'} className={tab === 'almacenamiento' ? 'active' : ''} onClick={() => setTab('almacenamiento')}>Silos y almacenamiento</button>
-        <button type="button" role="tab" aria-selected={tab === 'distribucion'} className={tab === 'distribucion' ? 'active' : ''} onClick={() => setTab('distribucion')}>Distribución</button>
-      </div>
 
       {error && <p className="alm-error" role="alert">{error}</p>}
 

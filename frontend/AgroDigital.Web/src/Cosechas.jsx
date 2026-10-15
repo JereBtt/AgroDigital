@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import L from 'leaflet';
 import { calcularAvanceApto, finPeriodoCampania } from './cosechaIndicators.js';
 import { calcularKgCosechados, calcularRindeKgHa, formatearEnteroConMiles, parsearEnteroConMiles } from './cosechaResultado.js';
+import { RANGOS_RINDE_COSECHA, fueraDeRangoOrientativo } from './agronomicRanges.js';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -73,7 +74,7 @@ const COSECHA_FIELD_RULES = {
   hectareasHora: 'Es obligatoria y mayor que cero. Alimenta la productividad promedio de la consulta.',
   kg: 'Es obligatorio y no puede ser menor a lo que ya ingresó a silos desde esta cosecha.',
   hectareas: 'Es obligatoria, mayor que cero y sin superar la superficie del lote.',
-  rinde: 'Se calcula: kg ÷ ha. No se edita a mano.',
+  rinde: 'Ingresá el total o el rinde; el otro valor se calcula automáticamente según las hectáreas trabajadas.',
   rindeSeco: 'Rinde llevado a la humedad base de comercialización del grano.',
   humedad: 'Es obligatoria, entre 0 y 100 %.',
   impurezas: 'Es opcional, entre 0 y 100 %.',
@@ -223,6 +224,7 @@ function getEmptyCosechaForm() {
     fechaFinReal: '',
     justificacionDesvioFin: '',
     cantidadGranoCosechado: '',
+    rindeIngresado: '',
     cantidadHectareasTrabajadas: '',
     humedadGrano: '',
     impurezas: '',
@@ -266,15 +268,24 @@ function getEmptyParteForm() {
 // Contenedor
 // =====================================================================
 
-export default function Cosechas({ permisos = PERMISOS_TODOS, session, lotes, parentFilters, selectedEmpresaId = '', selectedEmpresaName = '', selectedCampaniaName = '' }) {
+export default function Cosechas({ permisos = PERMISOS_TODOS, session, lotes, parentFilters, selectedEmpresaId = '', selectedEmpresaName = '', selectedCampaniaName = '', selectedCicloEstacional = 'Verano', onLotesChanged, onCampaniasChanged }) {
   const [view, setView] = useState('list');
   const [cosechas, setCosechas] = useState([]);
   const [siembrasDisponibles, setSiembrasDisponibles] = useState([]);
+  const siembrasDisponiblesEnSeleccion = useMemo(() => siembrasDisponibles.filter((siembra) => {
+    const mismaEmpresa = selectedEmpresaId
+      ? String(siembra.empresaId) === String(selectedEmpresaId)
+      : !selectedEmpresaName || normalizeSearchText(siembra.empresa || '') === normalizeSearchText(selectedEmpresaName);
+    return mismaEmpresa
+      && (!selectedCampaniaName || normalizeSearchText(siembra.campaniaNombre || '') === normalizeSearchText(selectedCampaniaName))
+      && (siembra.cicloEstacional || 'Verano') === selectedCicloEstacional;
+  }), [siembrasDisponibles, selectedEmpresaId, selectedEmpresaName, selectedCampaniaName, selectedCicloEstacional]);
   const [maquinariaCatalogos, setMaquinariaCatalogos] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [basesHumedad, setBasesHumedad] = useState([]);
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState(getEmptyCosechaForm);
+  const origenResultadoEdicion = useRef('total');
   const [documentos, setDocumentos] = useState([]);
   const [tiradas, setTiradas] = useState([]);
   const [parametros, setParametros] = useState(null);
@@ -409,6 +420,7 @@ export default function Cosechas({ permisos = PERMISOS_TODOS, session, lotes, pa
 
   async function openEdit(cosecha) {
     setSelected(cosecha);
+    origenResultadoEdicion.current = 'total';
     setForm({
       ...getEmptyCosechaForm(),
       siembraId: cosecha.siembraId ?? '',
@@ -422,6 +434,7 @@ export default function Cosechas({ permisos = PERMISOS_TODOS, session, lotes, pa
       fechaFinReal: toDateInput(cosecha.fechaFinReal),
       justificacionDesvioFin: cosecha.justificacionDesvioFin || '',
       cantidadGranoCosechado: cosecha.cantidadGranoCosechado ?? '',
+      rindeIngresado: calcularRindeKgHa(cosecha.cantidadGranoCosechado ?? '', cosecha.cantidadHectareasTrabajadas ?? ''),
       cantidadHectareasTrabajadas: cosecha.cantidadHectareasTrabajadas ?? '',
       humedadGrano: cosecha.humedadGrano ?? '',
       impurezas: cosecha.impurezas ?? '',
@@ -434,10 +447,24 @@ export default function Cosechas({ permisos = PERMISOS_TODOS, session, lotes, pa
   }
 
   function updateField(field, value) {
-    const numericos = ['anchoCabezalM', 'cantidadGranoCosechado', 'cantidadHectareasTrabajadas', 'humedadGrano', 'impurezas', 'hectareasHora'];
+    if (field === 'cantidadGranoCosechado' || field === 'rindeIngresado') value = parsearEnteroConMiles(value);
+    const numericos = ['anchoCabezalM', 'cantidadGranoCosechado', 'rindeIngresado', 'cantidadHectareasTrabajadas', 'humedadGrano', 'impurezas', 'hectareasHora'];
     if (numericos.includes(field) && value !== '' && (!Number.isFinite(Number(value)) || Number(value) < 0)) return;
+    if (field === 'cantidadGranoCosechado') origenResultadoEdicion.current = 'total';
+    if (field === 'rindeIngresado') origenResultadoEdicion.current = 'rinde';
     setForm((current) => {
       const next = { ...current, [field]: field === 'cosechadora' ? String(value).toLocaleUpperCase('es') : value };
+      if (field === 'cantidadGranoCosechado') {
+        next.rindeIngresado = calcularRindeKgHa(value, current.cantidadHectareasTrabajadas);
+      } else if (field === 'rindeIngresado') {
+        next.cantidadGranoCosechado = calcularKgCosechados(value, current.cantidadHectareasTrabajadas);
+      } else if (field === 'cantidadHectareasTrabajadas') {
+        if (origenResultadoEdicion.current === 'rinde') {
+          next.cantidadGranoCosechado = calcularKgCosechados(current.rindeIngresado, value);
+        } else {
+          next.rindeIngresado = calcularRindeKgHa(current.cantidadGranoCosechado, value);
+        }
+      }
       if (field === 'tipoServicio' && value !== 'Contratada') next.contratista = '';
       if (field === 'tipoServicio' && value === '') { next.cosechadora = ''; next.anchoCabezalM = ''; }
       return next;
@@ -476,6 +503,7 @@ export default function Cosechas({ permisos = PERMISOS_TODOS, session, lotes, pa
         const creada = await api('/api/cosechas', { method: 'POST', body: { siembraId: Number(form.siembraId), ...generales } });
         setAviso(`${creada.nombre} quedó registrada En curso.`);
       }
+      await Promise.all([onLotesChanged?.(), onCampaniasChanged?.()]);
       goToList();
     } catch (err) {
       mostrarError('No se pudo guardar la cosecha', err);
@@ -563,6 +591,7 @@ export default function Cosechas({ permisos = PERMISOS_TODOS, session, lotes, pa
     setSaving(true);
     try {
       await api(`/api/cosechas/${finalizarTarget.cosechaId}/finalizar`, { method: 'POST', body });
+      await Promise.all([onLotesChanged?.(), onCampaniasChanged?.()]);
       setAviso(`${finalizarTarget.nombre} quedó Finalizada.`);
       setFinalizarTarget(null);
       if (view === 'list') {
@@ -907,7 +936,7 @@ export default function Cosechas({ permisos = PERMISOS_TODOS, session, lotes, pa
         <CosechaForm
           modoEdicion={view === 'edit'}
           cosecha={selected}
-          siembras={siembrasDisponibles}
+          siembras={siembrasDisponiblesEnSeleccion}
           usuarios={usuarios}
           maquinariaCatalogos={maquinariaCatalogos}
           cosechas={cosechas}
@@ -1009,6 +1038,7 @@ export default function Cosechas({ permisos = PERMISOS_TODOS, session, lotes, pa
         siembrasDisponibles={siembrasDisponibles}
         lotes={lotes}
         parentFilters={parentFilters}
+        selectedCicloEstacional={selectedCicloEstacional}
         selectedEmpresaName={selectedEmpresaName}
         selectedCampaniaName={selectedCampaniaName}
         loading={loading}
@@ -1045,11 +1075,10 @@ function porcentajeAvance(cosecha) {
   return Math.min(100, (hectareasCosechadasDe(cosecha) / sembradas) * 100);
 }
 
-function CosechasList({ permisos = PERMISOS_TODOS, cosechas, siembrasDisponibles, lotes, parentFilters, selectedEmpresaName, selectedCampaniaName, loading, mensajes, onAdd, onEdit, onView, onPartes, onTirada, onParametros, onFinalize }) {
+function CosechasList({ permisos = PERMISOS_TODOS, cosechas, siembrasDisponibles, lotes, parentFilters, selectedCicloEstacional, selectedEmpresaName, selectedCampaniaName, loading, mensajes, onAdd, onEdit, onView, onPartes, onTirada, onParametros, onFinalize }) {
   const [query, setQuery] = useState('');
   const [productoFilter, setProductoFilter] = useState('');
   const [estadoFilter, setEstadoFilter] = useState('');
-  const [cicloEstacionalFilter, setCicloEstacionalFilter] = useState('');
   const [controlFilter, setControlFilter] = useState('');
   const [mostrarMasFiltros, setMostrarMasFiltros] = useState(false);
   const [dateFromFilter, setDateFromFilter] = useState('');
@@ -1075,17 +1104,17 @@ function CosechasList({ permisos = PERMISOS_TODOS, cosechas, siembrasDisponibles
     const matchesQuery = !texto || camposBusqueda.some((campo) => normalizeSearchText(campo).includes(texto));
     const matchesGrano = !productoFilter || grainKey(cosecha.producto) === productoFilter;
     const matchesEstado = !estadoFilter || cosecha.estado === estadoFilter;
-    const matchesCicloEstacional = !cicloEstacionalFilter || cosecha.cicloEstacional === cicloEstacionalFilter;
+    const matchesCicloEstacional = (cosecha.cicloEstacional || 'Verano') === selectedCicloEstacional;
     const matchesControl = !controlFilter || cosecha.estadoControl === controlFilter;
     const matchesFrom = !dateFromFilter || fechaInicio >= dateFromFilter;
     const matchesTo = !dateToFilter || fechaInicio <= dateToFilter;
     const matchesEmpresa = !selectedEmpresaName || normalizeSearchText(cosecha.empresa || '') === normalizeSearchText(selectedEmpresaName);
     const matchesCampania = !selectedCampaniaName || normalizeSearchText(cosecha.campaniaNombre || '') === normalizeSearchText(selectedCampaniaName);
     return matchesQuery && matchesGrano && matchesEstado && matchesCicloEstacional && matchesControl && matchesFrom && matchesTo && matchesEmpresa && matchesCampania;
-  }), [cosechas, query, productoFilter, estadoFilter, cicloEstacionalFilter, controlFilter, dateFromFilter, dateToFilter, selectedEmpresaName, selectedCampaniaName]);
+  }), [cosechas, query, productoFilter, estadoFilter, selectedCicloEstacional, controlFilter, dateFromFilter, dateToFilter, selectedEmpresaName, selectedCampaniaName]);
 
   const indicadores = useMemo(() => {
-    const avance = calcularAvanceApto(siembrasDisponibles, cosechas, lotes, selectedEmpresaName, selectedCampaniaName, cicloEstacionalFilter);
+    const avance = calcularAvanceApto(siembrasDisponibles, cosechas, lotes, selectedEmpresaName, selectedCampaniaName, selectedCicloEstacional);
 
     // Rinde ponderado por grano: kg totales / ha totales de las finalizadas.
     const porGrano = {};
@@ -1121,13 +1150,12 @@ function CosechasList({ permisos = PERMISOS_TODOS, cosechas, siembrasDisponibles
       perdida,
       totalTiradas
     };
-  }, [filtered, cosechas, siembrasDisponibles, lotes, selectedEmpresaName, selectedCampaniaName, cicloEstacionalFilter]);
+  }, [filtered, cosechas, siembrasDisponibles, lotes, selectedEmpresaName, selectedCampaniaName, selectedCicloEstacional]);
 
   function clearFilters() {
     setQuery('');
     setProductoFilter('');
     setEstadoFilter('');
-    setCicloEstacionalFilter('');
     setControlFilter('');
     setDateFromFilter('');
     setDateToFilter('');
@@ -1135,7 +1163,7 @@ function CosechasList({ permisos = PERMISOS_TODOS, cosechas, siembrasDisponibles
 
   const hayFilasSeleccionadas = Object.values(selected).some(Boolean);
   const cantidadFiltrosAvanzados = [dateFromFilter, dateToFilter].filter(Boolean).length;
-  const hayFiltrosActivos = Boolean(query.trim() || productoFilter || estadoFilter || cicloEstacionalFilter || controlFilter || cantidadFiltrosAvanzados);
+  const hayFiltrosActivos = Boolean(query.trim() || productoFilter || estadoFilter || controlFilter || cantidadFiltrosAvanzados);
 
   function toggleSeleccion(cosechaId) {
     setSelected((current) => ({ ...current, [cosechaId]: !current[cosechaId] }));
@@ -1215,11 +1243,6 @@ function CosechasList({ permisos = PERMISOS_TODOS, cosechas, siembrasDisponibles
           <option value="">Estado</option>
           <option value="En curso">En curso</option>
           <option value="Finalizado">Finalizado</option>
-        </select>
-        <select value={cicloEstacionalFilter} onChange={(event) => setCicloEstacionalFilter(event.target.value)} aria-label="Filtrar por ciclo estacional">
-          <option value="">Ciclo estacional</option>
-          <option value="Verano">Verano</option>
-          <option value="Invierno">Invierno</option>
         </select>
         <select value={controlFilter} onChange={(event) => setControlFilter(event.target.value)} aria-label="Filtrar por control de pérdidas">
           <option value="">Control de pérdidas</option>
@@ -1419,6 +1442,21 @@ function FieldRule({ children }) {
   );
 }
 
+function RindeOrientativo({ producto, valor }) {
+  const rango = RANGOS_RINDE_COSECHA[grainKey(producto)];
+  if (!rango) return null;
+  const intervalo = `${formatNumber(rango[0], '', 0)} a ${formatNumber(rango[1], '', 0)} kg/ha`;
+  return <>
+    <span className="cos-hint">Rango orientativo para {grainLabel(producto)}: {intervalo}.</span>
+    {fueraDeRangoOrientativo(valor, rango) && (
+      <span className="field-warning" role="status">
+        <AlertTriangle size={16} aria-hidden="true" />
+        El rinde está fuera del rango orientativo para {grainLabel(producto)} ({intervalo}). Podés continuar si el dato es correcto.
+      </span>
+    )}
+  </>;
+}
+
 function SectionTitle({ icon: Icon, title, description }) {
   return (
     <div className="siembra-section-title">
@@ -1448,7 +1486,7 @@ function validarCosechaForm(form, { modoEdicion, cosecha, siembra }) {
   const errores = {};
   const finSiembra = modoEdicion ? null : toDateInput(siembra?.fechaFinReal);
 
-  if (!modoEdicion && !form.siembraId) errores.siembraId = 'Seleccioná la siembra a cosechar.';
+  if (!modoEdicion && (!form.siembraId || !siembra)) errores.siembraId = 'Seleccioná una siembra disponible para la empresa, campaña y ciclo elegidos.';
   if (!form.fechaInicio) {
     errores.fechaInicio = 'La fecha de inicio es obligatoria.';
   } else if (finSiembra && form.fechaInicio < finSiembra) {
@@ -1694,7 +1732,7 @@ function CosechaForm({
       {finalizada && (
         <div className="siembra-step-card dashboard-card">
           <SectionTitle icon={CheckCircle2} title="Resultado de cosecha" description="La cosecha está finalizada: podés corregir el resultado." />
-          <div className="create-grid cos-grid-auto">
+          <div className="create-grid cos-result-grid">
             <label className="field">
               <span className="field-label">Fecha real de finalización <b>*</b></span>
               <input type="date" required min={form.fechaInicio || undefined} max={form.fechaInicio ? sumarMeses(form.fechaInicio, MESES_MAXIMOS_COSECHA) : undefined} value={form.fechaFinReal} onChange={(event) => onFieldChange('fechaFinReal', event.target.value)} />
@@ -1708,8 +1746,8 @@ function CosechaForm({
               {mostrarError('hectareasHora')}
             </label>
             <label className="field">
-              <span className="field-label">Grano cosechado (kg) <b>*</b></span>
-              <input type="number" min="0" step="1" value={form.cantidadGranoCosechado} onChange={(event) => onFieldChange('cantidadGranoCosechado', event.target.value)} />
+              <span className="field-label">Total cosechado (kg) <b>*</b></span>
+              <input type="text" inputMode="numeric" value={formatearEnteroConMiles(form.cantidadGranoCosechado)} onChange={(event) => onFieldChange('cantidadGranoCosechado', event.target.value)} />
               {mostrarError('cantidadGranoCosechado')}
             </label>
             <label className="field">
@@ -1723,12 +1761,12 @@ function CosechaForm({
               {mostrarError('humedadGrano')}
             </label>
             <label className="field">
-              Impurezas (%)
+              <span className="field-label">Impurezas (%)</span>
               <input type="number" min="0" max="99.99" step="0.1" value={form.impurezas} onChange={(event) => onFieldChange('impurezas', event.target.value)} />
               {mostrarError('impurezas')}
             </label>
-            <label className="field">Rinde húmedo<input readOnly value={formatNumber(rinde, ' kg/ha', 0)} /><FieldRule>{COSECHA_FIELD_RULES.rinde}</FieldRule></label>
-            <label className="field">Rinde seco<input readOnly value={humedadBase == null ? 'Sin humedad base para el grano' : formatNumber(rindeSeco, ' kg/ha', 0)} /><FieldRule>{COSECHA_FIELD_RULES.rindeSeco}{humedadBase != null ? ` Base: ${formatNumber(humedadBase, ' %', 1)}.` : ''}</FieldRule></label>
+            <label className="field"><span className="field-label">Rinde húmedo (kg/ha) <b>*</b></span><input type="text" inputMode="numeric" value={formatearEnteroConMiles(form.rindeIngresado)} onChange={(event) => onFieldChange('rindeIngresado', event.target.value)} /><FieldRule>{COSECHA_FIELD_RULES.rinde}</FieldRule><RindeOrientativo producto={cosecha.producto} valor={form.rindeIngresado} /></label>
+            <label className="field"><span className="field-label">Rinde seco</span><input readOnly value={humedadBase == null ? 'Sin humedad base para el grano' : formatNumber(rindeSeco, ' kg/ha', 0)} /><FieldRule>{COSECHA_FIELD_RULES.rindeSeco}{humedadBase != null ? ` Base: ${formatNumber(humedadBase, ' %', 1)}.` : ''}</FieldRule></label>
           </div>
           {Math.abs(desvio) > DIAS_DESVIO_REQUIERE_JUSTIFICACION && (
             <label className="field cos-field-wide">
@@ -1934,6 +1972,7 @@ function FinalizarCosechaModal({ cosecha, humedadBase, saving, onFinalizar, onCa
             <span className="field-label">Rinde promedio (kg/ha) <b>*</b></span>
             <input type="text" inputMode="numeric" value={formatearEnteroConMiles(datos.rindeIngresado)} onChange={(event) => cambiar('rindeIngresado', event.target.value)} />
             <span className="cos-hint">Rinde húmedo: kg ÷ ha.</span>
+            <RindeOrientativo producto={cosecha.producto} valor={datos.rindeIngresado} />
           </label>
           <label className="field">
             <span className="field-label">Humedad del grano (%) <b>*</b></span>

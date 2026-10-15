@@ -29,9 +29,12 @@ public class LotesController(ILoteRepository loteRepository, IAuthTokenService a
     public async Task<ActionResult<LoteDto>> Crear(CrearLoteRequest request)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
-        await permisos.ExigirEnEmpresaPrincipalAsync(usuario, RolesPermiso.Estructura, "registrar lotes");
+        if (request.EmpresaId is int empresaId)
+            await permisos.ExigirAsync(usuario, RecursoOperativo.Empresa, empresaId, RolesPermiso.Estructura, "registrar lotes");
+        else
+            await permisos.ExigirEnEmpresaPrincipalAsync(usuario, RolesPermiso.Estructura, "registrar lotes");
         if (request.RegistrarDeshabilitado && ValidarDeshabilitacion(request.Deshabilitacion, allowRecentlyRented: true) is { } errorMotivo) return BadRequest(errorMotivo);
-        if (await loteRepository.ExisteNombreAsync(request.Nombre, usuario.UsuarioId, usuario.Rol == "Admin"))
+        if (await loteRepository.ExisteNombreAsync(request.Nombre, usuario.UsuarioId, usuario.Rol == "Admin", empresaId: request.EmpresaId))
         {
             return Conflict("Ya existe un lote registrado con ese nombre. Revisa mayusculas, minusculas o espacios.");
         }
@@ -55,12 +58,19 @@ public class LotesController(ILoteRepository loteRepository, IAuthTokenService a
     public async Task<IActionResult> ValidarRegistro(CrearLoteRequest request, [FromQuery] int? excluirLoteId = null)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
-        if (await loteRepository.ExisteNombreAsync(request.Nombre, usuario.UsuarioId, usuario.Rol == "Admin", excluirLoteId))
+        if (excluirLoteId is int loteId)
+            await permisos.ExigirAsync(usuario, RecursoOperativo.Lote, loteId, RolesPermiso.Estructura, "validar lotes");
+        else if (request.EmpresaId is int empresaId)
+            await permisos.ExigirAsync(usuario, RecursoOperativo.Empresa, empresaId, RolesPermiso.Estructura, "validar lotes");
+        else
+            await permisos.ExigirEnEmpresaPrincipalAsync(usuario, RolesPermiso.Estructura, "validar lotes");
+        var empresaDestinoId = excluirLoteId.HasValue ? null : request.EmpresaId;
+        if (await loteRepository.ExisteNombreAsync(request.Nombre, usuario.UsuarioId, usuario.Rol == "Admin", excluirLoteId, empresaDestinoId))
         {
             return Conflict("Ya existe un lote registrado con ese nombre. Revisa mayusculas, minusculas o espacios.");
         }
 
-        var loteSuperpuesto = await loteRepository.ObtenerSuperposicionAsync(request.Coordenadas, usuario.UsuarioId, usuario.Rol == "Admin", excluirLoteId);
+        var loteSuperpuesto = await loteRepository.ObtenerSuperposicionAsync(request.Coordenadas, usuario.UsuarioId, usuario.Rol == "Admin", excluirLoteId, empresaDestinoId);
         return loteSuperpuesto is null
             ? NoContent()
             : Conflict(LoteSuperpuestoException.CrearMensaje(loteSuperpuesto));

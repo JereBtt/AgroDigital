@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { limitesPeriodoCampania, periodoOperativoDeFecha } from './periodoFechas';
 import {
   ArrowDownCircle,
   ArrowDownToLine,
@@ -954,6 +955,7 @@ function MovimientoForm({ mode, form, setForm, movimiento, silos, stock, canEdit
   const isAjuste = tipo === 'Ajuste';
 
   const [cosechas, setCosechas] = useState([]);
+  const [periodos, setPeriodos] = useState([]);
   const [saldo, setSaldo] = useState(null);
   const [silosDestino, setSilosDestino] = useState([]);
   const [loadingDestino, setLoadingDestino] = useState(false);
@@ -964,6 +966,12 @@ function MovimientoForm({ mode, form, setForm, movimiento, silos, stock, canEdit
     setLocalError('');
     setForm((current) => ({ ...current, [field]: value }));
   }
+
+  useEffect(() => {
+    if (readOnly) return;
+    fetchJson('/api/campanias').then(setPeriodos).catch(() => setPeriodos([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readOnly]);
 
   // Cosechas con saldo (solo para registrar ingresos nuevos).
   useEffect(() => {
@@ -1025,6 +1033,12 @@ function MovimientoForm({ mode, form, setForm, movimiento, silos, stock, canEdit
   const cosechasDeCampania = form.campaniaId
     ? cosechas.filter((c) => String(c.campaniaId ?? c.campaniaNombre) === String(form.campaniaId))
     : cosechas;
+  const cosechaElegida = cosechas.find((c) => String(c.cosechaId) === String(form.cosechaId));
+  const campaniaIdFecha = isCreate && isIngreso ? cosechaElegida?.campaniaId : movimiento?.campaniaId;
+  const periodoFecha = periodos.find((c) => String(c.campaniaId) === String(campaniaIdFecha))?.periodo
+    ?? (isCreate && isIngreso ? cosechaElegida?.campaniaNombre : movimiento?.campania)
+    ?? (!isCreate && movimiento?.fecha ? periodoOperativoDeFecha(movimiento.fecha) : null);
+  const limitesFecha = limitesPeriodoCampania(periodoFecha, !isCreate ? movimiento?.fecha : null);
 
   // Saldo disponible: al editar, lo propio de este movimiento vuelve a estar disponible.
   const disponible = saldo
@@ -1056,7 +1070,8 @@ function MovimientoForm({ mode, form, setForm, movimiento, silos, stock, canEdit
 
   function validar() {
     if (!form.fecha) return 'Indicá la fecha.';
-    if (form.fecha > todayIso()) return 'La fecha no puede ser posterior a hoy.';
+    if (form.fecha < limitesFecha.min || form.fecha > limitesFecha.max)
+      return `La fecha debe estar entre el 01/01/${limitesFecha.min.slice(0, 4)} y el 31/12/${limitesFecha.max.slice(0, 4)}.`;
     if (isCreate && isIngreso && !form.cosechaId) return 'Elegí la cosecha de la que viene el grano.';
     if (isCreate && !form.siloId) return isIngreso ? 'Elegí el silo destino.' : isTransferencia ? 'Elegí el silo de origen.' : 'Elegí el silo.';
     if (isCreate && isTransferencia && !form.siloDestinoId) return 'Elegí el silo de destino.';
@@ -1304,8 +1319,8 @@ function MovimientoForm({ mode, form, setForm, movimiento, silos, stock, canEdit
                 )}
                 <label className="field">
                   <span className="field-label">Fecha <b>*</b></span>
-                  <input type="date" value={form.fecha} max={todayIso()} readOnly={readOnly} onChange={(event) => update('fecha', event.target.value)} />
-                  {!readOnly && <Regla>{isIngreso ? 'Entre el inicio de la cosecha y hoy.' : 'No posterior a hoy.'}</Regla>}
+                  <input type="date" value={form.fecha} min={limitesFecha.min} max={limitesFecha.max} readOnly={readOnly} onChange={(event) => update('fecha', event.target.value)} />
+                  {!readOnly && <Regla>{isIngreso ? 'Desde el inicio de la cosecha hasta ' : `Del 01/01/${limitesFecha.min.slice(0, 4)} al `}31/12/{limitesFecha.max.slice(0, 4)}.</Regla>}
                 </label>
                 <label className="field">
                   <span className="field-label">Cantidad (kg) <b>*</b></span>

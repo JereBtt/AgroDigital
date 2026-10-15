@@ -43,6 +43,7 @@ public class LoteCultivoHistorialDto
 {
     public string Campania { get; set; } = string.Empty;
     public string Cultivo { get; set; } = string.Empty;
+    public string? CicloEstacional { get; set; }
     public DateTime? FechaInicio { get; set; }
     public DateTime? FechaFin { get; set; }
     public string EstadoCultivo { get; set; } = string.Empty;

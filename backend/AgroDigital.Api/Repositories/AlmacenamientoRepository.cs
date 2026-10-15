@@ -475,7 +475,7 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
             throw new InvalidOperationException("El silo de destino no pertenece a la empresa de la cosecha.");
         }
 
-        await ValidarFechaAsync(connection, transaction, siloId, fecha, excluirAlmacenamientoId: null);
+        await ValidarFechaAsync(connection, transaction, siloId, fecha, excluirAlmacenamientoId: null, cosechaId: cosechaId);
 
         var motivo = MotivoNoApto(silo.EstadoOperativo, silo.Stock, silo.CapacidadMax, silo.Producto, producto, cantidad);
         if (motivo is not null)
@@ -558,7 +558,7 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
             var silo = await BloquearSiloAsync(connection, transaction, mov.SiloId, usuarioId, incluirTodos)
                 ?? throw new InvalidOperationException("El silo indicado no existe o no pertenece a tus empresas.");
 
-            await ValidarFechaAsync(connection, transaction, mov.SiloId, mov.Fecha, excluirAlmacenamientoId: null);
+            await ValidarFechaAsync(connection, transaction, mov.SiloId, mov.Fecha, excluirAlmacenamientoId: null, cosechaId: mov.CosechaId);
 
             string? producto;
             int? campaniaId = null;
@@ -1179,12 +1179,29 @@ public class AlmacenamientoRepository(IConfiguration configuration) : IAlmacenam
     }
 
     private static async Task ValidarFechaAsync(
-        SqlConnection connection, SqlTransaction transaction, int siloId, DateOnly fecha, int? excluirAlmacenamientoId)
+        SqlConnection connection, SqlTransaction transaction, int siloId, DateOnly fecha, int? excluirAlmacenamientoId,
+        int? cosechaId = null)
     {
-        if (fecha > DateOnly.FromDateTime(DateTime.Today))
+        string? periodo = null;
+        DateOnly? fechaReferencia = null;
+        if (cosechaId.HasValue)
         {
-            throw new InvalidOperationException("La fecha del movimiento no puede ser posterior a hoy.");
+            await using var origen = new SqlCommand("SELECT COALESCE(cp.Periodo, c.CampaniaNombre) FROM dbo.Cosechas AS c INNER JOIN dbo.Lotes AS l ON l.LoteId = c.LoteId LEFT JOIN dbo.Campanias AS cp ON cp.Nombre = c.CampaniaNombre AND cp.EmpresaId = l.EmpresaId WHERE c.CosechaId = @Id;", connection, transaction);
+            origen.Parameters.AddWithValue("@Id", cosechaId.Value);
+            periodo = await origen.ExecuteScalarAsync() as string;
         }
+        else if (excluirAlmacenamientoId.HasValue)
+        {
+            await using var anterior = new SqlCommand("SELECT COALESCE(cp.Periodo, a.Campania), a.Fecha FROM dbo.Almacenamientos AS a LEFT JOIN dbo.Campanias AS cp ON cp.CampaniaId = a.CampaniaId WHERE a.AlmacenamientoId = @Id;", connection, transaction);
+            anterior.Parameters.AddWithValue("@Id", excluirAlmacenamientoId.Value);
+            await using var lector = await anterior.ExecuteReaderAsync();
+            if (await lector.ReadAsync())
+            {
+                periodo = lector.IsDBNull(0) ? null : lector.GetString(0);
+                fechaReferencia = DateOnly.FromDateTime(lector.GetDateTime(1));
+            }
+        }
+        AgroDigital.Api.Services.PeriodoCampaniaFechas.Validar(fecha, periodo, "fecha del movimiento", fechaReferencia);
 
         const string sql = """
             SELECT MAX(Fecha)
