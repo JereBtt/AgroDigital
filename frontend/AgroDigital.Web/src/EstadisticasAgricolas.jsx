@@ -146,6 +146,8 @@ export default function EstadisticasAgricolas({ session, empresaId, tab }) {
       headers: { Authorization: `Bearer ${session.token}` }, signal: controller.signal
     }).then(async r => { if (!r.ok) throw new Error(await r.text()); return r.json(); }).then(data => {
       if (controller.signal.aborted) return;
+      // FOR JSON omite las listas vacías: se completan para mostrar KPIs en 0 / Sin datos.
+      for (const k of ['lotes', 'siembras', 'cosechas', 'siniestros', 'planes']) data[k] ??= [];
       const periods = [...new Set([...data.siembras, ...data.cosechas, ...data.planes].map(r => r.campania).filter(Boolean))].sort().reverse();
       setCampanias(periods.slice(0, 1)); setLoaded({ empresaId, data });
     }).catch(e => { if (e.name !== 'AbortError') setError(e.message); });
