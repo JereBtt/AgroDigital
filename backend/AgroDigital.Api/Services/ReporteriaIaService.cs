@@ -71,6 +71,9 @@ public sealed class ReporteriaIaService(ReporteriaRepository repository, Reporte
         Para datos puntuales de un lote usá las consultas de detalle: lote_ficha, antecesor_lote, lote_bajas,
         siembras_detalle, refertilizaciones_detalle, cosechas_detalle, agroquimicos_detalle,
         tiradas_detalle, almacenamientos_lote, partidas_lote o distribuciones_detalle.
+        Si preguntan cuánto rindió o cuántos kg produjo un cultivo en un lote, usá rindes_lote
+        o cosechas_detalle con ese lote, cultivo y campaña. Los KPI de Cosechas reúnen toda la empresa:
+        nunca los atribuyas a un lote. Distinguí kg cosechados de kg despachados en Distribución.
         Si una pregunta combina campos de varios módulos, consultá cada detalle necesario antes de responder.
         Un resumen de fertilización no contiene variedad ni densidad: no declares esos datos ausentes
         sin consultar siembras_detalle del lote y campaña solicitados.
@@ -120,9 +123,8 @@ public sealed class ReporteriaIaService(ReporteriaRepository repository, Reporte
         var requiereVistaEstadisticas = Regex.IsMatch(pregunta,
             @"estad[ií]stic\w*|gr[aá]fic\w*|mapa|ranking|evoluci[oó]n|por zonas?", RegexOptions.IgnoreCase);
         var preguntaKpi = !informeCompleto && !compararCampanias && !desviosSiembra && !requiereVistaEstadisticas
-            && Regex.IsMatch(pregunta, @"\b(kpis?|indicador\w*|tarjetas?|pantalla|avance|promedio|totales?|cu[aá]nt[oa]s?)\b", RegexOptions.IgnoreCase)
-            && Regex.IsMatch(pregunta, @"\b(inicio|pantalla principal|lotes?|campa[ñn]as?|siembr\w*|cosech\w*|fertiliz\w*|silos?|almacen\w*|distribu\w*|stock|env[ií]os?)\b", RegexOptions.IgnoreCase)
-            && !Regex.IsMatch(pregunta, @"\b(lote\s+\w+|por\s+lote|cada\s+lote)\b", RegexOptions.IgnoreCase);
+            && Regex.IsMatch(pregunta, @"\b(kpis?|indicador\w*|tarjetas?|pantalla)\b", RegexOptions.IgnoreCase)
+            && Regex.IsMatch(pregunta, @"\b(inicio|pantalla principal|lotes?|campa[ñn]as?|siembr\w*|cosech\w*|fertiliz\w*|silos?|almacen\w*|distribu\w*|stock|env[ií]os?)\b", RegexOptions.IgnoreCase);
         var requiereDetalleSiembra = Regex.IsMatch(pregunta,
             @"\b(variedad(?:es)?|densidad|PMG|profundidad|semillas?\s+por\s+hect[aá]rea)\b",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
@@ -624,7 +626,7 @@ public sealed class ReporteriaIaService(ReporteriaRepository repository, Reporte
             {
                 ["type"] = "function",
                 ["name"] = "consultar_agrodigital",
-                ["description"] = "Consulta de solo lectura con SQL fijo, limitada a la empresa autorizada. contexto descubre campañas y lotes. lote_ficha da superficie, zona y estado actual; antecesor_lote da el cultivo previo por campaña y ciclo, incluido el cultivo anterior del historial de la ficha del lote con su período y fuente; lote_bajas, historial de deshabilitaciones. siembras_detalle da cultivo, variedad, densidad, PMG, profundidad, semilla, urea, época y responsable; refertilizaciones_detalle da aplicaciones, ha/h, horas, kg/ha y kg totales; cosechas_detalle da rinde, kg, ha, maquinaria y responsable; rindes_lote responde cuánto rindió un lote con o sin campaña indicada; agroquimicos_detalle da dosis de agroquímicos por hectárea y unidad base; tiradas_detalle da pérdidas por control; almacenamientos_lote da ingresos vinculados a cosechas del lote; partidas_lote da saldo actual trazado; distribuciones_detalle da envíos, destinos y campañas de origen y distribución, trazando lote cuando sea posible. siniestros, resiembras, silos y las demás consultas dan resúmenes y rankings. Los detalles aceptan campaña null para historial reciente; refertilizaciones_detalle, agroquimicos_detalle y distribuciones_detalle aceptan lote null para consultar toda la empresa. Filtros no usados deben ser null.",
+                ["description"] = "Consulta de solo lectura con SQL fijo, limitada a la empresa autorizada. contexto descubre campañas y lotes. lote_ficha da superficie, zona y estado actual; antecesor_lote da el cultivo previo por campaña y ciclo, incluido el cultivo anterior del historial de la ficha del lote con su período y fuente; lote_bajas, historial de deshabilitaciones. siembras_detalle da cultivo, variedad, densidad, PMG, profundidad, semilla, urea, época y responsable; refertilizaciones_detalle da aplicaciones, ha/h, horas, kg/ha y kg totales; cosechas_detalle da rinde, kg, ha, maquinaria y responsable; rindes_lote responde cuánto rindió y cuántos kg produjo un lote con o sin campaña indicada, filtrando cultivo cuando se mencione. Para un lote concreto no uses KPI agregados de cosecha. agroquimicos_detalle da dosis de agroquímicos por hectárea y unidad base; tiradas_detalle da pérdidas por control; almacenamientos_lote da ingresos vinculados a cosechas del lote; partidas_lote da saldo actual trazado; distribuciones_detalle da envíos, destinos y campañas de origen y distribución, trazando lote cuando sea posible. siniestros, resiembras, silos y las demás consultas dan resúmenes y rankings. Los detalles aceptan campaña null para historial reciente; refertilizaciones_detalle, agroquimicos_detalle y distribuciones_detalle aceptan lote null para consultar toda la empresa. Filtros no usados deben ser null.",
                 ["strict"] = true,
                 ["parameters"] = new JsonObject
                 {
