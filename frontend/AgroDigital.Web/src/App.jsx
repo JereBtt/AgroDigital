@@ -15,6 +15,7 @@ import Almacenamiento from './Almacenamiento';
 import DisableLoteModal from './DisableLoteModal';
 import Distribucion from './Distribucion';
 import Estadisticas from './Estadisticas';
+import ReporteriaIA from './ReporteriaIA';
 import Inicio from './Inicio';
 import { LayoutDashboard, MessageCircle, Send, XCircle } from 'lucide-react';
 import {
@@ -2437,10 +2438,10 @@ function App() {
             <BarChart3 size={23} />
             <span>Estadísticas</span>
           </button>
-          <button className="nav-item" type="button">
+          {permisosRol.estructura && <button className={`nav-item ${activeModule === 'reporteria-ia' ? 'nav-item-active' : ''}`} type="button" onClick={() => { navigateModule('reporteria-ia'); setProfileMenuOpen(false); setIsMapExpanded(false); }}>
             <Sparkles size={23} />
             <span>Reportería IA</span>
-          </button>
+          </button>}
         </nav>
         <div className="sidebar-landscape" aria-hidden="true">
           <img className="sidebar-landscape-expanded-image" src={sidebarLandscapeExpanded} alt="" />
@@ -2460,7 +2461,7 @@ function App() {
               <Home size={17} />
             </button>
             <button className="breadcrumb-link" type="button" onClick={activeModule === 'lotes' ? goToList : undefined}>
-                          {activeModule === 'inicio' ? 'Inicio' : activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Empresas' : activeModule === 'campanias' ? 'Campañas' : activeModule === 'silos' ? 'Silos' : activeModule === 'siembras' ? 'Siembras' : activeModule === 'cosechas' ? 'Cosechas' : activeModule === 'almacenamiento' ? 'Almacenamiento' : activeModule === 'distribucion' ? 'Distribución' : activeModule === 'estadisticas' ? 'Estadísticas' : 'Lotes'}
+                          {activeModule === 'inicio' ? 'Inicio' : activeModule === 'profile' ? 'Perfil' : activeModule === 'users' ? 'Usuarios' : activeModule === 'teams' ? 'Empresas' : activeModule === 'campanias' ? 'Campañas' : activeModule === 'silos' ? 'Silos' : activeModule === 'siembras' ? 'Siembras' : activeModule === 'cosechas' ? 'Cosechas' : activeModule === 'almacenamiento' ? 'Almacenamiento' : activeModule === 'distribucion' ? 'Distribución' : activeModule === 'estadisticas' ? 'Estadísticas' : activeModule === 'reporteria-ia' ? 'Reportería IA' : 'Lotes'}
             </button>
             {false && activeModule === 'users' && (
               <>
@@ -2676,6 +2677,14 @@ function App() {
             session={session}
             parentFilters={parentFiltersForEmpresa}
             selectedEmpresaId={selectedParentEmpresaId}
+          />
+        ) : activeModule === 'reporteria-ia' ? (
+          <ReporteriaIA
+            session={session}
+            parentFilters={parentFiltersForEmpresa}
+            selectedEmpresaId={selectedParentEmpresaId}
+            selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
+            puedeVer={permisosRol.estructura}
           />
         ) : activeModule === 'distribucion' ? (
           <Distribucion

@@ -419,7 +419,7 @@ public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepos
         if (string.IsNullOrWhiteSpace(request.Marca)) return new BadRequestObjectResult("La Marca es obligatoria.");
         if (string.IsNullOrWhiteSpace(request.Tipo) || !TiposInsumoValidos.Contains(request.Tipo)) return new BadRequestObjectResult("Tipo de agroquimico invalido.");
         if (string.IsNullOrWhiteSpace(request.Variedad)) return new BadRequestObjectResult("La Droga es obligatoria.");
-        if (request.CantidadAplicada is null or <= 0) return new BadRequestObjectResult("La Cantidad aplicada debe ser mayor a cero.");
+        if (request.CantidadAplicada is null or <= 0) return new BadRequestObjectResult("La cantidad aplicada por hectárea debe ser mayor a cero.");
         if (request.UnidadMedida is not ("Litros" or "Kg")) return new BadRequestObjectResult("Selecciona Litros o Kg como unidad de medida.");
         return null;
     }

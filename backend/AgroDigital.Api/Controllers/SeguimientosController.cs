@@ -150,7 +150,7 @@ public class SeguimientosController(
             return BadRequest("Tipo de insumo invalido.");
         }
         if (string.IsNullOrWhiteSpace(request.Marca) || string.IsNullOrWhiteSpace(request.Variedad) || request.CantidadAplicada is null || request.CantidadAplicada <= 0 || !UnidadesInsumoValidas.Contains(request.UnidadMedida ?? string.Empty))
-            return BadRequest("Completá marca, droga, cantidad mayor que cero y unidad Litros o Kg.");
+            return BadRequest("Completá marca, droga, dosis por hectárea mayor que cero y unidad Litros o Kg.");
 
         var insumo = await seguimientoRepository.AgregarInsumoAsync(seguimientoId, request);
         return Ok(insumo);
