@@ -1,0 +1,51 @@
+# Reportería IA
+
+Reportería IA permite consultar los datos registrados de una empresa con preguntas en lenguaje natural. Está disponible para Gerente y Encargado de esa empresa; Admin conserva el acceso interno. La autorización se comprueba en la API antes de leer conversaciones o consultar datos. Las conversaciones pertenecen al usuario y a la empresa seleccionada.
+
+## Puesta en marcha
+
+1. Aplicar `database/scripts/34_reporteria_ia.sql` a la base AgroDigital. El script crea el historial privado de conversaciones y mensajes y se puede ejecutar nuevamente sin duplicar tablas.
+2. Configurar la clave de OpenAI **solo en el backend**. En desarrollo, desde `backend/AgroDigital.Api`:
+
+   ```powershell
+   dotnet user-secrets set "OpenAI:ApiKey" "<clave>"
+   ```
+
+   En un despliegue se puede usar la variable de entorno `OPENAI_API_KEY`. La clave no se envía al navegador ni se guarda en la base de datos.
+3. Los modelos predeterminados son `gpt-6-luna` para consultas simples y `gpt-6-sol` para análisis o comparaciones. Se pueden cambiar con `ReporteriaIA:ModeloSimple` y `ReporteriaIA:ModeloAnalisis` sin modificar código.
+
+## Contrato y límites
+
+- `GET /api/reporteria-ia/conversaciones?empresaId={id}` devuelve hasta 20 conversaciones recientes propias.
+- `GET /api/reporteria-ia/conversaciones/{id}?empresaId={id}` devuelve los últimos 100 mensajes de una conversación propia.
+- `POST /api/reporteria-ia/consultar` recibe `empresaId`, `conversacionId` opcional y `pregunta` (máximo 1000 caracteres). Devuelve la respuesta, el modo y las consultas usadas como fuentes. El intercambio se guarda solo si la respuesta final se obtuvo correctamente.
+
+La API del modelo se usa con `store=false`. El modelo solo puede pedir una de las consultas SQL de lectura definidas en `ReporteriaRepository`. Nunca escribe SQL ni elige `EmpresaId`: este valor se establece en el servidor a partir de la empresa autorizada. Las consultas están parametrizadas y limitadas en filas. Para un informe completo, el asistente puede encadenar consultas, pero limita la cantidad de llamadas y el volumen de datos enviado.
+
+Los informes completos de campaña tienen una ruta propia: `obtener_informe_campania` recibe el período o `null` para la última campaña registrada. El backend reúne en un solo viaje a SQL Server nueve resúmenes de solo lectura: siembra, cosecha, insumos, fertilización, siniestros, resiembras, pérdidas de cosecha, almacenamiento y distribución. La herramienta devuelve cada sección con `sinDatos` explícito cuando no hay registros y limita las filas enviadas al modelo. Esta consulta usa una sola llamada de herramienta y después fuerza la redacción final; las demás consultas conservan sus límites contra loops.
+
+La sugerencia para comparar las dos campañas más recientes usa `obtener_comparativa_campanias`. El servidor elige los dos períodos de la empresa autorizada, reutiliza los nueve resúmenes de cada uno y envía una comparación compacta en una sola llamada de herramienta. Cada sección marca `sinDatos` y `truncado`; una lista truncada no debe interpretarse como un total exhaustivo. Si la empresa tiene menos de dos campañas, la respuesta debe decirlo. Después de esta herramienta se fuerza la respuesta final para evitar búsquedas repetidas y superar el límite acumulado de datos.
+
+Las preguntas sobre tiempos de siembra y el desvío entre fin tentativo y real usan `obtener_desvios_siembra`. Una consulta de lectura devuelve el resumen de todas las siembras y resiembras de la campaña, junto con un detalle acotado por lote, cultivo, ciclo, fechas, días de desvío y justificación registrada. Un valor positivo indica atraso y uno negativo adelanto. Cuando la pregunta aclara una consulta anterior, se conserva el período de la última pregunta del usuario. La ausencia de justificación no se interpreta como una causa conocida.
+
+`consultar_estadisticas` expone las cinco pestañas de Estadísticas para preguntas sobre sus indicadores, rankings, gráficos y tablas; `general` las reúne para informes comparativos amplios. Para Rinde, Siniestros y Productividad reutiliza la proyección agrícola del backend y calcula indicadores compactos con los filtros de campaña, ciclo, cultivo, lote, época, ciclo del cultivo y variedad. Sin campaña toma la última registrada; las comparaciones pueden elegir de dos a cinco. Sin ciclo incluye ambos ciclos y lo indica en el contexto. El rinde ofrece base húmeda o seca; Productividad distingue siembra/resiembra de cosecha y conserva el detalle de fechas, superficie, zonas y mapa. Silos y almacenamiento y Distribución reutilizan los mismos DTO y cálculos de sus endpoints de Estadísticas, con rango de fechas o campaña y filtro de grano. Stock, antigüedad y envíos sin conciliar se marcan como valores al día de hoy; los demás indicadores corresponden al período. El resultado limita los listados largos y declara cuando hubo truncamiento, sin enviar al modelo los registros agrícolas crudos.
+
+Las consultas puntuales no se detectan por frases rígidas. El modelo elige entre consultas de lectura fijas según la intención y puede combinar resultados para analizar o comparar. Además de los resúmenes, `consultar_agrodigital` ofrece ficha y bajas del lote, antecesor por campaña y ciclo, detalle de siembras (variedad, densidad, PMG, profundidad, semillas, urea, época y responsable), refertilizaciones (aplicaciones, kg/ha y kg), cosechas (superficie, producción, rinde, maquinaria y responsable), agroquímicos, tiradas de aros, ingresos vinculados a cosechas del lote, stock actual trazado por partida y envíos con destinos. Las consultas aceptan lote y campaña cuando corresponde; algunas permiten recorrer la empresa completa. La API fija `EmpresaId`, valida el rol antes de consultar y limita las filas y el volumen enviado al modelo.
+
+La cantidad de semillas registrada es un conteo de unidades; los kg de semilla se calculan con densidad, PMG y hectáreas. La urea de siembra y refertilización se informa como tal, sin extenderla a otros fertilizantes. Los ingresos de una cosecha a silos no equivalen al stock actual de sus partidas. En distribución directa los kg recibidos y la merma corresponden al lote de origen; desde silo se pueden atribuir kg despachados por consumos de partidas, pero no distribuir los kg recibidos ni la merma del camión entre lotes mezclados. La campaña del cultivo y la campaña de distribución se devuelven por separado.
+
+La `CantidadAplicada` registrada en agroquímicos de presiembra y seguimiento es una dosis por hectárea; `UnidadMedida` indica si se expresa en litros/ha o kg/ha. Esto también aplica a los valores ya cargados. No se suman dosis de distintas aplicaciones como si fueran litros o kg totales. La base no registra la superficie tratada por cada aplicación, por lo que no permite calcular el volumen o la masa total aplicada con respaldo.
+
+En la ficha del lote, `SuperficieTotal` está almacenada en m². La consulta `lote_ficha` devuelve ese dato como `superficieTotalM2` y lo convierte a hectáreas en `hectareasReales`; `Hectareas` se informa como `hectareasCultivables`. Las respuestas presentan como máximo dos decimales con coma, sin cambiar la precisión de los datos guardados.
+
+`obtener_productividad_fertilizacion` resuelve en una lectura por campaña la productividad ponderada de siembra/resiembra y cosecha (ha trabajadas divididas por horas estimadas), tanto global como por lote; además devuelve la productividad de refertilización por lote y los kg de urea usados en siembra y refertilización. Si no se indica campaña toma la última registrada de la empresa. El desglose de urea incluye los lotes planificados sin registro, marcados con `tieneRegistroFertilizante=false`; cero significa que no hay urea registrada, no que se haya demostrado una ausencia física de aplicación. Las dosis medias por lote se calculan como kg de urea divididos por hectáreas intervenidas, separadas por etapa, y quedan null cuando faltan registros. Los totales provienen de todos los registros, aunque se acote la cantidad de filas enviadas al modelo. `refertilizaciones_detalle` conserva ha/h y horas de cada aplicación para preguntas puntuales.
+
+Los rindes agregados se calculan como kilos totales divididos por hectáreas cosechadas. Las resiembras se muestran como trabajo adicional y no duplican la superficie cosechada. Los movimientos de distribución solo consideran camiones conciliados. Si faltan registros, la respuesta debe explicitar la falta de evidencia. Las relaciones entre hechos registrados no se presentan como causas demostradas.
+
+## Verificación
+
+Las tarjetas KPI de Inicio y los listados se consultan con `obtener_kpis_pantalla` para Lotes, Campañas, Siembras, Cosechas, Silos, Almacenamiento y Distribución. La consulta conserva la empresa autorizada y los filtros de campaña y ciclo pertinentes. En Siembras y Cosechas, sin ciclo explícito usa Verano, como la selección inicial de la pantalla; sin campaña toma la última registrada. Campañas sin período reúne todas las campañas. Almacenamiento y Distribución sin período muestran todas las campañas, y Silos es una fotografía actual. `operaciones` reúne Siembras y Cosechas en una sola llamada de herramienta cuando se piden ambas.
+
+La productividad de las tarjetas de Siembras y Cosechas es el promedio aritmético de ha/h de operaciones finalizadas, distinto de la productividad ponderada de Estadísticas. El avance de Siembras suma por lote planificado sin duplicar resiembras; los kg de semillas y fertilizantes incluyen siembras, resiembras y registros deshabilitados. La tarjeta de fertilización distingue la urea usada en siembra de la usada en refertilización. Los valores monetarios no intervienen y las cifras se presentan con un máximo de dos decimales.
+
+Ejecutar `dotnet build backend/AgroDigital.Api/AgroDigital.Api.csproj -p:UseAppHost=false`, `npm run build` desde `frontend/AgroDigital.Web` y comprobar los tres endpoints con usuarios de distintos roles y empresas. Sin clave de OpenAI se pueden verificar permisos, aislamiento e historial, pero las consultas al modelo responden que falta configurar la integración.

@@ -26,6 +26,10 @@ builder.Services.AddScoped<IAlmacenamientoRepository, AlmacenamientoRepository>(
 builder.Services.AddScoped<IDistribucionRepository, DistribucionRepository>();
 builder.Services.AddScoped<IDistribucionCatalogoRepository, DistribucionCatalogoRepository>();
 builder.Services.AddScoped<IEstadisticasRepository, EstadisticasRepository>();
+builder.Services.AddScoped<ReporteriaRepository>();
+builder.Services.AddScoped<ReporteriaIaService>();
+builder.Services.AddScoped<ReporteriaEstadisticasService>();
+builder.Services.AddHttpClient("ReporteriaOpenAI", client => client.Timeout = TimeSpan.FromSeconds(90));
 builder.Services.AddScoped<IInicioRepository, InicioRepository>();
 builder.Services.AddScoped<ISiembraRepository, SiembraRepository>();
 builder.Services.AddScoped<ISeguimientoRepository, SeguimientoRepository>();
