@@ -535,7 +535,8 @@ public sealed class ReporteriaRepository(IConfiguration configuration)
                   AND l.Nombre COLLATE Latin1_General_CI_AI=@Lote COLLATE Latin1_General_CI_AI;
                 """,
             "antecesor_lote" => """
-                SELECT TOP (20) l.Nombre AS lote,c.Periodo AS campania,
+                WITH antecedentes AS (
+                SELECT l.Nombre AS lote,c.Periodo AS campania,
                     cc.CicloEstacional AS ciclo,cc.Producto AS cultivoPlanificado,
                     s.Producto AS cultivoSembrado,
                     COALESCE(NULLIF(NULLIF(s.ProductoAntecesor,N''),N'Sin dato'),previo.Producto) AS cultivoAntecesor,
@@ -563,7 +564,20 @@ public sealed class ReporteriaRepository(IConfiguration configuration)
                 WHERE l.EmpresaId=@EmpresaId AND c.EmpresaId=@EmpresaId
                   AND l.Nombre COLLATE Latin1_General_CI_AI=@Lote COLLATE Latin1_General_CI_AI
                   AND (@Campania IS NULL OR c.Periodo=@Campania)
-                ORDER BY c.Periodo DESC,cc.CicloEstacional DESC;
+                UNION ALL
+                SELECT l.Nombre,l.CultivoAnteriorCampania,NULL,NULL,NULL,l.CultivoAnterior,
+                    N'Historial de cultivos de la ficha del lote',NULL
+                FROM dbo.Lotes l
+                WHERE l.EmpresaId=@EmpresaId
+                  AND l.Nombre COLLATE Latin1_General_CI_AI=@Lote COLLATE Latin1_General_CI_AI
+                  AND NULLIF(LTRIM(RTRIM(l.CultivoAnterior)),N'') IS NOT NULL
+                  AND NULLIF(LTRIM(RTRIM(l.CultivoAnteriorCampania)),N'') IS NOT NULL
+                  AND l.CultivoAnterior<>N'Sin dato' AND l.CultivoAnteriorCampania<>N'Sin dato'
+                  AND (@Campania IS NULL OR l.CultivoAnteriorCampania=@Campania)
+                )
+                SELECT TOP (20) lote,campania,ciclo,cultivoPlanificado,cultivoSembrado,
+                    cultivoAntecesor,fuenteAntecesor,fechaCosechaAntecesora
+                FROM antecedentes ORDER BY campania DESC,ciclo DESC;
                 """,
             "lote_bajas" => """
                 SELECT TOP (30) COUNT(*) OVER() AS totalCoincidencias,

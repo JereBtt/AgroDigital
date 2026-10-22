@@ -1,0 +1,51 @@
+.agrobot-panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); z-index: 9100; display: flex; flex-direction: column; background: #fbfdfb; color: #153625; border-left: 1px solid #d6e7db; box-shadow: -18px 0 48px rgba(17, 51, 33, .14); transform: translateX(105%); visibility: hidden; transition: transform .24s ease, visibility .24s; font-size: calc(17px * var(--text-scale, 1)); }
+.agrobot-panel-open { transform: translateX(0); visibility: visible; }
+.agrobot-head { display: flex; align-items: center; gap: 12px; min-height: 82px; padding: 16px 20px; background: #fff; border-bottom: 1px solid #e2ece4; }
+.agrobot-head strong { display: block; font-size: 1.22em; font-weight: 850; }
+.agrobot-head small { color: #657a6c; font-size: .88em; }
+.agrobot-mark, .agrobot-welcome-icon, .agrobot-avatar { display: grid; place-items: center; color: #148c48; background: #e8f7eb; border-radius: 16px; }
+.agrobot-mark, .agrobot-welcome-icon, .agrobot-avatar { overflow: hidden; }
+.agrobot-mark img, .agrobot-welcome-icon img, .agrobot-avatar img { width: 100%; height: 100%; display: block; object-fit: contain; }
+.agrobot-mark { width: 50px; height: 50px; flex: 0 0 auto; }
+.agrobot-close { margin-left: auto; border: 1px solid #dbe9df; border-radius: 11px; background: #fff; color: #355642; width: 38px; height: 38px; display: grid; place-items: center; cursor: pointer; }
+.agrobot-close:hover { background: #eef7f0; }
+.agrobot-context { display: flex; align-items: center; gap: 5px; min-height: 42px; padding: 0 21px; background: #f1f8f2; border-bottom: 1px solid #dfebe1; color: #4d6a58; font-size: .9em; }
+.agrobot-context strong { color: #154c2a; }
+.agrobot-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #23aa57; margin-right: 4px; }
+.agrobot-messages { min-height: 0; flex: 1; overflow: auto; padding: 23px 18px 20px; display: flex; flex-direction: column; gap: 17px; }
+.agrobot-welcome { margin: auto 0; text-align: center; }
+.agrobot-welcome-icon { width: 66px; height: 66px; margin: 0 auto 12px; }
+.agrobot-welcome h2 { font-size: 1.45em; margin: 0 0 7px; }
+.agrobot-welcome p { color: #64776b; line-height: 1.5; margin: 0 auto 22px; max-width: 310px; }
+.agrobot-suggestions { display: grid; gap: 9px; }
+.agrobot-suggestions button { text-align: left; border: 1px solid #d9e9dd; border-radius: 12px; padding: 12px 14px; background: #fff; color: #214334; cursor: pointer; font: inherit; }
+.agrobot-suggestions button:hover { border-color: #23a356; background: #f3faf4; }
+.agrobot-message { display: flex; gap: 8px; align-items: flex-start; }
+.agrobot-message-usuario { justify-content: flex-end; }
+.agrobot-avatar { width: 36px; height: 36px; flex: 0 0 auto; border-radius: 12px; }
+.agrobot-bubble { max-width: 91%; min-width: 0; border: 1px solid #e0ece3; border-radius: 16px 16px 16px 4px; padding: 12px 14px; background: #fff; line-height: 1.52; overflow-wrap: anywhere; }
+.agrobot-message-usuario .agrobot-bubble { border-radius: 16px 16px 4px 16px; background: #eaf6ee; border-color: #d4e9da; }
+.agrobot-bubble .ria-answer { font-size: 1em; color: #214031; line-height: 1.52; }
+.agrobot-bubble .ria-answer h3 { color: #163c27; font-size: 1.13em; margin: 12px 0 6px; }
+.agrobot-bubble .ria-answer table { font-size: .94em; }
+.agrobot-bubble .ria-answer strong { color: #153d28; }
+.agrobot-bubble .ria-answer p { margin: 0 0 10px; }
+.agrobot-bubble .ria-answer p:last-child { margin-bottom: 0; }
+.agrobot-origin { display: block; color: #178344; font-size: .91em; font-weight: 800; margin-bottom: 6px; }
+.agrobot-source { display: block; color: #6a7d70; font-size: .88em; border-top: 1px solid #e8eee9; padding-top: 7px; margin-top: 10px; }
+.agrobot-thinking { display: flex; align-items: center; gap: 8px; color: #5c7564; margin-left: 37px; }
+.agrobot-prompt { margin-top: 12px; border: 1px solid #cee7d5; background: #f4faf5; border-radius: 11px; padding: 11px; }
+.agrobot-prompt strong { color: #145a30; }
+.agrobot-prompt p { margin: 6px 0 10px; }
+.agrobot-prompt div { display: flex; gap: 8px; flex-wrap: wrap; }
+.agrobot-prompt button { display: flex; align-items: center; gap: 5px; border: 1px solid #b5dcbf; border-radius: 8px; background: white; color: #156437; padding: 6px 9px; cursor: pointer; font: inherit; font-weight: 700; }
+.agrobot-error { margin: 0 18px 10px; color: #b33223; background: #fff2f0; border: 1px solid #f4c7c0; border-radius: 9px; padding: 8px 10px; }
+.agrobot-composer { border-top: 1px solid #e0ece3; padding: 15px 18px 18px; background: #fff; }
+.agrobot-composer label { display: block; margin-bottom: 7px; font-weight: 800; font-size: .92em; }
+.agrobot-composer > div { display: flex; align-items: flex-end; gap: 8px; border: 1px solid #bedbc6; border-radius: 13px; padding: 6px; }
+.agrobot-composer textarea { border: 0; outline: none; flex: 1; min-width: 0; min-height: 42px; max-height: 120px; resize: vertical; padding: 8px; font: inherit; color: #173d27; }
+.agrobot-composer button { border: 0; border-radius: 9px; width: 38px; height: 38px; display: grid; place-items: center; background: #159044; color: #fff; cursor: pointer; }
+.agrobot-composer button:disabled { background: #a8cfb4; cursor: not-allowed; }
+.agrobot-composer small { display: block; margin-top: 7px; color: #78887d; font-size: .88em; text-align: right; }
+@media (max-width: 520px) { .agrobot-panel { width: 100vw; } .agrobot-messages { padding: 16px 12px; } }
+@media (prefers-reduced-motion: reduce) { .agrobot-panel { transition: none; } }

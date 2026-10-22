@@ -44,11 +44,32 @@ function fechaCorta(fecha) {
 }
 
 function TramaFutura() {
-  return <svg viewBox="0 0 760 150" preserveAspectRatio="none" role="presentation">
-    {Array.from({ length: 19 }, (_, index) => <path key={`h${index}`}
-      d={`M 0 ${120 + index * 1.6} C 145 ${96 - index * 2.2}, 215 ${31 + index * 1.8}, 340 ${78 + index * 1.3} S 535 ${16 + index * 2.2}, 760 ${85 + index * 1.3}`} />)}
-    {Array.from({ length: 15 }, (_, index) => <path key={`v${index}`}
-      d={`M ${index * 55} 150 C ${80 + index * 42} 111, ${100 + index * 43} 43, ${155 + index * 43} 0`} />)}
+  return <svg viewBox="0 0 1000 210" preserveAspectRatio="xMidYMid slice" role="presentation">
+    <defs>
+      <linearGradient id="ria-trace" x1="0" x2="1"><stop stopColor="#85cf9e" stopOpacity="0" /><stop offset=".48" stopColor="#51ad73" stopOpacity=".9" /><stop offset="1" stopColor="#61b980" stopOpacity=".1" /></linearGradient>
+      <radialGradient id="ria-orbit"><stop stopColor="#d2f2dc" stopOpacity=".95" /><stop offset="1" stopColor="#f9fffb" stopOpacity=".18" /></radialGradient>
+    </defs>
+    <g className="ria-art-waves">
+      {Array.from({ length: 10 }, (_, index) => <path key={`h${index}`}
+        d={`M 0 ${166 + index * 3.4} C 155 ${136 - index * 1.2}, 200 ${175 - index * 4.2}, 323 ${99 - index * 1.8} S 512 ${85 + index * 2.5}, 624 ${130 + index * 1.2} S 790 ${162 - index * 2.5}, 1000 ${116 + index * 2.3}`} />)}
+      {Array.from({ length: 9 }, (_, index) => <path key={`b${index}`}
+        d={`M ${index * 120} 210 C ${110 + index * 99} 172, ${186 + index * 88} 171, ${243 + index * 91} 105`} />)}
+    </g>
+    <g className="ria-art-connections">
+      <path d="M 0 128 H 138 C 208 128 211 66 290 66 H 355 C 409 66 401 111 470 111 H 529" />
+      <path d="M 0 185 H 221 C 297 185 303 133 374 133 H 466" />
+      <path d="M 639 107 H 754 C 786 107 778 137 822 137 H 1000" />
+      <path d="M 663 48 H 809 C 843 48 850 82 894 82 H 1000" />
+      <circle cx="290" cy="66" r="5" /><circle cx="374" cy="133" r="5" /><circle cx="754" cy="107" r="5" /><circle cx="809" cy="48" r="5" />
+    </g>
+    <circle className="ria-art-orbit" cx="566" cy="101" r="83" fill="url(#ria-orbit)" />
+    <circle className="ria-art-ring" cx="566" cy="101" r="69" />
+    <circle className="ria-art-ring inner" cx="566" cy="101" r="52" />
+    <g className="ria-art-leaf">
+      <path d="M 566 142 C 562 116 560 95 568 68" />
+      <path d="M 566 119 C 538 121 528 101 532 80 C 552 82 566 93 566 119 Z" />
+      <path d="M 563 102 C 589 104 603 86 600 57 C 578 62 565 75 563 102 Z" />
+    </g>
   </svg>;
 }
 
@@ -60,7 +81,7 @@ async function leerError(response) {
   } catch { return body || `Error ${response.status}`; }
 }
 
-export default function ReporteriaIA({ session, parentFilters, selectedEmpresaId, selectedEmpresaName, puedeVer }) {
+export default function ReporteriaIA({ session, parentFilters, selectedEmpresaId, selectedEmpresaName, puedeVer, promptInicial, onPromptInicialConsumido }) {
   const [recientes, setRecientes] = useState([]);
   const [conversacionId, setConversacionId] = useState(null);
   const [mensajes, setMensajes] = useState([]);
@@ -69,6 +90,7 @@ export default function ReporteriaIA({ session, parentFilters, selectedEmpresaId
   const [abriendo, setAbriendo] = useState(false);
   const [error, setError] = useState('');
   const bottomRef = useRef(null);
+  const inputRef = useRef(null);
   const empresaRef = useRef(selectedEmpresaId);
   empresaRef.current = selectedEmpresaId;
   const headers = { Authorization: `Bearer ${session?.token}` };
@@ -90,6 +112,16 @@ export default function ReporteriaIA({ session, parentFilters, selectedEmpresaId
       .catch(e => { if (e.name !== 'AbortError') setError(e.message); });
     return () => controller.abort();
   }, [selectedEmpresaId, puedeVer, session?.token]);
+
+  useEffect(() => {
+    if (!promptInicial || !puedeVer || String(promptInicial.empresaId) !== String(selectedEmpresaId)) return;
+    setConversacionId(null);
+    setMensajes([]);
+    setError('');
+    setPregunta(promptInicial.texto);
+    inputRef.current?.focus();
+    onPromptInicialConsumido?.(promptInicial.id);
+  }, [promptInicial, selectedEmpresaId, puedeVer, onPromptInicialConsumido]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [mensajes, cargando]);
 
@@ -162,8 +194,11 @@ export default function ReporteriaIA({ session, parentFilters, selectedEmpresaId
         <h1>Reportería IA</h1>
         <p>Consultá y analizá los datos registrados de tu operación.</p>
       </div>
-      <div className="ria-header-art" aria-hidden="true"><TramaFutura /><span>DATOS REALES<br />DECISIONES CON IMPACTO</span></div>
-      <button className="ria-new" type="button" onClick={nueva} disabled={cargando}><Plus size={18} /> Nueva consulta</button>
+      <div className="ria-header-art" aria-hidden="true"><TramaFutura /></div>
+      <div className="ria-heading-actions">
+        <div className="ria-tagline">DATOS REALES<br /><span>DECISIONES CON <em>IMPACTO</em></span></div>
+        <button className="ria-new" type="button" onClick={nueva} disabled={cargando}><Plus size={18} /> Nueva consulta</button>
+      </div>
     </div>
     {parentFilters}
     {!puedeVer ? <div className="dashboard-card ria-empty">Reportería IA está disponible para Gerente y Encargado de esta empresa.</div>
@@ -213,7 +248,7 @@ export default function ReporteriaIA({ session, parentFilters, selectedEmpresaId
             {error && <div className="ria-error" role="alert">{error}</div>}
             <form className="ria-composer" onSubmit={event => { event.preventDefault(); enviar(); }}>
               <label htmlFor="ria-pregunta">Tu consulta</label>
-              <div><textarea id="ria-pregunta" value={pregunta} maxLength={1000} rows={2}
+              <div><textarea ref={inputRef} id="ria-pregunta" value={pregunta} maxLength={1000} rows={2}
                 onChange={event => setPregunta(event.target.value)}
                 onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); enviar(); } }}
                 placeholder="Ej.: ¿Qué variedad de soja predominó en la campaña 2025-2026?" disabled={cargando} />

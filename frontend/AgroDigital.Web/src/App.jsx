@@ -4,6 +4,7 @@ import AlignedTableNumber from './AlignedTableNumber';
 import L from 'leaflet';
 import agroDigitalCompactLogo from './assets/agrodigital-compact-logo.png';
 import agroDigitalLogo from './assets/agrodigital-logo.png';
+import agroBotMascot from './assets/agrobot-mascot.png';
 import profileCardLandscape from './assets/profile-card-landscape.png';
 import sidebarLandscapeCollapsed from './assets/sidebar-landscape-collapsed.png';
 import sidebarLandscapeExpanded from './assets/sidebar-landscape-expanded.png';
@@ -16,6 +17,7 @@ import DisableLoteModal from './DisableLoteModal';
 import Distribucion from './Distribucion';
 import Estadisticas from './Estadisticas';
 import ReporteriaIA from './ReporteriaIA';
+import AgroBot from './AgroBot';
 import Inicio from './Inicio';
 import { LayoutDashboard, MessageCircle, Send, XCircle } from 'lucide-react';
 import {
@@ -23,7 +25,6 @@ import {
   BarChart3,
   Ban,
   Bell,
-  Bot,
   Building2,
   CalendarDays,
   CheckCircle2,
@@ -607,6 +608,8 @@ function App() {
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [accessibilityOpen, setAccessibilityOpen] = useState(false);
+  const [agroBotOpen, setAgroBotOpen] = useState(false);
+  const [reporteriaPromptPendiente, setReporteriaPromptPendiente] = useState(null);
   const [textSize, setTextSize] = useState('small');
   const [availableZones, setAvailableZones] = useState(ARGENTINA_ZONES[emptyForm.provincia] ?? []);
   const [zonesLoading, setZonesLoading] = useState(false);
@@ -1686,11 +1689,19 @@ function App() {
   function navigateModule(nextModule) {
     if (pendingNewCampaignLot && activeModule === 'campanias' && nextModule !== 'campanias') {
       setStatus('Asociá el lote nuevo a la campaña o deshabilitalo antes de salir.');
-      return;
+      return false;
     }
     if (nextModule !== 'campanias') setPendingCampaignReactivation(null);
     if (nextModule !== 'siembras') setSiembraRegistrationRequest(null);
     setActiveModule(nextModule);
+    return true;
+  }
+
+  function abrirReporteriaDesdeAgroBot(prompt) {
+    if (!permisosRol.estructura || !selectedParentEmpresaId || !prompt?.trim()) return;
+    if (!navigateModule('reporteria-ia')) return;
+    setReporteriaPromptPendiente({ id: Date.now(), empresaId: String(selectedParentEmpresaId), texto: prompt });
+    setAgroBotOpen(false);
   }
 
 
@@ -2190,6 +2201,8 @@ function App() {
   }
 
   function handleLogout() {
+    setAgroBotOpen(false);
+    setReporteriaPromptPendiente(null);
     setSession(null);
     setLoginError('');
     setAdminError('');
@@ -2294,6 +2307,9 @@ function App() {
       onToggleAccessibility={() => setAccessibilityOpen((current) => !current)}
       onCloseAccessibility={() => setAccessibilityOpen(false)}
       onSelectTextSize={setTextSize}
+      botOpen={agroBotOpen}
+      botEnabled={Boolean(session?.token)}
+      onOpenBot={() => { if (session?.token) { setAgroBotOpen(true); setAccessibilityOpen(false); } }}
     />
   );
 
@@ -2685,6 +2701,8 @@ function App() {
             selectedEmpresaId={selectedParentEmpresaId}
             selectedEmpresaName={selectedParentEmpresa?.nombre || ''}
             puedeVer={permisosRol.estructura}
+            promptInicial={reporteriaPromptPendiente}
+            onPromptInicialConsumido={(id) => setReporteriaPromptPendiente((actual) => actual?.id === id ? null : actual)}
           />
         ) : activeModule === 'distribucion' ? (
           <Distribucion
@@ -2747,6 +2765,14 @@ function App() {
       </section>
 
       {floatingWidgets}
+      <AgroBot
+        open={agroBotOpen}
+        onClose={() => setAgroBotOpen(false)}
+        session={session}
+        empresaId={selectedParentEmpresaId}
+        empresaNombre={selectedParentEmpresa?.nombre}
+        onOpenReporteria={permisosRol.estructura ? abrirReporteriaDesdeAgroBot : null}
+      />
       {lotePendingDisable && (
         <DisableLoteModal
           lote={lotePendingDisable}
@@ -3106,7 +3132,7 @@ function ProfilePage({ profile, session, error, status, saving, passwordSaving, 
   );
 }
 
-function FloatingWidgets({ accessibilityOpen, textSize, onToggleAccessibility, onCloseAccessibility, onSelectTextSize }) {
+function FloatingWidgets({ accessibilityOpen, textSize, onToggleAccessibility, onCloseAccessibility, onSelectTextSize, botOpen, botEnabled, onOpenBot }) {
   return (
     <div className="floating-widgets" aria-label="Accesos rapidos flotantes">
       <AccessibilityControl
@@ -3116,9 +3142,9 @@ function FloatingWidgets({ accessibilityOpen, textSize, onToggleAccessibility, o
         onClose={onCloseAccessibility}
         onSelectSize={onSelectTextSize}
       />
-      <button className="bot-button" type="button" aria-label="AgroBot">
-        <Bot size={27} />
-      </button>
+      {!botOpen && <button className="bot-button" type="button" aria-label={botEnabled ? 'Abrir AgroBot' : 'Iniciá sesión para usar AgroBot'} aria-expanded={false} disabled={!botEnabled} onClick={onOpenBot}>
+        <img src={agroBotMascot} alt="" aria-hidden="true" />
+      </button>}
     </div>
   );
 }
