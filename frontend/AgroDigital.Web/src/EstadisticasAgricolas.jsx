@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { RotateCcw } from 'lucide-react';
 import L from 'leaflet';
 import { agrupar, calcularSiniestros, calcularSuperficie, construirFlujoPlanificacion, desvioDias, filtrar, granoTexto, normalizar, productividad, resumirParticipacionGranos, resumirRindes, suma } from './estadisticasAgricolas.js';
 import './estadisticasAgricolas.css';
@@ -8,6 +9,7 @@ const API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
 const n = (v, d = 1) => v == null ? 'Sin datos' : Number(v).toLocaleString('es-AR', { maximumFractionDigits: d });
 const colors = ['#218943', '#d99b24', '#4389b0', '#9265b4', '#d56f45', '#4b9b91'];
 const fecha = v => v ? v.slice(0, 10).split('-').reverse().join('/') : '—';
+const compararCampaniasDesc = (a, b) => String(b ?? '').localeCompare(String(a ?? ''));
 function Card({ title, note, children, wide = false }) {
   return <section className={`dashboard-card agr-card ${wide ? 'agr-wide' : ''}`}><h2>{title}</h2>{note && <p className="agr-note">{note}</p>}{children}</section>;
 }
@@ -101,6 +103,10 @@ function FlujoPlanificacion({ rows }) {
     }, delay);
   };
   const ocultarTooltip = () => { clearTimeout(tooltipTimer.current); setTooltip(null); };
+  const programarOcultarTooltip = () => {
+    clearTimeout(tooltipTimer.current);
+    tooltipTimer.current = setTimeout(() => setTooltip(null), 250);
+  };
   return <div className="agr-flow">
     <div className="agr-flow-head"><div className="agr-flow-legend"><span><i className="agr-flow-key agr-flow-expected" />Flujo esperado</span><span><i className="agr-flow-key agr-flow-actual" />Flujo real</span></div><p>{totalReal} de {totalPrevisto} operaciones finalizadas</p></div>
     <div className="agr-flow-scroll"><svg className="agr-flow-chart" viewBox={`0 0 ${width} 292`} role="img" aria-label={`Flujo acumulado de operaciones por fecha: ${totalPrevisto} planificadas y ${totalReal} finalizadas. La línea naranja representa las fechas tentativas y la azul las fechas reales.`}>
@@ -113,12 +119,12 @@ function FlujoPlanificacion({ rows }) {
         const reales = rows.filter(r => r.estado === 'Finalizado' && r.finTentativo && r.finReal?.slice(0, 10) === point.fecha);
         const coinciden = point.esperado === point.real && previstas.length && reales.length;
         return <g key={point.fecha}>
-          {previstas.length > 0 && <circle className="agr-flow-point agr-flow-point-expected" cx={x(point.fecha) - (coinciden ? 6 : 0)} cy={y(point.esperado)} r="6" tabIndex="0" aria-label={`Flujo esperado el ${fecha(point.fecha)}: ${previstas.length} operaciones. Ver fechas tentativas y reales.`} onMouseEnter={e => mostrarTooltip(e, 'esperado', point.fecha, previstas)} onMouseLeave={ocultarTooltip} onFocus={e => mostrarTooltip(e, 'esperado', point.fecha, previstas, 0)} onBlur={ocultarTooltip} />}
-          {reales.length > 0 && <circle className="agr-flow-point agr-flow-point-actual" cx={x(point.fecha) + (coinciden ? 6 : 0)} cy={y(point.real)} r="6" tabIndex="0" aria-label={`Flujo real el ${fecha(point.fecha)}: ${reales.length} operaciones. Ver fechas tentativas y reales.`} onMouseEnter={e => mostrarTooltip(e, 'real', point.fecha, reales)} onMouseLeave={ocultarTooltip} onFocus={e => mostrarTooltip(e, 'real', point.fecha, reales, 0)} onBlur={ocultarTooltip} />}
+          {previstas.length > 0 && <circle className="agr-flow-point agr-flow-point-expected" cx={x(point.fecha) - (coinciden ? 6 : 0)} cy={y(point.esperado)} r="6" tabIndex="0" aria-label={`Flujo esperado el ${fecha(point.fecha)}: ${previstas.length} operaciones. Ver fechas tentativas y reales.`} onMouseEnter={e => mostrarTooltip(e, 'esperado', point.fecha, previstas)} onMouseLeave={programarOcultarTooltip} onFocus={e => mostrarTooltip(e, 'esperado', point.fecha, previstas, 0)} onBlur={programarOcultarTooltip} />}
+          {reales.length > 0 && <circle className="agr-flow-point agr-flow-point-actual" cx={x(point.fecha) + (coinciden ? 6 : 0)} cy={y(point.real)} r="6" tabIndex="0" aria-label={`Flujo real el ${fecha(point.fecha)}: ${reales.length} operaciones. Ver fechas tentativas y reales.`} onMouseEnter={e => mostrarTooltip(e, 'real', point.fecha, reales)} onMouseLeave={programarOcultarTooltip} onFocus={e => mostrarTooltip(e, 'real', point.fecha, reales, 0)} onBlur={programarOcultarTooltip} />}
         </g>;
       })}
     </svg></div>
-    {tooltip && createPortal(<div className="agr-flow-tooltip" role="tooltip" style={{ left: tooltip.left, top: tooltip.top }}><strong>{tooltip.serie === 'esperado' ? 'Flujo esperado' : 'Flujo real'} · {fecha(tooltip.day)}</strong><span>{tooltip.items.length} {tooltip.items.length === 1 ? 'operación' : 'operaciones'} en este punto</span><div className="agr-flow-tooltip-items">{tooltip.items.map((r, i) => <div key={`${r.operacion}-${r.id ?? i}`}><b>{r.operacion} · {r.nombre}</b>{r.loteNombre && <span>Lote: {r.loteNombre}</span>}<span>Cultivo: {r.grano ? granoTexto(r.grano) : 'Sin dato'}</span><span>Fin tentativo: {fecha(r.finTentativo)}</span><span>Fin real: {r.estado === 'Finalizado' ? fecha(r.finReal) : 'Pendiente'}</span>{r.motivoDesvio?.trim() && <span>Motivo del desvío: {r.motivoDesvio.trim()}</span>}</div>)}</div></div>, document.body)}
+    {tooltip && createPortal(<div className="agr-flow-tooltip" role="tooltip" tabIndex={0} style={{ left: tooltip.left, top: tooltip.top }} onMouseEnter={() => clearTimeout(tooltipTimer.current)} onMouseLeave={programarOcultarTooltip} onFocus={() => clearTimeout(tooltipTimer.current)} onBlur={programarOcultarTooltip} onKeyDown={e => { if (e.key === 'Escape') ocultarTooltip(); }}><strong>{tooltip.serie === 'esperado' ? 'Flujo esperado' : 'Flujo real'} · {fecha(tooltip.day)}</strong><span>{tooltip.items.length} {tooltip.items.length === 1 ? 'operación' : 'operaciones'} en este punto</span><div className="agr-flow-tooltip-items">{tooltip.items.map((r, i) => <div key={`${r.operacion}-${r.id ?? i}`}><b>{r.operacion} · {r.nombre}</b>{r.loteNombre && <span>Lote: {r.loteNombre}</span>}<span>Cultivo: {r.grano ? granoTexto(r.grano) : 'Sin dato'}</span><span>Fin tentativo: {fecha(r.finTentativo)}</span><span>Fin real: {r.estado === 'Finalizado' ? fecha(r.finReal) : 'Pendiente'}</span>{r.motivoDesvio?.trim() && <span>Motivo del desvío: {r.motivoDesvio.trim()}</span>}</div>)}</div></div>, document.body)}
     <p className="agr-flow-caption">Cada salto representa una operación. Las pendientes avanzan solo en la línea esperada.{excluidos > 0 ? ` ${excluidos} registro(s) sin fecha tentativa quedaron fuera del gráfico.` : ''}</p>
   </div>;
 }
@@ -176,7 +182,7 @@ export default function EstadisticasAgricolas({ session, empresaId, tab }) {
         {select('Época de siembra', epoca, setEpoca, epocas.map(v => [v, v]), 'Todas')}
         {select('Ciclo del cultivo', cicloCultivo, setCicloCultivo, [['Corto', 'Corto'], ['Largo', 'Largo']])}
         {select('Variedad de semilla', variedad, setVariedad, variedades.map(v => [v, v.toUpperCase()]), 'Todas')}
-        <button type="button" className="clear-button" onClick={limpiar}>Limpiar filtros</button>
+        <button type="button" className="clear-button" onClick={limpiar}><RotateCcw size={17} /><span>Limpiar</span></button>
       </div>
     </section>
     {tab === 'rinde' && <Rinde data={data} filtros={filtros} base={base} setBase={setBase} cruzar={cruzar} setCruzar={setCruzar} comparar={comparar} />}
@@ -188,7 +194,7 @@ export default function EstadisticasAgricolas({ session, empresaId, tab }) {
 function Rinde({ data, filtros, base, setBase, cruzar, setCruzar, comparar }) {
   const rows = filtrar(data.cosechas, filtros);
   const finalizadas = rows.filter(r => r.estado === 'Finalizado');
-  const porCampania = resumirRindes(rows, r => JSON.stringify([r.campania, normalizar(r.grano)]), base).sort((a, b) => a.campania.localeCompare(b.campania));
+  const porCampania = resumirRindes(rows, r => JSON.stringify([r.campania, normalizar(r.grano)]), base).sort((a, b) => compararCampaniasDesc(a.campania, b.campania));
   const volumen = resumirRindes(rows, r => JSON.stringify([r.campania, normalizar(r.grano)]));
   const porGrano = resumirParticipacionGranos(rows, base);
   const ranking = resumirRindes(rows, r => JSON.stringify([r.campania, normalizar(r.grano), r.loteId]), base);
@@ -202,12 +208,12 @@ function Rinde({ data, filtros, base, setBase, cruzar, setCruzar, comparar }) {
     <div className="agr-grid">
       {agrupar(porCampania, r => normalizar(r.grano)).map(([g, items]) => <Card key={g} title={`Rinde ${base === 'humedo' ? 'húmedo' : 'seco'} · ${granoTexto(g)}`} note="Cada barra representa una campaña; incluye solo cosechas finalizadas."><Bars unit="kg/ha" decimals={0} rows={items.map(r => ({ id: r.id, label: r.campania, value: r.rinde, detail: `${n(r.ha)} ha · ${r.lotes} lotes · ${r.registros} cosechas` }))} /></Card>)}
       {!porCampania.length && <Card title="Rinde por campaña"><Empty /></Card>}
-      {agrupar(volumen, r => normalizar(r.grano)).map(([g, items]) => <Card key={`kg-${g}`} title={`Producción total · ${granoTexto(g)}`} note="Kilos registrados, sin ajuste de humedad."><Bars unit="kg" decimals={0} rows={items.sort((a, b) => a.campania.localeCompare(b.campania)).map(r => ({ id: r.id, label: r.campania, value: r.kg, detail: `${n(r.ha)} ha cosechadas` }))} /></Card>)}
+      {agrupar(volumen, r => normalizar(r.grano)).map(([g, items]) => <Card key={`kg-${g}`} title={`Producción total · ${granoTexto(g)}`} note="Kilos registrados, sin ajuste de humedad."><Bars unit="kg" decimals={0} rows={items.sort((a, b) => compararCampaniasDesc(a.campania, b.campania)).map(r => ({ id: r.id, label: r.campania, value: r.kg, detail: `${n(r.ha)} ha cosechadas` }))} /></Card>)}
       {!comparar && <Card title="Participación de los granos" note="Porcentaje sobre las hectáreas cosechadas. Los kg son los registrados sin ajuste de humedad; el rinde sigue la base seleccionada." wide><Pie rows={porGrano} base={base} /></Card>}
-      {agrupar(ranking, r => normalizar(r.grano)).map(([g, items]) => <Card key={`top-${g}`} title={`Mejores rindes · ${granoTexto(g)}`} note="Hasta 10 combinaciones de lote y campaña, ordenadas por kg/ha."><Bars unit="kg/ha" decimals={0} rows={items.sort((a, b) => b.rinde - a.rinde).slice(0, 10).map(r => ({ id: r.id, label: `${lotes.get(r.loteId)} · ${r.campania}`, value: r.rinde, detail: `${n(r.ha)} ha cosechadas` }))} /></Card>)}
+      {agrupar(ranking, r => normalizar(r.grano)).map(([g, items]) => <Card key={`top-${g}`} title={`Mejores rindes · ${granoTexto(g)}`} note="Hasta 5 combinaciones de lote y campaña, ordenadas por kg/ha."><Bars unit="kg/ha" decimals={0} rows={items.sort((a, b) => b.rinde - a.rinde).slice(0, 5).map(r => ({ id: r.id, label: `${lotes.get(r.loteId)} · ${r.campania}`, value: r.rinde, detail: `${n(r.ha)} ha cosechadas` }))} /></Card>)}
       <Card title="Comparativa por época de siembra" note="Comparación descriptiva: las diferencias también pueden depender del lote, clima y manejo." wide>
         <label className="agr-check"><input type="checkbox" checked={cruzar} onChange={e => setCruzar(e.target.checked)} />Cruzar también ciclo del cultivo y variedad de semilla</label>
-        <Table headers={['Campaña', 'Grano', 'Época', ...(cruzar ? ['Ciclo', 'Variedad'] : []), 'Lotes', 'Ha', `Rinde ${base === 'humedo' ? 'húmedo' : 'seco'} (kg/ha)`]} rows={cruces.sort((a, b) => a.campania.localeCompare(b.campania) || normalizar(a.grano).localeCompare(normalizar(b.grano)) || String(a.epoca).localeCompare(String(b.epoca))).map(r => [r.campania, granoTexto(r.grano), r.epoca || 'Sin dato', ...(cruzar ? [r.cicloCultivo || 'Sin dato', r.variedad || 'Sin dato'] : []), r.lotes, n(r.ha), n(r.rinde, 0)])} />
+        <Table headers={['Campaña', 'Grano', 'Época', ...(cruzar ? ['Ciclo', 'Variedad'] : []), 'Lotes', 'Ha', `Rinde ${base === 'humedo' ? 'húmedo' : 'seco'} (kg/ha)`]} rows={cruces.sort((a, b) => compararCampaniasDesc(a.campania, b.campania) || normalizar(a.grano).localeCompare(normalizar(b.grano)) || String(a.epoca).localeCompare(String(b.epoca))).map(r => [r.campania, granoTexto(r.grano), r.epoca || 'Sin dato', ...(cruzar ? [r.cicloCultivo || 'Sin dato', r.variedad || 'Sin dato'] : []), r.lotes, n(r.ha), n(r.rinde, 0)])} />
       </Card>
     </div>
   </>;
@@ -218,9 +224,9 @@ function Siniestros({ data, filtros }) {
   const lotes = new Map(data.lotes.map(l => [l.id, l.nombre]));
   const categorias = [['sinResiembra', 'Afectados sin resiembra'], ['resiembra', 'Afectados con resiembra'], ['total', 'Pérdida total']];
   return <><Kpis items={[["Lotes evaluados", n(result.total, 0), 'Una unidad por lote, campaña y ciclo'], ['Lotes con siniestros', n(result.afectados, 0), 'Cada unidad se cuenta una sola vez'], ['Índice de siniestralidad', result.porcentaje == null ? 'Sin datos' : `${n(result.porcentaje)} %`, 'Lotes afectados ÷ lotes con siembra']]} />
-    <div className="agr-grid"><Card title="Siniestros con mayor incidencia" note="% de lotes-campaña-ciclo con ese siniestro sobre todos los evaluados. Un lote puede sufrir varios tipos; los porcentajes no se suman." wide><Bars unit="%" rows={result.ranking.map(r => ({ id: r.id, label: r.nombre, value: r.porcentaje, detail: `${r.cantidad} de ${result.total} unidades afectadas` }))} /></Card>
+    <div className="agr-grid"><Card title="Siniestros con mayor incidencia" note="Hasta 5 tipos. % de lotes-campaña-ciclo con ese siniestro sobre todos los evaluados. Un lote puede sufrir varios tipos; los porcentajes no se suman." wide><Bars unit="%" rows={result.ranking.slice(0, 5).map(r => ({ id: r.id, label: r.nombre, value: r.porcentaje, detail: `${r.cantidad} de ${result.total} unidades afectadas` }))} /></Card>
       {categorias.map(([key, title]) => <Card key={key} title={title} note={`${result.categorias[key].length} ${result.categorias[key].length === 1 ? 'unidad' : 'unidades'} · ${n(result.afectados ? result.categorias[key].length / result.afectados * 100 : 0)} % de los afectados${key === 'total' ? ' · Siembras deshabilitadas por siniestro' : ''}`}>
-        <Table headers={['Lote', 'Campaña', 'Ciclo', 'Cultivo', 'Siniestro']} rows={result.categorias[key].map(r => [lotes.get(r.loteId), r.campania, r.ciclo, r.cultivos.map(granoTexto).join(', ') || 'Sin dato', r.siniestros.join(', ') || 'Sin dato'])} />
+        <Table headers={['Lote', 'Campaña', 'Ciclo', 'Cultivo', 'Siniestro']} rows={[...result.categorias[key]].sort((a, b) => compararCampaniasDesc(a.campania, b.campania) || String(lotes.get(a.loteId) ?? '').localeCompare(String(lotes.get(b.loteId) ?? ''))).map(r => [lotes.get(r.loteId), r.campania, r.ciclo, r.cultivos.map(granoTexto).join(', ') || 'Sin dato', r.siniestros.join(', ') || 'Sin dato'])} />
       </Card>)}
     </div><p className="agr-note">Cada lote-campaña-ciclo afectado aparece una sola vez: pérdida total si su última siembra o resiembra fue deshabilitada por un siniestro, aunque antes se haya resembrado; con resiembra si volvió a sembrarse y no terminó en pérdida total; en los demás casos, afectado sin resiembra. El alcance Parcial o Total de la recorrida no define la categoría. Se muestran todos los siniestros de la cadena en orden; en pérdida total, el último es el que causó la baja. El alcance no permite calcular un porcentaje de kilos perdidos.</p>
   </>;
@@ -233,11 +239,11 @@ function Productividad({ data, filtros, operacion, setOperacion }) {
   const resumen = productividad(registros);
   const superficies = calcularSuperficie(data, filtros);
   const lotes = new Map(data.lotes.map(l => [l.id, l]));
-  const trazabilidad = [...sembradas.map(r => ({ ...r, operacion: r.tipo || 'Siembra', loteNombre: lotes.get(r.loteId)?.nombre })), ...cosechadas.map(r => ({ ...r, operacion: 'Cosecha', loteNombre: lotes.get(r.loteId)?.nombre }))].sort((a, b) => a.loteId - b.loteId || String(a.inicio).localeCompare(String(b.inicio)));
+  const trazabilidad = [...sembradas.map(r => ({ ...r, operacion: r.tipo || 'Siembra', loteNombre: lotes.get(r.loteId)?.nombre })), ...cosechadas.map(r => ({ ...r, operacion: 'Cosecha', loteNombre: lotes.get(r.loteId)?.nombre }))].sort((a, b) => compararCampaniasDesc(a.campania, b.campania) || a.loteId - b.loteId || String(a.inicio).localeCompare(String(b.inicio)));
   const conFechas = registros.filter(r => r.estado === 'Finalizado' && desvioDias(r) != null);
   const enPlazo = conFechas.filter(r => desvioDias(r) <= 0).length;
   const ranking = agrupar(registros.filter(r => r.estado === 'Finalizado' && Number(r.haHora) > 0 && Number(r.ha) > 0), r => JSON.stringify([r.loteId, r.campania])).map(([id, rows]) => ({ id, ...rows[0], ...productividad(rows) })).sort((a, b) => b.valor - a.valor);
-  const evolucion = agrupar(registros, r => r.campania).map(([id, rows]) => ({ id, label: id, ...productividad(rows) })).filter(r => r.valor != null).sort((a, b) => a.id.localeCompare(b.id));
+  const evolucion = agrupar(registros, r => r.campania).map(([id, rows]) => ({ id, label: id, ...productividad(rows) })).filter(r => r.valor != null).sort((a, b) => compararCampaniasDesc(a.id, b.id));
   const superficiesTrabajadas = superficies.filter(r => r.trabajadas > 0);
   const zonas = agrupar(superficiesTrabajadas, r => JSON.stringify([r.provincia, r.zona])).map(([id, rows]) => ({ id, nombre: `${rows[0].zona}${rows[0].provincia ? ` · ${rows[0].provincia}` : ''}`, cantidad: new Set(rows.map(r => r.loteId)).size, ha: suma(rows, 'trabajadas') })).sort((a, b) => b.cantidad - a.cantidad);
   const puntos = agrupar(superficiesTrabajadas, r => r.loteId).map(([id, rows]) => ({ ...lotes.get(id), ha: suma(rows, 'trabajadas') }));
@@ -259,8 +265,8 @@ function Productividad({ data, filtros, operacion, setOperacion }) {
       {superficies.some(r => r.excedida) && <p className="agr-notice">Hay superficies sembradas mayores al tamaño actual del lote; la cobertura se limita al tamaño actual.</p>}
     </Card>
     <Card title="Evolución de la productividad" note="Seleccioná Comparar campañas para ver la evolución. Las resiembras cuentan como trabajo adicional."><Bars unit="ha/h" decimals={2} rows={evolucion.map(r => ({ ...r, value: r.valor, detail: `${n(r.ha)} ha · ${r.registros} operaciones finalizadas` }))} /></Card>
-    <Card title="Lotes con mayor productividad"><Bars unit="ha/h" decimals={2} rows={barraRanking(ranking.slice(0, 10))} /></Card>
-    <Card title="Lotes con menor productividad"><Bars unit="ha/h" decimals={2} rows={barraRanking([...ranking].reverse().slice(0, 10))} /></Card>
+    <Card title="Lotes con mayor productividad"><Bars unit="ha/h" decimals={2} rows={barraRanking(ranking.slice(0, 5))} /></Card>
+    <Card title="Lotes con menor productividad"><Bars unit="ha/h" decimals={2} rows={barraRanking([...ranking].reverse().slice(0, 5))} /></Card>
     <Card title="Concentración y superficie por zona" note="Lotes distintos por zona. Al comparar campañas, las hectáreas son acumuladas por campaña y ciclo." wide>
       <MapaCalor puntos={puntos} />
       <Table headers={['Zona / provincia', 'Lotes distintos', 'Ha trabajadas']} rows={zonas.map(r => [r.nombre, r.cantidad, n(r.ha)])} />

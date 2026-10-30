@@ -138,7 +138,7 @@ public sealed class ReporteriaEstadisticasService(
             campania = g.Key.Campania, cultivo = g.Key.Grano,
             lote = lotes.GetValueOrDefault(g.Key.LoteId)?.Nombre, ha = g.Sum(x => x.Ha ?? 0),
             rindeKgHa = g.Sum(Peso) / g.Sum(x => x.Ha ?? 0)
-        }).GroupBy(x => x.cultivo).SelectMany(g => g.OrderByDescending(x => x.rindeKgHa).Take(10)).ToArray();
+        }).GroupBy(x => x.cultivo).SelectMany(g => g.OrderByDescending(x => x.rindeKgHa).Take(5)).ToArray();
         var epocas = validas.GroupBy(x => (x.Campania, x.Grano, x.Epoca, x.CicloCultivo, x.Variedad))
             .Select(g => new { campania = g.Key.Campania, cultivo = g.Key.Grano, epoca = g.Key.Epoca,
                 cicloCultivo = g.Key.CicloCultivo, variedad = g.Key.Variedad,
@@ -206,7 +206,7 @@ public sealed class ReporteriaEstadisticasService(
         {
             lotesEvaluados = unidades.Length, lotesAfectados = afectados,
             indiceSiniestralidadPct = unidades.Length > 0 ? afectados * 100.0 / unidades.Length : (double?)null,
-            incidenciaPorSiniestro = causas.Values.OrderByDescending(x => x.Cantidad).Select(x => new
+            incidenciaPorSiniestro = causas.Values.OrderByDescending(x => x.Cantidad).Take(5).Select(x => new
             {
                 siniestro = x.Nombre, unidades = x.Cantidad,
                 porcentaje = unidades.Length > 0 ? x.Cantidad * 100.0 / unidades.Length : 0
@@ -296,8 +296,8 @@ public sealed class ReporteriaEstadisticasService(
             detalleFechasTruncado = trazabilidad.Length > 60,
             mayorSuperficieSinTrabajar = superficies.Where(x => x.sinTrabajarHa >= 0.05)
                 .OrderByDescending(x => x.sinTrabajarHa).Take(10),
-            evolucionProductividad = evolucion, lotesMayorProductividad = ranking.Take(10),
-            lotesMenorProductividad = ranking.Reverse().Take(10), zonas,
+            evolucionProductividad = evolucion, lotesMayorProductividad = ranking.Take(5),
+            lotesMenorProductividad = ranking.Reverse().Take(5), zonas,
             mapaCalor = mapa.Take(60), mapaTruncado = mapa.Length > 60,
             lotesSinCoordenadas = mapa.Count(x => x.latitud is null || x.longitud is null)
         };

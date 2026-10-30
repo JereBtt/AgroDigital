@@ -21,7 +21,11 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
                    c.EmpresaId, e.Nombre AS EmpresaNombre, c.Periodo,
                    cc.LoteId, l.Nombre AS LoteNombre, l.Hectareas, l.Ciudad, ultimo.CultivoAntecesor, cc.Producto,
                    COALESCE(cc.FechaInicio, c.FechaInicio), COALESCE(cc.FechaFin, c.FechaFin), cc.Estado, cc.EtapaActual, cc.CicloEstacional,
-                   CASE WHEN cc.Estado = N'Finalizado' THEN N'Cosechado'
+                   CASE WHEN ultimaSiembraHistorica.DeshabilitacionId IS NOT NULL
+                             AND ultimaSiembra.SiembraId IS NULL
+                             AND NOT EXISTS (SELECT 1 FROM dbo.Cosechas co WHERE co.SiembraId = ultimaSiembraHistorica.SiembraId AND co.Estado = N'Finalizado')
+                        THEN N'Deshabilitado'
+                   WHEN cc.Estado = N'Finalizado' THEN N'Cosechado'
                    WHEN cc.Estado = N'Pendiente' THEN N'Pendiente'
                    WHEN ultimaSiembra.EstadoSiembra = N'Finalizado' THEN N'Cultivado'
                    ELSE N'Pendiente' END AS EtapaProductiva
@@ -56,6 +60,13 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
                   AND (s.CampaniaNombre = c.Nombre OR LEFT(LTRIM(RTRIM(ISNULL(s.CampaniaNombre, N''))), 9) = LEFT(c.Periodo, 9))
                 ORDER BY s.SiembraId DESC
             ) AS ultimaSiembra
+            OUTER APPLY (
+                SELECT TOP (1) s.SiembraId, s.DeshabilitacionId
+                FROM dbo.Siembras AS s
+                WHERE s.LoteId = cc.LoteId AND s.Producto = cc.Producto AND s.CicloEstacional = cc.CicloEstacional
+                  AND (s.CampaniaNombre = c.Nombre OR LEFT(LTRIM(RTRIM(ISNULL(s.CampaniaNombre, N''))), 9) = LEFT(c.Periodo, 9))
+                ORDER BY s.SiembraId DESC
+            ) AS ultimaSiembraHistorica
             WHERE @IncluirTodos = 1
                OR EXISTS (
                     SELECT 1
@@ -111,7 +122,11 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
             SELECT c.CampaniaId, c.EmpresaId, e.Nombre AS EmpresaNombre, c.Periodo, c.Nombre, c.FechaInicio, c.FechaFin, c.Observaciones, c.FechaCreacion, c.FechaModificacion,
                    cc.CampaniaCombinacionId, cc.LoteId, l.Nombre AS LoteNombre, l.Hectareas, l.Ciudad, ultimo.CultivoAntecesor,
                    cc.Producto, cc.FechaInicio, cc.FechaFin, cc.Estado, cc.EtapaActual, cc.CicloEstacional,
-                   CASE WHEN cc.Estado = N'Finalizado' THEN N'Cosechado'
+                   CASE WHEN ultimaSiembraHistorica.DeshabilitacionId IS NOT NULL
+                             AND ultimaSiembra.SiembraId IS NULL
+                             AND NOT EXISTS (SELECT 1 FROM dbo.Cosechas co WHERE co.SiembraId = ultimaSiembraHistorica.SiembraId AND co.Estado = N'Finalizado')
+                        THEN N'Deshabilitado'
+                   WHEN cc.Estado = N'Finalizado' THEN N'Cosechado'
                    WHEN cc.Estado = N'Pendiente' THEN N'Pendiente'
                    WHEN ultimaSiembra.EstadoSiembra = N'Finalizado' THEN N'Cultivado'
                    ELSE N'Pendiente' END AS EtapaProductiva
@@ -146,6 +161,13 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
                   AND (s.CampaniaNombre = c.Nombre OR LEFT(LTRIM(RTRIM(ISNULL(s.CampaniaNombre, N''))), 9) = LEFT(c.Periodo, 9))
                 ORDER BY s.SiembraId DESC
             ) AS ultimaSiembra
+            OUTER APPLY (
+                SELECT TOP (1) s.SiembraId, s.DeshabilitacionId
+                FROM dbo.Siembras AS s
+                WHERE s.LoteId = cc.LoteId AND s.Producto = cc.Producto AND s.CicloEstacional = cc.CicloEstacional
+                  AND (s.CampaniaNombre = c.Nombre OR LEFT(LTRIM(RTRIM(ISNULL(s.CampaniaNombre, N''))), 9) = LEFT(c.Periodo, 9))
+                ORDER BY s.SiembraId DESC
+            ) AS ultimaSiembraHistorica
             WHERE c.CampaniaId = @CampaniaId
               AND (
                     @IncluirTodos = 1
@@ -299,7 +321,16 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
             await using var command = new SqlCommand(updateSql, connection, (SqlTransaction)transaction);
             var estadosOriginales = await ObtenerEstadosCombinacionesAsync(connection, (SqlTransaction)transaction, campaniaId);
             var ciclosSolicitados = request.Combinaciones.ToDictionary(item => (item.LoteId, item.CicloEstacional));
-            const string existingCyclesSql = "SELECT LoteId, CicloEstacional, Producto, Estado, EtapaActual FROM dbo.CampaniaCombinaciones WITH (UPDLOCK, HOLDLOCK) WHERE CampaniaId = @CampaniaId;";
+            const string existingCyclesSql = """
+                SELECT cc.LoteId, cc.CicloEstacional, cc.Producto, cc.Estado, cc.EtapaActual,
+                    CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.Siembras s
+                                           WHERE s.LoteId = cc.LoteId AND s.CicloEstacional = cc.CicloEstacional
+                                             AND LEFT(LTRIM(RTRIM(ISNULL(s.CampaniaNombre, N''))), 9) = c.Periodo)
+                         THEN 1 ELSE 0 END AS bit) AS TuvoSiembra
+                FROM dbo.CampaniaCombinaciones cc WITH (UPDLOCK, HOLDLOCK)
+                JOIN dbo.Campanias c ON c.CampaniaId = cc.CampaniaId
+                WHERE cc.CampaniaId = @CampaniaId;
+                """;
             await using (var existingCycles = new SqlCommand(existingCyclesSql, connection, (SqlTransaction)transaction))
             {
                 existingCycles.Parameters.AddWithValue("@CampaniaId", campaniaId);
@@ -307,7 +338,7 @@ public class CampaniaRepository(IConfiguration configuration) : ICampaniaReposit
                 while (await reader.ReadAsync())
                 {
                     var key = (reader.GetInt32(0), reader.GetString(1));
-                    var started = reader.GetString(3) != "Pendiente" || reader.GetString(4) != "Sin etapa";
+                    var started = reader.GetString(3) != "Pendiente" || reader.GetString(4) != "Sin etapa" || reader.GetBoolean(5);
                     if (started && (!ciclosSolicitados.TryGetValue(key, out var requested) ||
                                     !string.Equals(requested.Producto.Trim(), reader.GetString(2), StringComparison.OrdinalIgnoreCase)))
                         throw new CampaniaPlanificacionBloqueadaException("No se puede quitar ni cambiar el cultivo de una planificación con siembra iniciada.");

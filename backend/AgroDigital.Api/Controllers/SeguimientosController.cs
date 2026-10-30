@@ -84,6 +84,8 @@ public class SeguimientosController(
         if (siembra is null) return NotFound();
         if (siembra.Deshabilitada) return Conflict("La siembra deshabilitada se conserva como historial y no admite cambios.");
         if (siembra.Estado == "Finalizado") return Conflict("El seguimiento finalizado queda disponible solo para consulta.");
+        if (!string.Equals(siembra.EstadoSiembra, "Finalizado", StringComparison.OrdinalIgnoreCase))
+            return Conflict("Primero debes finalizar la siembra para modificar seguimientos.");
         var lote = await loteRepository.ObtenerPorIdAsync(siembra.LoteId, usuario.UsuarioId, usuario.Rol == "Admin");
         if (lote is null) return NotFound();
         var actual = await seguimientoRepository.ObtenerPorIdAsync(siembraId, seguimientoId);
@@ -124,7 +126,7 @@ public class SeguimientosController(
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
         await permisos.ExigirAsync(usuario, RecursoOperativo.Siembra, siembraId, RolesPermiso.Estructura, "finalizar el seguimiento");
-        if (await SiembraDeshabilitadaAsync(siembraId)) return Conflict("La siembra deshabilitada se conserva como historial y no admite cambios.");
+        if (await SeguimientoCerradoODeshabilitadoAsync(siembraId) is { } bloqueo) return Conflict(bloqueo);
         var finalizado = await seguimientoRepository.FinalizarAsync(siembraId);
         return finalizado ? NoContent() : NotFound();
     }
@@ -236,14 +238,13 @@ public class SeguimientosController(
         return eliminado ? NoContent() : NotFound();
     }
 
-    private async Task<bool> SiembraDeshabilitadaAsync(int siembraId) =>
-        (await siembraRepository.ObtenerPorIdAsync(siembraId))?.Deshabilitada == true;
-
     private async Task<string?> SeguimientoCerradoODeshabilitadoAsync(int siembraId)
     {
         var siembra = await siembraRepository.ObtenerPorIdAsync(siembraId);
         if (siembra?.Deshabilitada == true) return "La siembra deshabilitada se conserva como historial y no admite cambios.";
         if (siembra?.Estado == "Finalizado") return "El seguimiento finalizado queda disponible solo para consulta.";
+        if (siembra is not null && !string.Equals(siembra.EstadoSiembra, "Finalizado", StringComparison.OrdinalIgnoreCase))
+            return "Primero debes finalizar la siembra para modificar seguimientos.";
         return null;
     }
 

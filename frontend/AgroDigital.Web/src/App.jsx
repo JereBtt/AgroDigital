@@ -5829,7 +5829,7 @@ function LotesList({ permisos = { estructura: true }, lotes, loading, parentFilt
           description={statusFilteredLotes.length === 0 && statusFilter === 'habilitados'
             ? 'Los lotes deshabilitados se encuentran en la pestaña Deshabilitados.'
             : 'Proba limpiar la busqueda para volver a ver los registros disponibles.'}
-          actionLabel={statusFilteredLotes.length === 0 && statusFilter === 'habilitados' ? 'Ver deshabilitados' : 'Limpiar filtros'}
+          actionLabel={statusFilteredLotes.length === 0 && statusFilter === 'habilitados' ? 'Ver deshabilitados' : 'Limpiar'}
           actionIcon={statusFilteredLotes.length === 0 && statusFilter === 'habilitados' ? <Eye size={18} /> : <RotateCcw size={18} />}
           onAction={statusFilteredLotes.length === 0 && statusFilter === 'habilitados' ? () => setStatusFilter('deshabilitados') : clearFilters}
           variant="compact"

@@ -359,6 +359,13 @@ export default function Campanias({ permisos = PERMISOS_TODOS, session, lotes, p
   }
 
   async function handleSave({ force = false, omissionReasons = summerOmissionReasons } = {}) {
+    if (pendingReactivation?.modo === 'Nuevas' && !form.combinaciones.some((item) =>
+      Number(item.loteId) === Number(pendingReactivation.loteId)
+      && item.estado === 'Pendiente' && item.etapaActual === 'Sin etapa'
+      && getEtapaProductiva(item) === 'Pendiente')) {
+      setError('Agregá una planificación pendiente en un ciclo que todavía no tuvo siembra antes de habilitar el lote.');
+      return;
+    }
     if (!force) {
       const missing = getMissingEnabledLots();
       if (missing.length > 0) {
@@ -584,6 +591,7 @@ export default function Campanias({ permisos = PERMISOS_TODOS, session, lotes, p
         <CampaniaDetalle
           permisos={permisos}
           campania={selectedCampania}
+          lotes={lotes}
           onBack={goToList}
           onEdit={() => openCampania(selectedCampania.campaniaId, 'edit')}
           onRegisterSiembra={onRegisterSiembra}
@@ -774,7 +782,7 @@ function CampaniasList({ permisos = PERMISOS_TODOS, campanias, selectedEmpresaId
           {hayFiltrosTabla && (
             <button className="green-button empty-state-action" type="button" onClick={clearFilters}>
               <RotateCcw size={18} />
-              <span>Limpiar filtros</span>
+              <span>Limpiar</span>
             </button>
           )}
         </section>
@@ -1182,14 +1190,14 @@ function CampaignPeriodConflictModal({ message, onClose }) {
   , document.body);
 }
 
-function CampaniaDetalle({ permisos = PERMISOS_TODOS, campania, onBack, onEdit, onRegisterSiembra, onDisablePlan }) {
+function CampaniaDetalle({ permisos = PERMISOS_TODOS, campania, lotes, onBack, onEdit, onRegisterSiembra, onDisablePlan }) {
   const [query, setQuery] = useState('');
   const [cicloFilter, setCicloFilter] = useState('');
   const [productoFilter, setProductoFilter] = useState('');
   const [etapaFilter, setEtapaFilter] = useState('');
   const combinaciones = campania?.combinaciones || [];
   const productos = [...new Set(combinaciones.map((item) => item.producto).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
-  const etapas = ['Pendiente', 'Cultivado', 'Cosechado'].filter((etapa) => combinaciones.some((item) => getEtapaProductiva(item) === etapa));
+  const etapas = ['Pendiente', 'Cultivado', 'Cosechado', 'Deshabilitado'].filter((etapa) => combinaciones.some((item) => getEtapaProductiva(item) === etapa));
   const busqueda = normalizeSearchText(query.trim());
   const combinacionesFiltradas = combinaciones.filter((item) => (
     (!busqueda || [item.loteNombre, item.loteZona].some((value) => normalizeSearchText(value).includes(busqueda)))
@@ -1276,6 +1284,7 @@ function CampaniaDetalle({ permisos = PERMISOS_TODOS, campania, onBack, onEdit, 
       <CombinacionesTable
         permisos={permisos}
         combinaciones={combinacionesFiltradas}
+        lotes={lotes}
         emptyMessage={combinaciones.length ? 'No hay combinaciones que coincidan con los filtros.' : undefined}
         showOperationalActions
         showDates={false}
@@ -1296,7 +1305,7 @@ function CampaniaDetalle({ permisos = PERMISOS_TODOS, campania, onBack, onEdit, 
   );
 }
 
-function CombinacionesTable({ permisos = PERMISOS_TODOS, combinaciones, editable = false, showOperationalActions = false, showAntecesor = editable, showDates = true, emptyMessage = 'Todavia no agregaste combinaciones.', onRemove, onEdit, onRegisterSiembra, onDisablePlan }) {
+function CombinacionesTable({ permisos = PERMISOS_TODOS, combinaciones, lotes, editable = false, showOperationalActions = false, showAntecesor = editable, showDates = true, emptyMessage = 'Todavia no agregaste combinaciones.', onRemove, onEdit, onRegisterSiembra, onDisablePlan }) {
   const columnCount = 6 + (showAntecesor ? 1 : 0) + (editable || showOperationalActions ? 1 : 0) + (showDates ? 2 : 0);
 
   return (
@@ -1330,18 +1339,18 @@ function CombinacionesTable({ permisos = PERMISOS_TODOS, combinaciones, editable
               <td><CampaniaEtapaChip etapa={getEtapaProductiva(item)} /></td>
               {editable && (
                 <td className="actions-cell">
-                  <button className="table-action-tooltip" data-tooltip={item.estado === 'Pendiente' && item.etapaActual === 'Sin etapa' ? 'Quitar' : 'Siembra iniciada'} type="button" aria-label={`Quitar planificación de ${item.loteNombre} en ${item.cicloEstacional || 'Verano'}`} disabled={item.estado !== 'Pendiente' || item.etapaActual !== 'Sin etapa'} onClick={() => onRemove(item.tempId)}><Trash2 size={18} /></button>
+                  <button className="table-action-tooltip" data-tooltip={item.estado === 'Pendiente' && item.etapaActual === 'Sin etapa' && getEtapaProductiva(item) === 'Pendiente' ? 'Quitar' : 'Planificación con siembra registrada: conservá su historial'} type="button" aria-label={`Quitar planificación de ${item.loteNombre} en ${item.cicloEstacional || 'Verano'}`} disabled={item.estado !== 'Pendiente' || item.etapaActual !== 'Sin etapa' || getEtapaProductiva(item) !== 'Pendiente'} onClick={() => onRemove(item.tempId)}><Trash2 size={18} /></button>
                 </td>
               )}
               {showOperationalActions && (
                 <td className="compact-actions-cell">
                   <div className="actions-cell actions-cell-center">
                     {permisos.estructura && <button className="table-action-tooltip" data-tooltip="Editar campaña" type="button" aria-label="Editar campaña" onClick={onEdit}><Edit size={18} /></button>}
-                    {permisos.estructura && <button className="table-action-tooltip" data-tooltip={item.estado === 'Pendiente' && item.etapaActual === 'Sin etapa' ? 'Registrar siembra' : 'Siembra iniciada'} type="button" aria-label={`Registrar siembra para ${item.loteNombre} en ${item.cicloEstacional || 'Verano'}`} disabled={item.estado !== 'Pendiente' || item.etapaActual !== 'Sin etapa'} onClick={() => onRegisterSiembra?.(item)}><Sprout size={18} /></button>}
+                    {permisos.estructura && <button className="table-action-tooltip" data-tooltip={lotes && !lotes.some((lote) => Number(lote.loteId) === Number(item.loteId) && lote.activo) ? 'Lote deshabilitado' : getEtapaProductiva(item) === 'Pendiente' && item.estado === 'Pendiente' && item.etapaActual === 'Sin etapa' ? 'Registrar siembra' : 'Planificación ya ejecutada'} type="button" aria-label={`Registrar siembra para ${item.loteNombre} en ${item.cicloEstacional || 'Verano'}`} disabled={Boolean(lotes && !lotes.some((lote) => Number(lote.loteId) === Number(item.loteId) && lote.activo)) || getEtapaProductiva(item) !== 'Pendiente' || item.estado !== 'Pendiente' || item.etapaActual !== 'Sin etapa'} onClick={() => onRegisterSiembra?.(item)}><Sprout size={18} /></button>}
                     {permisos.estructura && <button className="table-action-tooltip" data-tooltip="Registrar cosecha" type="button" aria-label="Registrar cosecha" disabled={item.estado === 'Pendiente'} onClick={() => alert('La accion quedo preparada para conectar con Registrar Cosecha.')}><Scale size={18} /></button>}
                     {permisos.movimientoGrano && <button className="table-action-tooltip" data-tooltip="Almacenamiento" type="button" aria-label="Registrar almacenamiento" disabled={item.estado === 'Pendiente'}><Package size={18} /></button>}
                     {permisos.movimientoGrano && <button className="table-action-tooltip" data-tooltip="Distribucion" type="button" aria-label="Registrar distribucion" disabled={item.estado === 'Pendiente'}><Truck size={18} /></button>}
-                    {permisos.estructura && <button className="table-action-tooltip status-action-disable" data-tooltip={item.estado === 'Pendiente' && item.etapaActual === 'Sin etapa' ? 'Deshabilitar' : 'Desde Siembras'} type="button" aria-label={`Deshabilitar planificación de ${item.loteNombre} en ${item.cicloEstacional || 'Verano'}`} disabled={item.estado !== 'Pendiente' || item.etapaActual !== 'Sin etapa'} onClick={() => onDisablePlan?.(item)}><Ban size={18} /></button>}
+                    {permisos.estructura && <button className="table-action-tooltip status-action-disable" data-tooltip={getEtapaProductiva(item) === 'Pendiente' && item.estado === 'Pendiente' && item.etapaActual === 'Sin etapa' ? 'Deshabilitar' : 'Desde Siembras'} type="button" aria-label={`Deshabilitar planificación de ${item.loteNombre} en ${item.cicloEstacional || 'Verano'}`} disabled={getEtapaProductiva(item) !== 'Pendiente' || item.estado !== 'Pendiente' || item.etapaActual !== 'Sin etapa'} onClick={() => onDisablePlan?.(item)}><Ban size={18} /></button>}
                   </div>
                 </td>
               )}
@@ -1368,6 +1377,6 @@ function CampaniaEstadoChip({ estado }) {
 }
 
 function CampaniaEtapaChip({ etapa }) {
-  const className = ['campania-stage-chip', etapa === 'Pendiente' ? 'campania-stage-pending' : '', etapa === 'Cultivado' ? 'campania-stage-grown' : '', etapa === 'Cosechado' ? 'campania-stage-harvested' : ''].filter(Boolean).join(' ');
+  const className = ['campania-stage-chip', etapa === 'Pendiente' ? 'campania-stage-pending' : '', etapa === 'Cultivado' ? 'campania-stage-grown' : '', etapa === 'Cosechado' ? 'campania-stage-harvested' : '', etapa === 'Deshabilitado' ? 'campania-stage-disabled' : ''].filter(Boolean).join(' ');
   return <span className={className}>{etapa || 'Pendiente'}</span>;
 }

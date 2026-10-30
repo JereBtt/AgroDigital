@@ -167,7 +167,8 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
                 JOIN dbo.Campanias c ON c.CampaniaId = cc.CampaniaId
                 WHERE cc.LoteId = @LoteId AND cc.Producto = @Producto
                   AND cc.CicloEstacional = @CicloEstacional AND c.Nombre = @CampaniaNombre
-            ) THROW 50001, N'El lote y cultivo deben estar planificados para el ciclo estacional elegido.', 1;
+                  AND cc.Estado = N'Pendiente' AND cc.EtapaActual = N'Sin etapa'
+            ) THROW 50001, N'El lote y cultivo deben tener una planificación pendiente sin siembra iniciada para el ciclo estacional elegido.', 1;
             IF @TipoRegistro <> N'Resiembra' AND EXISTS (
                 SELECT 1 FROM dbo.Siembras AS invierno WITH (UPDLOCK, HOLDLOCK)
                 WHERE invierno.LoteId = @LoteId AND invierno.CicloEstacional = N'Invierno'
@@ -220,17 +221,10 @@ public class SiembraRepository(IConfiguration configuration) : ISiembraRepositor
             IF @TipoRegistro <> N'Resiembra' AND EXISTS (
                 SELECT 1 FROM dbo.Siembras WITH (UPDLOCK, HOLDLOCK)
                 WHERE LoteId = @LoteId AND ISNULL(TipoRegistro, N'Siembra') <> N'Resiembra'
-                  AND DeshabilitacionId IS NULL AND CicloEstacional = @CicloEstacional
+                  AND CicloEstacional = @CicloEstacional
                   AND LEFT(LTRIM(RTRIM(ISNULL(CampaniaNombre, N''))), 9) = LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)
             )
-                THROW 50001, N'Este lote ya tiene una siembra original en el ciclo elegido. Utilizá Registrar resiembra si corresponde.', 1;
-            IF @TipoRegistro <> N'Resiembra' AND EXISTS (
-                SELECT 1 FROM dbo.Siembras WITH (UPDLOCK, HOLDLOCK)
-                WHERE LoteId = @LoteId AND DeshabilitacionId IS NOT NULL
-                  AND ISNULL(TipoRegistro, N'Siembra') <> N'Resiembra' AND Producto = @Producto AND CicloEstacional = @CicloEstacional
-                  AND LEFT(LTRIM(RTRIM(ISNULL(CampaniaNombre, N''))), 9) = LEFT(LTRIM(RTRIM(ISNULL(@CampaniaNombre, N''))), 9)
-            )
-                THROW 50001, N'La nueva siembra original debe planificarse con otro cultivo; la anterior queda como historial deshabilitado.', 1;
+                THROW 50001, N'Este lote ya tuvo una siembra original en el ciclo elegido de esta campaña. La baja conserva su historial y no habilita otra siembra original.', 1;
             IF @TipoRegistro = N'Resiembra'
             BEGIN
                 -- La cosecha bloquea esta misma etapa al iniciarse. Mantener el bloqueo

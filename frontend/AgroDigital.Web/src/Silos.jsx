@@ -1070,7 +1070,7 @@ function SilosList({ permisos = PERMISOS_TODOS, silos, parentFilters = null, loa
               <span>Registrar silo</span>
             </button>)}</>
           ) : (
-            <button className="back-button empty-state-action" type="button" onClick={clearFilters}>Limpiar filtros</button>
+            <button className="back-button empty-state-action" type="button" onClick={clearFilters}>Limpiar</button>
           )}
         </section>
       ) : vista === 'tarjetas' ? (

@@ -335,7 +335,7 @@ export default function Estadisticas({ session, parentFilters = null, selectedEm
               {granos.map((g) => <option key={g} value={g}>{granoTexto(g)}</option>)}
             </select>
           </label>
-          <button className="clear-button est-limpiar" type="button" onClick={limpiar}>Limpiar filtros</button>
+          <button className="clear-button est-limpiar" type="button" onClick={limpiar}>Limpiar</button>
         </div>
         <div className="est-leyenda-alcance">
           <span>Cada gráfico indica qué muestra:</span>

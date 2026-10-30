@@ -3668,6 +3668,12 @@ button {
   color: #1d5f96;
 }
 
+.campania-stage-disabled {
+  border-color: #e4c9c9;
+  background: #fff4f3;
+  color: #a43b35;
+}
+
 .campaign-grain-builder {
   display: grid;
   grid-template-columns: minmax(220px, 320px) minmax(220px, 320px) auto;

@@ -66,6 +66,28 @@ internal static class LoteCultivoEstadoSql
                       SELECT 1 FROM dbo.Cosechas AS co
                       WHERE co.SiembraId = s.SiembraId AND co.Estado = N'Finalizado'
                   ))
+                  OR (l.Activo = 1
+                      AND EXISTS (
+                          SELECT 1 FROM dbo.Siembras AS veranoDeshabilitado
+                          WHERE veranoDeshabilitado.LoteId = l.LoteId
+                            AND veranoDeshabilitado.CicloEstacional = N'Verano'
+                            AND veranoDeshabilitado.DeshabilitacionId IS NOT NULL
+                            AND LEFT(LTRIM(RTRIM(ISNULL(veranoDeshabilitado.CampaniaNombre, N''))), 9) = campania.Periodo
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM dbo.Siembras AS veranoActivo
+                          WHERE veranoActivo.LoteId = l.LoteId
+                            AND veranoActivo.CicloEstacional = N'Verano'
+                            AND veranoActivo.DeshabilitacionId IS NULL
+                            AND LEFT(LTRIM(RTRIM(ISNULL(veranoActivo.CampaniaNombre, N''))), 9) = campania.Periodo
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM dbo.CampaniaCombinaciones AS veranoNuevo
+                          INNER JOIN dbo.Campanias AS cv ON cv.CampaniaId = veranoNuevo.CampaniaId
+                          WHERE veranoNuevo.LoteId = l.LoteId AND cv.Periodo = campania.Periodo
+                            AND veranoNuevo.CicloEstacional = N'Verano'
+                            AND veranoNuevo.Estado = N'Pendiente' AND veranoNuevo.EtapaActual = N'Sin etapa'
+                      ))
               )
             ORDER BY ca.CampaniaId DESC, cc.CampaniaCombinacionId DESC
         ) AS inviernoPendiente

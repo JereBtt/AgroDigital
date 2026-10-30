@@ -49,7 +49,11 @@ public sealed class ReporteriaIaService(ReporteriaRepository repository, Reporte
         Solo se ofrecen herramientas de lectura para esta empresa. No supongas que un dato de otra empresa existe.
         Usá contexto cuando necesites descubrir campañas o lotes. Para un informe completo de campaña usá
         obtener_informe_campania: ya reúne todas las secciones relevantes. Si una sección dice sinDatos,
-        indicalo explícitamente y no inventes cifras ni repitas consultas para rellenarla.
+        explicá la ausencia de registros bajo Observaciones, sin llamarla "Secciones sin datos" ni
+        "Módulos sin datos". Una resiembra o un siniestro puede no haber ocurrido; no presentes su
+        ausencia como una carga pendiente. Para almacenamiento y distribución, aclará que no hay
+        registros de esa campaña sin afirmar que el proceso no ocurrió. No inventes cifras ni repitas
+        consultas para rellenar una sección vacía.
         Para comparar el fin tentativo y real de siembras usá obtener_desvios_siembra. desvioDias positivo
         significa atraso, negativo significa adelanto. motivoRegistrado es la justificación asentada por el usuario;
         si está vacío no atribuyas una causa a ese desvío. No confundas época de siembra con fechas de cierre.
@@ -205,8 +209,13 @@ public sealed class ReporteriaIaService(ReporteriaRepository repository, Reporte
                     .Select(x => x?["text"]?.GetValue<string>() ?? "")).Trim();
                 if (string.IsNullOrWhiteSpace(text))
                     throw new InvalidOperationException("OpenAI no generó una respuesta de texto.");
-                if (informeCompleto && modulosSinDatos.Count > 0)
-                    text += $"\n\n---\n\n**Módulos sin datos registrados:** {string.Join(", ", modulosSinDatos)}.";
+                if (informeCompleto)
+                    text = Regex.Replace(text,
+                        @"(?im)(?:\*\*)?(?:Secciones|Módulos) sin datos(?: registrados)?(?:\*\*)?\s*:",
+                        "**Observaciones:**");
+                if (informeCompleto && modulosSinDatos.Count > 0
+                    && !Regex.IsMatch(text, @"(?im)^\s*(?:#{1,6}\s*)?(?:\*\*)?Observaciones(?:\*\*)?\s*:"))
+                    text += $"\n\n---\n\n**Observaciones:** No hay registros de {string.Join(", ", modulosSinDatos)} para esta campaña. Esto no implica por sí solo que falte cargar información: algunos procesos, como las resiembras, pueden no haber sido necesarios.";
                 return new ResultadoReporteria(FormatearDecimales(text), modo, sources.Distinct().ToArray());
             }
             if (called + calls.Length > maximoLlamadas)

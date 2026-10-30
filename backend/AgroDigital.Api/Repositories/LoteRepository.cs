@@ -324,6 +324,23 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
                 if (deshabilitacion.Motivo == "Alquilado recientemente"
                     && !await PuedeDeshabilitarPorAlquilerRecienteAsync(connection, transaction, loteId))
                     throw new LoteDeshabilitacionBloqueadaException("Alquilado recientemente solo corresponde a un lote registrado durante la campaña activa y todavía no asociado a ella.");
+                await using (var plan = new SqlCommand("""
+                    SELECT TOP (1) cc.EtapaActual
+                    FROM dbo.CampaniaCombinaciones cc WITH (UPDLOCK, HOLDLOCK)
+                    JOIN dbo.Campanias c ON c.CampaniaId = cc.CampaniaId
+                    WHERE cc.LoteId = @LoteId AND c.Periodo = @Periodo
+                      AND cc.Estado <> N'Finalizado'
+                    ORDER BY CASE WHEN cc.EtapaActual = N'Sin etapa' THEN 1 ELSE 0 END;
+                    """, connection, transaction))
+                {
+                    plan.Parameters.AddWithValue("@LoteId", loteId);
+                    plan.Parameters.AddWithValue("@Periodo", PeriodoCampaniaFechas.OperativoActual());
+                    var etapa = await plan.ExecuteScalarAsync() as string;
+                    if (etapa is not null)
+                        throw new LoteDeshabilitacionBloqueadaException(etapa == "Sin etapa"
+                            ? "El lote tiene una planificación vigente. Gestioná su baja desde la ficha de Campaña."
+                            : "El lote ya tiene una siembra en la campaña vigente. Gestioná su baja desde Siembras.");
+                }
                 var estado = await ObtenerEstadoOperativoAsync(connection, transaction, loteId);
                 if (estado.Bloqueo is not null) throw new LoteDeshabilitacionBloqueadaException(estado.Bloqueo);
                 ultimaSiembraId = estado.UltimaSiembraId;
@@ -900,6 +917,24 @@ public class LoteRepository(IConfiguration configuration) : ILoteRepository
                 }
                 else if (modo == "Nuevas")
                 {
+                    await using (var nuevaPlanificacion = new SqlCommand("""
+                        SELECT COUNT(1)
+                        FROM dbo.CampaniaCombinaciones cc WITH (UPDLOCK, HOLDLOCK)
+                        JOIN dbo.Campanias c ON c.CampaniaId = cc.CampaniaId
+                        WHERE cc.LoteId = @LoteId AND c.Periodo = @Periodo
+                          AND cc.Estado = N'Pendiente' AND cc.EtapaActual = N'Sin etapa'
+                          AND NOT EXISTS (
+                              SELECT 1 FROM dbo.Siembras s
+                              WHERE s.LoteId = cc.LoteId AND s.CicloEstacional = cc.CicloEstacional
+                                AND LEFT(LTRIM(RTRIM(ISNULL(s.CampaniaNombre, N''))), 9) = c.Periodo
+                          );
+                        """, connection, transaction))
+                    {
+                        nuevaPlanificacion.Parameters.AddWithValue("@LoteId", loteId);
+                        nuevaPlanificacion.Parameters.AddWithValue("@Periodo", contexto.Periodo!);
+                        if (Convert.ToInt32(await nuevaPlanificacion.ExecuteScalarAsync()) == 0)
+                            throw new LoteDeshabilitacionBloqueadaException("Agregá una planificación pendiente en un ciclo que todavía no tuvo siembra antes de habilitar el lote.");
+                    }
                     // Compatibilidad: marcar también las siembras de bajas previas al registro del snapshot.
                     await using var mark = new SqlCommand("""
                         UPDATE dbo.Siembras SET DeshabilitacionId = @BajaId

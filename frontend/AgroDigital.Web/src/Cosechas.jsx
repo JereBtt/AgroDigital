@@ -1293,7 +1293,7 @@ function CosechasList({ permisos = PERMISOS_TODOS, cosechas, siembrasDisponibles
           {hayFiltrosActivos ? (
             <button className="green-button empty-state-action" type="button" onClick={clearFilters}>
               <RotateCcw size={18} />
-              <span>Limpiar filtros</span>
+              <span>Limpiar</span>
             </button>
           ) : permisos.estructura ? (
             <button className="green-button empty-state-action" type="button" onClick={onAdd}>
