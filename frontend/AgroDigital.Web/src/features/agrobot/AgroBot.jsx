@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Copy, LoaderCircle, Send, X } from 'lucide-react';
-import ReporteriaFormato from './ReporteriaFormato';
-import agroBotMascot from './assets/agrobot-mascot.png';
+import ReporteriaFormato from '../../ReporteriaFormato';
+import agroBotMascot from '../../assets/agrobot-mascot.png';
 import './agrobot.css';
 
 const API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';

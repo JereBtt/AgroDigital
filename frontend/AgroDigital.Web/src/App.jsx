@@ -17,7 +17,7 @@ import DisableLoteModal from './DisableLoteModal';
 import Distribucion from './features/distribucion/Distribucion';
 import Estadisticas from './features/estadisticas/Estadisticas';
 import ReporteriaIA from './features/reporteria-ia/ReporteriaIA';
-import AgroBot from './AgroBot';
+import AgroBot from './features/agrobot/AgroBot';
 import Inicio from './features/inicio/Inicio';
 import { LayoutDashboard, MessageCircle, Send, XCircle } from 'lucide-react';
 import {
