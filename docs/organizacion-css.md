@@ -41,3 +41,26 @@ El bloque contiguo desde `.app-frame` hasta `.user-avatar` se trasladó sin camb
 El bloque contiguo desde `.content-panel` hasta `.status-segmented` se trasladó sin cambiar reglas a `src/styles/contenido-compartido.css`. Incluye paneles, tarjetas de resumen, encabezados y filtros básicos. `src/styles.css` lo importa antes del primer ajuste específico de Lotes. `npm run build` terminó correctamente y el CSS compilado conservó el nombre `index-QRaE5sgT.css` y el SHA-256 `CB3EF9628D051B32220C08335ABC0C1C1019A49DA65846B1BFF0770891C48FCD` de la línea base.
 
 La extracción del contenido compartido continúa pendiente: después de este corte hay reglas genéricas de búsqueda, botones y tablas intercaladas con Lotes y Siembras. Antes de trasladarlas hay que definir cortes adicionales que preserven su posición en la cascada. Queda pendiente revisar visualmente paneles, tarjetas y filtros con una sesión funcional.
+
+## Mapa previo a la organización por módulos
+
+Relevado sobre `src/styles.css` en el commit `34fb2` (10.195 líneas físicas). Los rangos son orientativos y cambiarán cuando se extraigan bloques. Las primeras diez líneas son las importaciones de Leaflet y de los estilos ya separados. Esta sección registra ubicación y mezcla de reglas; no supone cambios de CSS.
+
+| Líneas | Contenido predominante | Mezclas que deben conservar su posición |
+| --- | --- | --- |
+| 12-46 | Ajustes de filtros de Lotes | Siguen reglas compartidas de estado en 47-60. |
+| 47-181 | Estado, Siembras, búsqueda y botones | Siembras ocupa 61-86; búsqueda, filtros y botones generales ocupan 87-181, con una regla propia de Lotes. |
+| 182-642 | Tabla de Lotes y acciones | Comparte selectores y presentación con Siembras y Seguimientos. |
+| 643-1820 | Registro, detalle y seguimiento de Siembras | Incluye controles genéricos de formularios y modales. |
+| 1821-2500 | Campañas y formularios | Incluye estado vacío, paginación y ajustes de Refertilización. |
+| 2501-4408 | Formularios, mapa y detalle de Lotes | Incluye Seguimientos, controles comunes, ajustes globales responsivos y reglas de acceso. |
+| 4409-6213 | Usuarios, equipos y Perfil | Varias reglas de flujo de ingreso, contraseñas y administración. |
+| 6214-6858 | Silos, Campañas, Lotes y Siembras | Ocupación, filtros, modales de baja y ajustes de siembra intercalados. |
+| 6859-7786 | Silos | Bloques de consulta, registro, controles y gráficos. |
+| 7787-8460 | Almacenamiento | Comparte clases `alm-*` con Distribución. |
+| 8461-9050 | Distribución | Usa selectores de tablas y clases de Almacenamiento. |
+| 9051-9414 | Estadísticas | Termina con un ajuste de tarjeta compartida. |
+| 9415-9818 | Administración, Usuarios, notificaciones y Empresas | Invitaciones y vistas de consulta aparecen después de Estadísticas. |
+| 9819-10195 | Cosechas | Hay un modal de Lotes en 10013-10108, trazabilidad de Seguimientos en 10109-10171 y ajustes de Siembras/Cosechas al final. |
+
+`Inicio`, `Reportería IA`, `AgroBot` y `Estadísticas Agrícolas` ya tienen hojas CSS propias en sus carpetas de `features`. Para el primer traslado de Lotes, el corte más acotado es el bloque 12-46, inmediatamente anterior a `.status-segmented button`. Después habrá que revisar por separado la tabla y los bloques posteriores de Lotes, manteniendo las reglas intercaladas en su orden original. La verificación de cada traslado seguirá siendo compilación, huella del CSS generado y revisión visual de las pantallas afectadas.
