@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, ArrowRight, BarChart3, Clock3, Database, Leaf, LineChart, LoaderCircle, MessageSquareText, Plus, Send, ShieldCheck, Sparkles } from 'lucide-react';
-import ReporteriaFormato from './ReporteriaFormato';
+import ReporteriaFormato from '../../ReporteriaFormato';
 import './reporteriaIA.css';
 
 const API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
