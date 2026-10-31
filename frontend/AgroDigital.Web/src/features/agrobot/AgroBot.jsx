@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Copy, LoaderCircle, Send, X } from 'lucide-react';
-import ReporteriaFormato from '../../ReporteriaFormato';
+import ReporteriaFormato from '../../shared/components/ReporteriaFormato';
 import agroBotMascot from '../../assets/agrobot-mascot.png';
 import './agrobot.css';
 
