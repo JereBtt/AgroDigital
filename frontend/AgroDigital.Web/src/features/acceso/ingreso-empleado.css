@@ -1,0 +1,133 @@
+/* Employee join flow */
+.join-auth-page {
+  grid-template-columns: minmax(0, 0.9fr) minmax(440px, 1fr);
+}
+
+.join-card {
+  align-self: stretch;
+  overflow: visible;
+}
+
+.join-hero-card {
+  min-height: 680px;
+}
+
+.join-flow-card {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: 8px;
+  max-width: 360px;
+  margin-top: auto;
+  border: 1px solid rgba(205, 232, 209, 0.9);
+  border-radius: 22px;
+  padding: 18px;
+  background: rgba(246, 253, 247, 0.9);
+  box-shadow: 0 18px 36px rgba(16, 49, 29, 0.12);
+}
+
+.join-flow-card span {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: #e5f5e8;
+  color: #12843a;
+}
+
+.join-flow-card strong {
+  color: #07361e;
+  font-size: calc(20px * var(--text-scale));
+  font-weight: 950;
+}
+
+.join-flow-card p {
+  margin: 0;
+  color: #5d6e64;
+  font-size: calc(14px * var(--text-scale));
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.join-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.join-success-card {
+  align-self: center;
+  min-height: 420px;
+  display: grid;
+  align-content: center;
+  gap: 22px;
+  text-align: center;
+}
+
+.join-success-icon {
+  width: 92px;
+  height: 92px;
+  display: grid;
+  place-items: center;
+  justify-self: center;
+  border-radius: 28px;
+  background: linear-gradient(135deg, #e6f7ea, #d6f0dd);
+  color: #16903e;
+  box-shadow: 0 18px 36px rgba(24, 143, 65, 0.18);
+}
+
+.join-success-card strong {
+  display: block;
+  color: #07361e;
+  font-size: calc(28px * var(--text-scale));
+  font-weight: 950;
+  line-height: 1.12;
+}
+
+.join-success-card p {
+  max-width: 460px;
+  margin: 10px auto 0;
+  color: #5d6e64;
+  font-size: calc(15px * var(--text-scale));
+  font-weight: 850;
+  line-height: 1.45;
+}
+
+.join-success-detail {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid #cfe9d4;
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: #f2fbf4;
+  color: #31513c;
+  font-size: calc(14px * var(--text-scale));
+  font-weight: 900;
+}
+
+.join-success-detail svg {
+  flex: 0 0 auto;
+  color: #16883b;
+}
+
+.auth-success {
+  margin: 0;
+  border: 1px solid #bfe7c7;
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: #ecf9ef;
+  color: #0c7131;
+  font-size: calc(14px * var(--text-scale));
+  font-weight: 950;
+}
+
+.primary-auth-button:disabled,
+.approve-request-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+  box-shadow: none;
+}

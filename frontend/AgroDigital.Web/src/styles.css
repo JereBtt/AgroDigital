@@ -19,12 +19,22 @@
 @import './features/lotes/lotes-formulario-mapa.css';
 
 @import './styles/controles-globales.css';
-@import './styles/usuarios-perfil.css';
+@import './features/usuarios/usuarios-gestion.css';
+@import './features/acceso/ingreso-empleado.css';
+@import './features/usuarios/usuarios-aprobacion.css';
+@import './features/usuarios/usuarios-equipos.css';
+@import './features/perfil/perfil.css';
 @import './styles/ajustes-operativos.css';
 
 @import './styles/modales-y-bajas.css';
 
 @import './styles/bloque-operativo-posterior.css';
+@import './features/admin/admin-invitaciones.css';
+@import './features/usuarios/usuarios-invitaciones.css';
+@import './styles/notificaciones.css';
+@import './features/usuarios/usuarios-consulta.css';
+@import './features/empresas/empresas-consulta.css';
+@import './features/cosechas/cosechas-base.css';
 @import './features/lotes/lotes-reactivacion.css';
 
 /* Trazabilidad de aplicaciones de la cadena de siembras */

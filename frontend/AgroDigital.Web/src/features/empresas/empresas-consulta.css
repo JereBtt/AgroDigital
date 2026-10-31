@@ -1,0 +1,31 @@
+/* ---------- Empresas: vista de consulta (roles que no son Gerente) ---------- */
+
+.my-companies-list { display: grid; gap: 10px; }
+
+.my-company-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 14px;
+  padding: 14px 16px;
+  border: 1px solid #e3eee5;
+  border-radius: 14px;
+  background: #fbfdfb;
+}
+
+.my-company-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #eff9f0;
+  color: #18883b;
+}
+
+.my-company-main { display: grid; gap: 3px; flex: 1 1 220px; min-width: 0; }
+.my-company-main strong { color: #0c321e; font-size: calc(15px * var(--text-scale)); }
+.my-company-main small { color: #607067; font-size: calc(12.5px * var(--text-scale)); font-weight: 800; }
+
+.my-company-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
