@@ -64,3 +64,7 @@ Relevado sobre `src/styles.css` en el commit `34fb2` (10.195 líneas físicas). 
 | 9819-10195 | Cosechas | Hay un modal de Lotes en 10013-10108, trazabilidad de Seguimientos en 10109-10171 y ajustes de Siembras/Cosechas al final. |
 
 `Inicio`, `Reportería IA`, `AgroBot` y `Estadísticas Agrícolas` ya tienen hojas CSS propias en sus carpetas de `features`. Para el primer traslado de Lotes, el corte más acotado es el bloque 12-46, inmediatamente anterior a `.status-segmented button`. Después habrá que revisar por separado la tabla y los bloques posteriores de Lotes, manteniendo las reglas intercaladas en su orden original. La verificación de cada traslado seguirá siendo compilación, huella del CSS generado y revisión visual de las pantallas afectadas.
+
+## Extracción por módulos 1: filtros iniciales de Lotes
+
+El bloque 12-46 del mapa, desde el comentario de la barra de filtros hasta `.lotes-filters .status-segmented button`, se trasladó a `src/features/lotes/lotes-filtros.css`. `src/styles.css` lo importa inmediatamente después de `contenido-compartido.css` y antes de `.status-segmented button`, conservando el orden. `npm run build` terminó correctamente y el CSS compilado conservó el nombre `index-QRaE5sgT.css` y el SHA-256 `CB3EF9628D051B32220C08335ABC0C1C1019A49DA65846B1BFF0770891C48FCD` de la línea base. Queda pendiente la revisión visual de los filtros de Lotes en escritorio y móvil.

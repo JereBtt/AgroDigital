@@ -129,7 +129,7 @@ Estructura inicial definida:
 - `frontend/AgroDigital.Web/src/features/admin/`: panel administrativo, adaptación de datos y hook de cuentas administrativas.
 - `frontend/AgroDigital.Web/src/features/usuarios/`: vistas de usuarios, solicitudes, roles e invitaciones.
 - `frontend/AgroDigital.Web/src/features/empresas/`: vistas de empresas asignadas y gestión de empresas del gerente.
-- `frontend/AgroDigital.Web/src/features/lotes/`: listado, formularios, mapa y diálogos de Lotes, más utilidades de geometría, formulario y PDF con pruebas. `App.jsx` conserva el estado, las operaciones y la coordinación del módulo.
+- `frontend/AgroDigital.Web/src/features/lotes/`: listado, formularios, mapa y diálogos de Lotes, más utilidades de geometría, formulario y PDF con pruebas. `lotes-filtros.css` contiene el primer bloque de filtros, importado desde `src/styles.css` en su orden original; el resto de estilos de Lotes sigue en `src/styles.css`. `App.jsx` conserva el estado, las operaciones y la coordinación del módulo.
 - `frontend/AgroDigital.Web/src/features/campanias/`: pantalla Campañas. Sus estilos siguen en `src/styles.css` y reutiliza componentes compartidos de `src/`.
 - `frontend/AgroDigital.Web/src/features/siembras/`: Siembras y Seguimientos, cálculos, trazabilidad y pruebas del módulo. Sus estilos siguen en `src/styles.css`; los componentes y catálogos compartidos están en `src/shared/`.
 - `frontend/AgroDigital.Web/src/features/silos/`: pantalla `Silos.jsx` del módulo Silos. Sus estilos siguen en `src/styles.css`; utiliza la utilidad compartida `src/shared/utils/periodoFechas.js`.
