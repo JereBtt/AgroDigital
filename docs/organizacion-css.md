@@ -108,3 +108,7 @@ El final de `src/styles.css` se dividió en `features/siembras/seguimiento-traza
 ## Extracción por módulos 8: Almacenamiento
 
 El bloque contiguo desde el encabezado de Almacenamiento hasta antes de Distribución se trasladó de `styles/bloque-operativo-posterior.css` a `features/almacenamiento/almacenamiento.css`. El import conserva su posición después de Silos y antes de Distribución, que reutiliza clases `alm-*`. `npm run build` produjo `index-QRaE5sgT.css` con SHA-256 `CB3EF9628D051B32220C08335ABC0C1C1019A49DA65846B1BFF0770891C48FCD`, idéntico a la línea base. Falta comprobar visualmente consulta, registro y edición de Almacenamiento.
+
+## Extracción por módulos 9: Distribución
+
+El bloque contiguo desde el encabezado de Distribución hasta antes de Estadísticas se trasladó de `styles/bloque-operativo-posterior.css` a `features/distribucion/distribucion.css`. El import conserva su posición después de Almacenamiento para reutilizar clases `alm-*`. La hoja transitoria comienza ahora con Estadísticas. `npm run build` produjo `index-QRaE5sgT.css` con SHA-256 `CB3EF9628D051B32220C08335ABC0C1C1019A49DA65846B1BFF0770891C48FCD`, idéntico a la línea base. Falta comprobar visualmente consulta, registro, conciliación y detalle de Distribución.
