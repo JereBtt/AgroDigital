@@ -25,7 +25,7 @@ import {
   X
 } from 'lucide-react';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:5135');
 const PERMISOS_TODOS = { estructura: true, movimientoGrano: true };
 const commonGrains = ['Soja', 'Maiz', 'Sorgo', 'Trigo', 'Girasol', 'Otro'];
 const seasonalCycles = [{ value: 'Verano', label: 'Cultivo de verano' }, { value: 'Invierno', label: 'Cultivo de invierno' }];

@@ -23,7 +23,7 @@ public class CosechasController(
     ICosechaRepository cosechaRepository,
     ILoteRepository loteRepository,
     IAuthTokenService authTokenService,
-    IWebHostEnvironment environment,
+    DocumentStorage documentStorage,
     IPermisosService permisos) : ControllerBase
 {
     private static readonly string[] RolesConsulta = ["Gerente", "Encargado", "EmpleadoCampo", "EmpleadoAdministrativo"];
@@ -31,7 +31,7 @@ public class CosechasController(
     private static readonly string[] DestinosParte = ["Silo", "Distribucion directa", "Pendiente"];
     private const int MesesMaximoCosecha = 6;
 
-    private readonly string _uploadsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "cosechas");
+    private readonly string _uploadsRoot = documentStorage.For("cosechas");
 
     // =====================================================================
     // Consulta

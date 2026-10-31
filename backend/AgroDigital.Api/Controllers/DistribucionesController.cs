@@ -14,9 +14,9 @@ namespace AgroDigital.Api.Controllers;
 public class DistribucionesController(
     IDistribucionRepository distribucionRepository,
     IAuthTokenService authTokenService,
-    IWebHostEnvironment environment) : ControllerBase
+    DocumentStorage documentStorage) : ControllerBase
 {
-    private readonly string _uploadsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "distribuciones");
+    private readonly string _uploadsRoot = documentStorage.For("distribuciones");
 
     private static readonly string[] OrigenesValidos = ["Cosecha", "Silo"];
 

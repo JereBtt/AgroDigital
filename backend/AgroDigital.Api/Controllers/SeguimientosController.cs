@@ -12,10 +12,10 @@ public class SeguimientosController(
     ISiembraRepository siembraRepository,
     ILoteRepository loteRepository,
     IAuthTokenService authTokenService,
-    IWebHostEnvironment environment,
+    DocumentStorage documentStorage,
     IPermisosService permisos) : ControllerBase
 {
-    private readonly string _uploadsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "seguimientos");
+    private readonly string _uploadsRoot = documentStorage.For("seguimientos");
 
     private static readonly string[] IncidenciasValidas = ["Plaga", "Maleza", "Enfermedad", "Ninguna"];
     private static readonly string[] TiposRegistroValidos = ["Siniestro", "Posemergente", "Refertilizacion"];

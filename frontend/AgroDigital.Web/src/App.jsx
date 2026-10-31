@@ -74,7 +74,7 @@ import {
   Accessibility
 } from 'lucide-react';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:5135');
 const GEOREF_API_BASE_URL = 'https://apis.datos.gob.ar/georef/api';
 const defaultCenter = [-32.0025, -64.0055];
 

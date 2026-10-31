@@ -9,7 +9,7 @@ import { EventoAgenda, fechaLocal, leerError } from './inicioUtils';
   Grupos: Vencidos, En transito y luego una seccion por semana (lunes a domingo).
 */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:5135');
 
 const TIPOS = [
   { id: 'todos', texto: 'Todos' },

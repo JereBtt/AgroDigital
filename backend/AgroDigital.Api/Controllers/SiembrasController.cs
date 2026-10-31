@@ -9,9 +9,9 @@ namespace AgroDigital.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepository loteRepository, IAuthTokenService authTokenService, IWebHostEnvironment environment, IPermisosService permisos) : ControllerBase
+public class SiembrasController(ISiembraRepository siembraRepository, ILoteRepository loteRepository, IAuthTokenService authTokenService, DocumentStorage documentStorage, IPermisosService permisos) : ControllerBase
 {
-    private readonly string _uploadsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "siembras");
+    private readonly string _uploadsRoot = documentStorage.For("siembras");
     private const int DiasDesvioRequiereJustificacion = 3;
 
     private static readonly string[] TiposInsumoValidos =

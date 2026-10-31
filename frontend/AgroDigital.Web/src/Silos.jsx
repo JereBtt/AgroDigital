@@ -31,7 +31,7 @@ import {
 // Permisos por rol (los calcula App.jsx segun el rol en la empresa). Sin la prop, se muestra todo.
 const PERMISOS_TODOS = { estructura: true, registroCampo: true, movimientoGrano: true };
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:5135');
 
 const emptySiloForm = {
   loteId: '',

@@ -39,7 +39,7 @@ const PERMISOS_TODOS = { estructura: true, registroCampo: true, movimientoGrano:
   Todo se muestra dentro de la empresa elegida en la barra superior.
 */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:5135');
 
 const kg = (value) => `${Number(value ?? 0).toLocaleString('es-AR', { maximumFractionDigits: 0 })} kg`;
 

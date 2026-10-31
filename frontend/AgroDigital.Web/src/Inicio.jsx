@@ -16,7 +16,7 @@ import './inicio.css';
     - ConCampania: KPIs (Gerente/Encargado), avance, agenda, silos y tabla de lotes.
 */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:5135');
 const LOTES_POR_PAGINA = 10;
 
 export const ETAPAS = [

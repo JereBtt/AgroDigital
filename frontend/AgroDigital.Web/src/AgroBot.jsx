@@ -4,7 +4,7 @@ import ReporteriaFormato from './ReporteriaFormato';
 import agroBotMascot from './assets/agrobot-mascot.png';
 import './agrobot.css';
 
-const API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
+const API = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:5135');
 
 async function leerError(response) {
   const text = await response.text();

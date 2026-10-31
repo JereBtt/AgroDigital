@@ -10,10 +10,10 @@ namespace AgroDigital.Api.Controllers;
 public class AlmacenamientosController(
     IAlmacenamientoRepository almacenamientoRepository,
     IAuthTokenService authTokenService,
-    IWebHostEnvironment environment,
+    DocumentStorage documentStorage,
     IPermisosService permisos) : ControllerBase
 {
-    private readonly string _uploadsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "almacenamientos");
+    private readonly string _uploadsRoot = documentStorage.For("almacenamientos");
 
     private static readonly string[] TiposMovimientoValidos = ["Ingreso", "Egreso"];
     private static readonly string[] MotivosEgreso = ["Semilla propia", "Consumo interno", "Deterioro"];

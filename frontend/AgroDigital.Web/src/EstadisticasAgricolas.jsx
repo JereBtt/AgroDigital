@@ -4,7 +4,7 @@ import L from 'leaflet';
 import { agrupar, calcularSiniestros, calcularSuperficie, construirFlujoPlanificacion, desvioDias, filtrar, granoTexto, normalizar, productividad, resumirParticipacionGranos, resumirRindes, suma } from './estadisticasAgricolas.js';
 import './estadisticasAgricolas.css';
 
-const API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
+const API = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:5135');
 const n = (v, d = 1) => v == null ? 'Sin datos' : Number(v).toLocaleString('es-AR', { maximumFractionDigits: d });
 const colors = ['#218943', '#d99b24', '#4389b0', '#9265b4', '#d56f45', '#4b9b91'];
 const fecha = v => v ? v.slice(0, 10).split('-').reverse().join('/') : '—';

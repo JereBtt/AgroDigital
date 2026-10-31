@@ -7,12 +7,18 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+if (corsOrigins is null || corsOrigins.Length == 0)
+{
+    corsOrigins = ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"];
+}
+
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("FrontendLocal", policy =>
+    options.AddPolicy("Frontend", policy =>
     {
         policy
-            .WithOrigins("http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000")
+            .WithOrigins(corsOrigins)
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
@@ -44,6 +50,7 @@ builder.Services.AddScoped<IAdminRepository, AdminRepository>();
 builder.Services.AddScoped<IInvitacionEmpleadoRepository, InvitacionEmpleadoRepository>();
 builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
 builder.Services.AddSingleton<IAuthTokenService, HmacAuthTokenService>();
+builder.Services.AddSingleton<DocumentStorage>();
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection(EmailSettings.Seccion));
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 builder.Services.AddScoped<INotificacionesSolicitudService, NotificacionesSolicitudService>();
@@ -145,14 +152,29 @@ if (!string.IsNullOrWhiteSpace(connectionString))
 }
 
 var app = builder.Build();
+var frontendEntryPoint = Path.Combine(app.Environment.WebRootPath ?? string.Empty, "index.html");
+var frontendAvailable = File.Exists(frontendEntryPoint);
 
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
-app.UseCors("FrontendLocal");
+// El frontend de desarrollo se sirve en HTTP y consume la API en el puerto 5135.
+// No redirigir a HTTPS en Development: el certificado local no siempre está
+// instalado o confiado y el navegador reporta el fallo como "Failed to fetch".
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+
+app.UseCors("Frontend");
+
+if (frontendAvailable)
+{
+    app.UseDefaultFiles();
+    app.UseStaticFiles();
+}
 
 // Permisos por rol (Services/PermisosService.cs): un permiso denegado responde 403 y un
 // registro inexistente o de otra empresa, 404, con el mensaje en texto plano (como el resto de la API).
@@ -178,5 +200,19 @@ app.Use(async (context, next) =>
 
 app.UseAuthorization();
 app.MapControllers();
+
+if (frontendAvailable)
+{
+    app.MapFallback(async context =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api"))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        await context.Response.SendFileAsync(frontendEntryPoint);
+    });
+}
 
 app.Run();

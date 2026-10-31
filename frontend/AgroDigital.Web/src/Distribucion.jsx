@@ -38,7 +38,7 @@ import {
   Los kg despachados no se editan nunca; solo los datos logisticos del camion.
 */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:5135');
 
 const ROLES_GESTION = ['Gerente', 'Encargado', 'EmpleadoAdministrativo', 'Admin'];
 const ROLES_PARAMETROS = ['Gerente', 'Encargado', 'Admin'];

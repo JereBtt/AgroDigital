@@ -3,7 +3,7 @@ import { AlertTriangle, ArrowRight, BarChart3, Clock3, Database, Leaf, LineChart
 import ReporteriaFormato from './ReporteriaFormato';
 import './reporteriaIA.css';
 
-const API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
+const API = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:5135');
 const SUGERENCIAS = [
   { titulo: 'Informe de campaña', texto: 'Generá un informe completo de la última campaña registrada: siembra, cosecha, insumos, siniestros, almacenamiento y distribución.', icono: BarChart3, tono: 'verde' },
   { titulo: 'Comparar campañas', texto: 'Compará las dos campañas más recientes y explicá qué diferencias muestran los datos registrados.', icono: LineChart, tono: 'azul' },

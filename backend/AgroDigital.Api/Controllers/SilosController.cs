@@ -12,10 +12,10 @@ public class SilosController(
     ILoteRepository loteRepository,
     IAlmacenamientoRepository almacenamientoRepository,
     IAuthTokenService authTokenService,
-    IWebHostEnvironment environment,
+    DocumentStorage documentStorage,
     IPermisosService permisos) : ControllerBase
 {
-    private readonly string _uploadsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "silos");
+    private readonly string _uploadsRoot = documentStorage.For("silos");
 
     private static readonly string[] TiposPlagaValidos = ["Roedores", "Insectos", "Hongos"];
     private static readonly string[] EstadosElegibles = ["En mantenimiento", "Dado de baja", "Activo"];

@@ -11,7 +11,7 @@ import EstadisticasAgricolas from './EstadisticasAgricolas.jsx';
   Los graficos son HTML/SVG propios, sin librerias, con la misma paleta del sistema.
 */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:5135');
 const ROLES_ESTADISTICAS = ['Gerente', 'Encargado', 'Admin'];
 
 const PRESETS = [

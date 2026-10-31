@@ -10,6 +10,7 @@ obj/
 # Build output
 Debug/
 Release/
+artifacts/
 
 # Node / React
 node_modules/
@@ -18,6 +19,7 @@ build/
 .env
 .env.*
 !.env.example
+!frontend/AgroDigital.Web/.env.production.example
 
 # Logs
 *.log

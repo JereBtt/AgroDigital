@@ -10,7 +10,7 @@ import { RANGOS_DENSIDAD_SIEMBRA, RANGOS_PMG, RANGOS_PROFUNDIDAD, RANGOS_UREA, f
 import { SINIESTROS_RESIEMBRA } from "./siniestros.js";
 import L from "leaflet";
 import { AlertTriangle, ArrowLeft, ArrowRight, Ban, Building2, CalendarDays, Calculator, ClipboardCheck, CheckCircle2, Download, Edit, Eye, FileText, Flag, Filter, FlaskConical, Gauge, HelpCircle, Info, Leaf, Lightbulb, LockKeyhole, LoaderCircle, Map, MapPin, PlusCircle, RotateCcw, Route, Save, Search, Settings2, Sprout, UploadCloud, UserRound, Trash2 } from "lucide-react";
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5135";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : "http://localhost:5135");
 const PERMISOS_TODOS = { estructura: true, registroCampo: true, movimientoGrano: true };
 const defaultMapCenter = [-32.0025, -64.0055];
 const DIAS_DESVIO_REQUIERE_JUSTIFICACION = 3;
