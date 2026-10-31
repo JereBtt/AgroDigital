@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import agroDigitalCompactLogo from './assets/agrodigital-compact-logo.png';
 import agroDigitalLogo from './assets/agrodigital-logo.png';
-import agroBotMascot from './assets/agrobot-mascot.png';
 import sidebarLandscapeCollapsed from './assets/sidebar-landscape-collapsed.png';
 import sidebarLandscapeExpanded from './assets/sidebar-landscape-expanded.png';
 import Silos from './features/silos/Silos';
@@ -15,10 +14,13 @@ import Estadisticas from './features/estadisticas/Estadisticas';
 import ReporteriaIA from './features/reporteria-ia/ReporteriaIA';
 import AgroBot from './features/agrobot/AgroBot';
 import Inicio from './features/inicio/Inicio';
+import { FloatingWidgets, ParentFiltersBar, ParentSearchSelect } from './shared/components/AppControls.jsx';
+import useWorkspaceContext from './shared/hooks/useWorkspaceContext.js';
+import useProfile from './features/perfil/useProfile.js';
+import useAdminAccounts from './features/admin/useAdminAccounts.js';
 import { ManagerUsersPage, MyAccessUsersPage } from './features/usuarios/UsuariosPages.jsx';
 import { MyCompaniesPage, ManagerTeamsPage } from './features/empresas/EmpresasPages.jsx';
 import AdminPanel from './features/admin/AdminPanel.jsx';
-import { adminAccountFromApi } from './features/admin/adminAccount.js';
 import { formatPersonName } from './shared/utils/personName.js';
 import { UserProfileMenu, ProfilePage } from './features/perfil/PerfilPages.jsx';
 import { LoginPage, JoinTeamPage, ManagerWelcomePage, ManagerRegistrationPage } from './features/acceso/AccesoPages.jsx';
@@ -40,13 +42,11 @@ import {
   LayoutDashboard,
   LogOut,
   Map as MapIcon,
-  Search,
   Sparkles,
   Sprout,
   Tractor,
   Users,
   Warehouse,
-  Accessibility
 } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5135';
@@ -80,14 +80,15 @@ function handleTextCaseCapture(event) {
 
 function App() {
   const [session, setSession] = useState(null);
+  const {
+    adminAccounts, lastGeneratedAccount, adminError, adminEnvio, adminResendingId,
+    loadAdminAccounts, handleCreateAdminAccount, handleResendAdminInvitation,
+    handleRegenerateAdminPassword, handleUpdateAdminResponsible,
+    handleToggleAdminAccountStatus, resetAdminAccounts
+  } = useAdminAccounts({ session, apiBaseUrl: API_BASE_URL });
   const [loginError, setLoginError] = useState('');
   const [authView, setAuthView] = useState('login');
   const [joinRequestStatus, setJoinRequestStatus] = useState('');
-  const [adminAccounts, setAdminAccounts] = useState([]);
-  const [lastGeneratedAccount, setLastGeneratedAccount] = useState(null);
-  const [adminError, setAdminError] = useState('');
-  const [adminEnvio, setAdminEnvio] = useState(null);
-  const [adminResendingId, setAdminResendingId] = useState(null);
   const [copiedKey, setCopiedKey] = useState('');
   const [activeModule, setActiveModule] = useState('inicio');
   const [managerContext, setManagerContext] = useState(null);
@@ -148,104 +149,26 @@ function App() {
   const [zonesLoading, setZonesLoading] = useState(false);
   const [zoneMapTarget, setZoneMapTarget] = useState(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const [userProfile, setUserProfile] = useState(null);
-  const [profileError, setProfileError] = useState('');
-  const [profileStatus, setProfileStatus] = useState('');
-  const [profileSaving, setProfileSaving] = useState(false);
-  const [profilePasswordSaving, setProfilePasswordSaving] = useState(false);
-  const [profilePasswordError, setProfilePasswordError] = useState('');
   const [showManagerWelcome, setShowManagerWelcome] = useState(true);
+  const {
+    userProfile, profileError, profileStatus, profileSaving,
+    profilePasswordSaving, profilePasswordError, setUserProfile,
+    setProfilePasswordError, loadUserProfile, handleUpdateProfile,
+    handleChangeProfilePassword, resetProfile
+  } = useProfile({ session, setSession, authHeaders, apiBaseUrl: API_BASE_URL });
   const userMenuRef = useRef(null);
 
   const areaM2 = useMemo(() => polygonAreaSquareMeters(form.coordenadas), [form.coordenadas]);
   const areaHa = areaM2 / 10000;
-  const empresasDisponibles = useMemo(
-    () => (session?.role === 'Gerente' ? managerContext?.empresas ?? [] : misEmpresas).filter((empresa) => empresa.activo),
-    [managerContext, misEmpresas, session?.role]
-  );
-
-  // Rol del usuario en la empresa seleccionada (puede ser distinto en cada empresa) y permisos
-  // de la matriz de roles. La API valida lo mismo: aca solo se ocultan los botones que no corresponden.
-  const rolEmpresaActual = useMemo(() => {
-    if (session?.role === 'Admin' || session?.role === 'Gerente') return session.role;
-    const empresa = misEmpresas.find((item) => String(item.empresaId) === String(selectedParentEmpresaId));
-    return empresa?.rol ?? session?.role ?? '';
-  }, [session?.role, misEmpresas, selectedParentEmpresaId]);
-
-  const permisosRol = useMemo(() => ({
-    rol: rolEmpresaActual,
-    estructura: ['Admin', 'Gerente', 'Encargado'].includes(rolEmpresaActual),
-    registroCampo: ['Admin', 'Gerente', 'Encargado', 'EmpleadoCampo'].includes(rolEmpresaActual),
-    movimientoGrano: ['Admin', 'Gerente', 'Encargado', 'EmpleadoAdministrativo'].includes(rolEmpresaActual)
-  }), [rolEmpresaActual]);
-  const selectedParentEmpresa = useMemo(
-    () => empresasDisponibles.find((empresa) => String(empresa.empresaId) === String(selectedParentEmpresaId)) ?? null,
-    [empresasDisponibles, selectedParentEmpresaId]
-  );
-  const campaniasDisponibles = useMemo(() => {
-    const unique = new Map();
-    parentCampanias.forEach((item) => {
-      if (!item?.campaniaId || unique.has(item.campaniaId)) return;
-      unique.set(item.campaniaId, item);
-    });
-
-    return [...unique.values()]
-      .filter((campania) => !selectedParentEmpresaId || String(campania.empresaId) === String(selectedParentEmpresaId))
-      .sort((a, b) => new Date(b.fechaInicio) - new Date(a.fechaInicio));
-  }, [parentCampanias, selectedParentEmpresaId]);
-  const selectedParentCampania = useMemo(
-    () => campaniasDisponibles.find((campania) => String(campania.campaniaId) === String(selectedParentCampaniaId)) ?? null,
-    [campaniasDisponibles, selectedParentCampaniaId]
-  );
-  const selectedParentCampaniaCombinaciones = useMemo(
-    () => parentCampanias.filter((campania) => String(campania.campaniaId) === String(selectedParentCampaniaId)),
-    [parentCampanias, selectedParentCampaniaId]
-  );
-  const empresaDestinoNuevoLoteId = useMemo(() => (
-    selectedParentEmpresaId || (empresasDisponibles.find((empresa) => empresa.esPrincipal)?.empresaId
-      ?? empresasDisponibles[0]?.empresaId
-      ?? '')
-  ), [empresasDisponibles, selectedParentEmpresaId]);
-  const activeCampaignsByEmpresa = useMemo(() => {
-    const campaigns = new Map();
-    const today = new Date();
-    const currentStartYear = today.getMonth() >= 5 ? today.getFullYear() : today.getFullYear() - 1;
-    const currentPeriod = `${currentStartYear}-${currentStartYear + 1}`;
-
-    parentCampanias
-      .forEach((item) => {
-        if (!item?.campaniaId) return;
-        const current = campaigns.get(item.campaniaId) ?? {
-          campaniaId: item.campaniaId,
-          empresaId: item.empresaId,
-          nombre: item.campaniaNombre,
-          periodo: item.periodo,
-          fechaInicio: item.fechaInicio,
-          combinaciones: []
-        };
-        current.combinaciones.push(item);
-        campaigns.set(item.campaniaId, current);
-      });
-
-    return [...campaigns.values()]
-      .filter((campania) => campania.periodo === currentPeriod && campania.combinaciones.some((item) => item.estado !== 'Finalizado' && lotes.some((lote) => String(lote.loteId) === String(item.loteId) && lote.activo)))
-      .reduce((result, campania) => {
-        const existing = result.get(String(campania.empresaId));
-        if (!existing || new Date(campania.fechaInicio) > new Date(existing.fechaInicio)) {
-          result.set(String(campania.empresaId), campania);
-        }
-        return result;
-      }, new Map());
-  }, [parentCampanias, lotes]);
-  const activeCampaignForNewLote = useMemo(() => (
-    activeCampaignsByEmpresa.get(String(empresaDestinoNuevoLoteId)) ?? null
-  ), [activeCampaignsByEmpresa, empresaDestinoNuevoLoteId]);
-  const parentFilteredLotes = useMemo(() => (
-    selectedParentEmpresaId
-      ? lotes.filter((lote) => String(lote.empresaId) === String(selectedParentEmpresaId))
-      : lotes
-  ), [lotes, selectedParentEmpresaId]);
-
+  const {
+    empresasDisponibles, rolEmpresaActual, permisosRol, selectedParentEmpresa,
+    campaniasDisponibles, selectedParentCampania, selectedParentCampaniaCombinaciones,
+    empresaDestinoNuevoLoteId, activeCampaignsByEmpresa, activeCampaignForNewLote,
+    parentFilteredLotes
+  } = useWorkspaceContext({
+    session, managerContext, misEmpresas, selectedParentEmpresaId,
+    parentCampanias, selectedParentCampaniaId, lotes
+  });
   function authHeaders(extraHeaders = {}) {
     return session?.token
       ? { ...extraHeaders, Authorization: `Bearer ${session.token}` }
@@ -256,93 +179,6 @@ function App() {
     setSidebarCollapsed((current) => !current);
   }
 
-
-  async function loadUserProfile() {
-    if (!session?.token) return;
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/perfil`, {
-        headers: authHeaders()
-      });
-
-      if (!response.ok) throw new Error(await response.text());
-
-      const data = await response.json();
-      setUserProfile(data);
-      setProfileError('');
-    } catch (error) {
-      setUserProfile(null);
-      setProfileError(error.message.replace(/^"|"$/g, '') || 'No se pudo cargar el perfil.');
-    }
-  }
-
-  async function handleUpdateProfile(profileForm) {
-    if (!session?.token) return;
-
-    setProfileSaving(true);
-    setProfileError('');
-    setProfileStatus('');
-    setProfilePasswordError('');
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/perfil`, {
-        method: 'PUT',
-        headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify(profileForm)
-      });
-
-      if (!response.ok) throw new Error(await response.text());
-
-      const data = await response.json();
-      setUserProfile(data.perfil);
-      if (data.login) {
-        setSession((current) => current ? {
-          ...current,
-          name: data.login.nombre,
-          role: data.login.rol,
-          token: data.login.token,
-          usuario: data.login.usuario
-        } : current);
-      }
-      setProfileStatus('Perfil actualizado correctamente.');
-    } catch (error) {
-      setProfileError(error.message.replace(/^"|"$/g, '') || 'No se pudo actualizar el perfil.');
-    } finally {
-      setProfileSaving(false);
-    }
-  }
-
-  async function handleChangeProfilePassword(passwordForm) {
-    if (!session?.token) return;
-
-    setProfilePasswordSaving(true);
-    setProfileError('');
-    setProfileStatus('');
-    setProfilePasswordError('');
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/perfil/password`, {
-        method: 'PUT',
-        headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify(passwordForm)
-      });
-
-      if (!response.ok) throw new Error(await response.text());
-
-      setProfileStatus('Contrasenia actualizada correctamente.');
-      return true;
-    } catch (error) {
-      const message = error.message.replace(/^"|"$/g, '') || 'No se pudo actualizar la contrasenia.';
-      if (message.toLocaleLowerCase('es-AR').includes('contrasenia actual')) {
-        setProfilePasswordError(message);
-      } else {
-        setProfileError(message);
-      }
-      return false;
-    } finally {
-      setProfilePasswordSaving(false);
-    }
-  }
 
   async function loadLotes() {
     setLoading(true);
@@ -627,25 +463,6 @@ function App() {
       setOtpLoading(false);
     }
   }
-
-  async function loadAdminAccounts(token) {
-    if (!token) return;
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/cuentas-gerente`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      if (!response.ok) throw new Error(await response.text());
-
-      const data = await response.json();
-      setAdminAccounts(data.map((account) => adminAccountFromApi(account)));
-      setAdminError('');
-    } catch (error) {
-      setAdminError(error.message.replace(/^"|"$/g, '') || 'No se pudieron cargar los accesos.');
-    }
-  }
-
 
   useEffect(() => {
     if (!session?.token || session.type === 'admin' || session.type === 'manager-onboarding') {
@@ -1565,167 +1382,6 @@ function App() {
     }
   }
 
-  async function handleCreateAdminAccount(accountForm) {
-    if (!session?.token) return;
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/cuentas-gerente`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.token}`
-        },
-        body: JSON.stringify(accountForm)
-      });
-
-      if (!response.ok) throw new Error(await response.text());
-
-      const data = await response.json();
-      const account = adminAccountFromApi(data.cuenta, data.passwordTemporal);
-      setAdminAccounts((current) => [account, ...current]);
-      setLastGeneratedAccount(account);
-      setAdminEnvio(data.envio ?? null);
-      setAdminError('');
-      return true;
-    } catch (error) {
-      setAdminEnvio(null);
-      setAdminError(error.message.replace(/^"|"$/g, '') || 'No se pudo crear el acceso.');
-      return false;
-    }
-  }
-
-  async function handleResendAdminInvitation(accountId) {
-    if (!session?.token) return;
-
-    setAdminResendingId(accountId);
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/cuentas-gerente/${accountId}/reenviar-invitacion`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${session.token}` }
-      });
-
-      if (!response.ok) throw new Error(await response.text());
-
-      const data = await response.json();
-      const updatedAccount = adminAccountFromApi(data.cuenta);
-      setAdminAccounts((current) =>
-        current.map((item) =>
-          item.id === updatedAccount.id
-            ? { ...updatedAccount, passwordTemporal: item.passwordTemporal ?? null }
-            : item
-        )
-      );
-      setLastGeneratedAccount((current) =>
-        current?.id === updatedAccount.id
-          ? { ...updatedAccount, passwordTemporal: current.passwordTemporal ?? null }
-          : current
-      );
-      setAdminEnvio(data.envio ?? null);
-      setAdminError('');
-    } catch (error) {
-      setAdminError(error.message.replace(/^"|"$/g, '') || 'No se pudo reenviar la invitación.');
-    } finally {
-      setAdminResendingId(null);
-    }
-  }
-
-  async function handleRegenerateAdminPassword(accountId) {
-    if (!session?.token) return;
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/cuentas-gerente/${accountId}/regenerar-password`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${session.token}` }
-      });
-
-      if (!response.ok) throw new Error(await response.text());
-
-      const data = await response.json();
-      const account = adminAccountFromApi(data.cuenta, data.passwordTemporal);
-      setAdminAccounts((current) => current.map((item) => (item.id === account.id ? account : item)));
-      setLastGeneratedAccount(account);
-      setAdminError('');
-    } catch (error) {
-      setAdminError(error.message.replace(/^"|"$/g, '') || 'No se pudo regenerar la contraseña.');
-    }
-  }
-
-  async function handleUpdateAdminResponsible(accountId, responsable, correoElectronico = '') {
-    if (!session?.token) return;
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/cuentas-gerente/${accountId}/responsable`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.token}`
-        },
-        body: JSON.stringify({ responsable, correoElectronico: correoElectronico.trim() || null })
-      });
-
-      if (!response.ok) throw new Error(await response.text());
-
-      const data = await response.json();
-      const updatedAccount = adminAccountFromApi(data);
-
-      setAdminAccounts((current) =>
-        current.map((item) =>
-          item.id === updatedAccount.id
-            ? { ...updatedAccount, passwordTemporal: item.passwordTemporal ?? null }
-            : item
-        )
-      );
-      setLastGeneratedAccount((current) =>
-        current?.id === updatedAccount.id
-          ? { ...updatedAccount, passwordTemporal: current.passwordTemporal ?? null }
-          : current
-      );
-      setAdminError('');
-      return true;
-    } catch (error) {
-      setAdminError(error.message.replace(/^"|"$/g, '') || 'No se pudo actualizar el responsable.');
-      return false;
-    }
-  }
-
-  async function handleToggleAdminAccountStatus(account) {
-    if (!session?.token) return;
-
-    const isDisabled = account.estado === 'Deshabilitado';
-    const action = isDisabled ? 'habilitar' : 'deshabilitar';
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/cuentas-gerente/${account.id}/${action}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${session.token}` }
-      });
-
-      if (!response.ok) throw new Error(await response.text());
-
-      const data = await response.json();
-      const updatedAccount = adminAccountFromApi(data);
-
-      setAdminAccounts((current) =>
-        current.map((item) =>
-          item.id === updatedAccount.id
-            ? { ...updatedAccount, passwordTemporal: action === 'deshabilitar' ? null : item.passwordTemporal ?? null }
-            : item
-        )
-      );
-      setLastGeneratedAccount((current) => {
-        if (current?.id !== updatedAccount.id) return current;
-        return action === 'deshabilitar'
-          ? null
-          : { ...updatedAccount, passwordTemporal: current.passwordTemporal ?? null };
-      });
-      setAdminError('');
-      return true;
-    } catch (error) {
-      setAdminError(error.message.replace(/^"|"$/g, '') || `No se pudo ${isDisabled ? 'habilitar' : 'deshabilitar'} el acceso.`);
-      return false;
-    }
-  }
-
   async function handleCopy(value) {
     if (!value) return;
     await navigator.clipboard?.writeText(value);
@@ -1738,9 +1394,7 @@ function App() {
     setReporteriaPromptPendiente(null);
     setSession(null);
     setLoginError('');
-    setAdminError('');
-    setAdminAccounts([]);
-    setLastGeneratedAccount(null);
+    resetAdminAccounts();
     setCopiedKey('');
     setActiveModule('lotes');
     setManagerContext(null);
@@ -1760,10 +1414,7 @@ function App() {
     setOtpError('');
     setOtpLoading(false);
     setProfileMenuOpen(false);
-    setUserProfile(null);
-    setProfileError('');
-    setProfileStatus('');
-    setProfileSaving(false);
+    resetProfile();
     setShowManagerWelcome(true);
     setView('list');
     setSelectedLote(null);
@@ -2378,151 +2029,6 @@ function App() {
   );
 }
 
-
-function FloatingWidgets({ accessibilityOpen, textSize, onToggleAccessibility, onCloseAccessibility, onSelectTextSize, botOpen, botEnabled, onOpenBot }) {
-  return (
-    <div className="floating-widgets" aria-label="Accesos rapidos flotantes">
-      <AccessibilityControl
-        open={accessibilityOpen}
-        textSize={textSize}
-        onToggle={onToggleAccessibility}
-        onClose={onCloseAccessibility}
-        onSelectSize={onSelectTextSize}
-      />
-      {!botOpen && <button className="bot-button" type="button" aria-label={botEnabled ? 'Abrir AgroBot' : 'Iniciá sesión para usar AgroBot'} aria-expanded={false} disabled={!botEnabled} onClick={onOpenBot}>
-        <img src={agroBotMascot} alt="" aria-hidden="true" />
-      </button>}
-    </div>
-  );
-}
-
-function AccessibilityControl({ open, textSize, onToggle, onClose, onSelectSize }) {
-  const widgetRef = useRef(null);
-  const options = [
-    { value: 'small', label: 'A', helper: 'Chica' },
-    { value: 'medium', label: 'A', helper: 'Media' },
-    { value: 'large', label: 'A', helper: 'Grande' }
-  ];
-
-  useEffect(() => {
-    if (!open) return undefined;
-
-    function closeOnOutsideClick(event) {
-      if (!widgetRef.current?.contains(event.target)) {
-        onClose();
-      }
-    }
-
-    function closeOnEscape(event) {
-      if (event.key === 'Escape') {
-        onClose();
-      }
-    }
-
-    document.addEventListener('mousedown', closeOnOutsideClick);
-    document.addEventListener('keydown', closeOnEscape);
-
-    return () => {
-      document.removeEventListener('mousedown', closeOnOutsideClick);
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [onClose, open]);
-
-  return (
-    <div className={`accessibility-widget ${open ? 'accessibility-widget-open' : ''}`} ref={widgetRef}>
-      {open && (
-        <section className="accessibility-panel" aria-label="Opciones de accesibilidad">
-          <div>
-            <strong>Accesibilidad</strong>
-            <span>Tamaño de texto</span>
-          </div>
-          <div className="text-size-options">
-            {options.map((option) => (
-              <button
-                className={`text-size-button text-size-button-${option.value} ${textSize === option.value ? 'text-size-button-active' : ''}`}
-                type="button"
-                key={option.value}
-                onClick={() => {
-                  onSelectSize(option.value);
-                  onClose();
-                }}
-                aria-pressed={textSize === option.value}
-              >
-                <span>{option.label}</span>
-                <small>{option.helper}</small>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-      <button className="accessibility-button" type="button" onClick={onToggle} aria-label="Abrir opciones de accesibilidad">
-        <Accessibility size={27} />
-      </button>
-    </div>
-  );
-}
-
-
-function ParentFiltersBar({ children }) {
-  return <div className="parent-filters-bar">{children}</div>;
-}
-
-function ParentSearchSelect({ label, value, options, placeholder, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const containerRef = useRef(null);
-  const selectedOption = options.find((option) => option.value === value);
-  const filteredOptions = useMemo(() => {
-    const text = normalizeSearchText(query.trim());
-    return text
-      ? options.filter((option) => normalizeSearchText(option.label).includes(text))
-      : options;
-  }, [options, query]);
-
-  useEffect(() => {
-    function close(event) {
-      if (!containerRef.current?.contains(event.target)) setOpen(false);
-    }
-
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, []);
-
-  return (
-    <div className="parent-filter-select" ref={containerRef}>
-      <span>{label}</span>
-      <button type="button" onClick={() => setOpen((current) => !current)}>
-        <strong>{selectedOption?.label || placeholder}</strong>
-        <ChevronDown size={17} />
-      </button>
-      {open && (
-        <div className="parent-filter-popover">
-          <label className="search-field parent-filter-search">
-            <Search size={18} />
-            <input data-text-case="preserve" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Buscar ${label.toLowerCase()}...`} autoFocus />
-          </label>
-          <div className="parent-filter-options">
-            {filteredOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={option.value === value ? 'parent-filter-option-active' : ''}
-                onClick={() => {
-                  onChange(option.value);
-                  setQuery('');
-                  setOpen(false);
-                }}
-              >
-                {option.label}
-              </button>
-            ))}
-            {filteredOptions.length === 0 && <em>No hay coincidencias.</em>}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default App;
 

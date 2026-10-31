@@ -120,8 +120,8 @@ Estructura inicial definida:
 - `frontend/AgroDigital.Web/`: frontend inicial en React + Vite.
 - `frontend/AgroDigital.Web/src/features/inicio/`: pantalla Inicio, agenda, utilidades y estilos del módulo. `App.jsx` la importa desde esta carpeta.
 - `frontend/AgroDigital.Web/src/features/acceso/`: pantallas de login, solicitud de ingreso y registro inicial del gerente.
-- `frontend/AgroDigital.Web/src/features/perfil/`: menú y pantalla de perfil del usuario.
-- `frontend/AgroDigital.Web/src/features/admin/`: panel administrativo y adaptación de datos de cuentas; `App.jsx` conserva sus llamadas a la API.
+- `frontend/AgroDigital.Web/src/features/perfil/`: menú, pantalla y hook de estado y operaciones de perfil del usuario.
+- `frontend/AgroDigital.Web/src/features/admin/`: panel administrativo, adaptación de datos y hook de cuentas administrativas.
 - `frontend/AgroDigital.Web/src/features/usuarios/`: vistas de usuarios, solicitudes, roles e invitaciones.
 - `frontend/AgroDigital.Web/src/features/empresas/`: vistas de empresas asignadas y gestión de empresas del gerente.
 - `frontend/AgroDigital.Web/src/features/lotes/`: listado, formularios, mapa y diálogos de Lotes, más utilidades de geometría, formulario y PDF con pruebas. `App.jsx` conserva el estado, las operaciones y la coordinación del módulo.
@@ -129,7 +129,8 @@ Estructura inicial definida:
 - `frontend/AgroDigital.Web/src/features/siembras/`: Siembras y Seguimientos, cálculos, trazabilidad y pruebas del módulo. Sus estilos siguen en `src/styles.css`; los componentes y catálogos compartidos están en `src/shared/`.
 - `frontend/AgroDigital.Web/src/features/silos/`: pantalla `Silos.jsx` del módulo Silos. Sus estilos siguen en `src/styles.css`; utiliza la utilidad compartida `src/shared/utils/periodoFechas.js`.
 - `frontend/AgroDigital.Web/src/shared/utils/`: utilidades usadas por varios módulos; incluye rangos agronómicos, fechas de campaña, siniestros, formato de fecha, búsqueda de texto, nombres de personas, requisitos de contraseña y nombres de roles.
-- `frontend/AgroDigital.Web/src/shared/components/`: componentes reutilizados por varios módulos; incluye números alineados, popup de baja de lote, formato de respuestas de IA, tarjetas de resumen y requisitos de contraseña para acceso y perfil.
+- `frontend/AgroDigital.Web/src/shared/hooks/`: `useWorkspaceContext.js` deriva empresas, campañas, rol y permisos para que `App.jsx` coordine los módulos con el contexto seleccionado.
+- `frontend/AgroDigital.Web/src/shared/components/`: componentes reutilizados por varios módulos; incluye números alineados, popup de baja de lote, formato de respuestas de IA, tarjetas de resumen, requisitos de contraseña y controles de filtros y accesibilidad de `App.jsx`.
 - `database/`: scripts SQL, documentacion y recursos de base de datos.
 - `database/scripts/00_master_create_database.sql`: script madre de creacion completa de la base de datos.
 - `database/scripts/09_cosechas.sql`: script incremental del modulo Cosechas y documentos adjuntos.
