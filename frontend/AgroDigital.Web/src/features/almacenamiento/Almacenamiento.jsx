@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { limitesPeriodoCampania, periodoOperativoDeFecha } from '../../periodoFechas';
+import { limitesPeriodoCampania, periodoOperativoDeFecha } from '../../shared/utils/periodoFechas';
 import {
   ArrowDownCircle,
   ArrowDownToLine,
