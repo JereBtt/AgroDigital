@@ -1,0 +1,217 @@
+.cosecha-warning-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(10, 31, 18, 0.22);
+  backdrop-filter: blur(5px);
+}
+
+.cosecha-warning-modal {
+  width: min(520px, 100%);
+  display: grid;
+  gap: 18px;
+  border: 1px solid #f4c46b;
+  border-radius: 18px;
+  padding: 22px;
+  background: #fffaf0;
+  color: #173522;
+  box-shadow: 0 24px 54px rgba(18, 57, 33, 0.2);
+}
+
+.cosecha-warning-modal .login-icon {
+  background: #fff2d1;
+  color: #b86b00;
+}
+
+.cosecha-warning-modal p {
+  margin: 0;
+  color: #6d4b13;
+  font-weight: 850;
+  line-height: 1.45;
+}
+
+.seguimiento-warning-modal h2 {
+  margin: 0 0 8px;
+  color: #113f25;
+  font-size: calc(24px * var(--text-scale, 1));
+}
+
+.lote-icon-cell {
+  width: 58px;
+}
+
+.lote-row-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #e5f5e5;
+  color: #329341;
+}
+
+.condition-chip {
+  width: fit-content;
+  min-width: 92px;
+  min-height: 31px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid #cfe8d0;
+  border-radius: 999px;
+  background: #eef9ee;
+  color: #27813b;
+  font-size: calc(12px * var(--text-scale, 1));
+  font-weight: 900;
+  padding: 0 12px;
+  line-height: 1;
+}
+
+.condition-chip-rented {
+  border-color: #ffdcb7;
+  background: #fff6ec;
+  color: #dc8424;
+}
+
+.resiembra-chip {
+  min-width: 54px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d8eadb;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: calc(13px * var(--text-scale, 1));
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.resiembra-chip-no {
+  background: #edf8ef;
+  color: #18883b;
+}
+
+.resiembra-chip-si {
+  border-color: #ffd6d6;
+  background: #fff4f4;
+  color: #d92d20;
+}
+
+.resiembra-chip-registro {
+  border-color: #f5d38f;
+  background: #fff8e8;
+  color: #a15c00;
+}
+
+.siembra-state-pill,
+.siembra-state-button {
+  min-width: 106px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0 14px;
+  font-size: calc(13px * var(--text-scale, 1));
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.siembra-state-pill {
+  border: 1px solid #d9e3dc;
+}
+
+.siembra-state-done {
+  border-color: #bdd7f0;
+  background: #f1f7fd;
+  color: #1d5f96;
+}
+
+.siembra-state-button {
+  position: relative;
+  border: 1px solid #cdebd4;
+  background: #edf8ef;
+  color: #18883b;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.siembra-state-button:hover {
+  border-color: #f5b0aa;
+  background: #fff4f4;
+  color: #d92d20;
+  box-shadow: 0 10px 20px rgba(217, 45, 32, 0.12);
+}
+
+.siembra-state-button .state-label-action {
+  display: none;
+}
+
+.siembra-state-button:hover .state-label-current {
+  display: none;
+}
+
+.siembra-state-button:hover .state-label-action {
+  display: inline;
+}
+
+.seguimiento-status-chip {
+  width: fit-content;
+  min-width: 104px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #dce8df;
+  border-radius: 10px;
+  padding: 0 12px 0 10px;
+  background: #ffffff;
+  color: #173522;
+  font-size: calc(13px * var(--text-scale, 1));
+  font-weight: 780;
+  white-space: nowrap;
+}
+
+.seguimiento-status-chip > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 4px rgba(24, 136, 59, 0.08);
+}
+
+.seguimiento-status-pending {
+  border-color: #f0ddb6;
+  background: #fffaf0;
+  color: #7a4d00;
+}
+
+.seguimiento-status-pending > span {
+  background: #d98712;
+  box-shadow: 0 0 0 4px rgba(217, 135, 18, 0.11);
+}
+
+.seguimiento-status-active {
+  border-color: #b9dfd0;
+  background: #effaf5;
+  color: #087047;
+}
+
+.seguimiento-status-active > span {
+  background: #0f9f6e;
+  box-shadow: 0 0 0 4px rgba(15, 159, 110, 0.11);
+}
+
+.seguimiento-status-done {
+  border-color: #bdd7f0;
+  background: #f1f7fd;
+  color: #1d5f96;
+}
+
+.seguimiento-status-done > span {
+  background: #2d7fbd;
+  box-shadow: 0 0 0 4px rgba(45, 127, 189, 0.12);
+}
