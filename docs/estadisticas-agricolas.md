@@ -39,6 +39,6 @@ La unidad de análisis es lote + campaña + ciclo estacional. Las resiembras y r
 
 ## Verificación
 
-Desde `frontend/AgroDigital.Web`: `node --test src/estadisticasAgricolas.test.js`.
+Desde `frontend/AgroDigital.Web`: `node --test src/features/estadisticas/estadisticasAgricolas.test.js`.
 
 Los casos cubren ponderaciones, datos incompletos, filtros, resiembras, planes pendientes, deduplicación de siniestros y diferencias de fechas. La validación visual utiliza una muestra local de solo lectura; nunca crea registros productivos.

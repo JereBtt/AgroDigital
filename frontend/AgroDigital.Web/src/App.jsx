@@ -15,7 +15,7 @@ import Cosechas from './features/cosechas/Cosechas';
 import Almacenamiento from './features/almacenamiento/Almacenamiento';
 import DisableLoteModal from './DisableLoteModal';
 import Distribucion from './features/distribucion/Distribucion';
-import Estadisticas from './Estadisticas';
+import Estadisticas from './features/estadisticas/Estadisticas';
 import ReporteriaIA from './ReporteriaIA';
 import AgroBot from './AgroBot';
 import Inicio from './features/inicio/Inicio';
