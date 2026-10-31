@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import DisableLoteModal from '../../DisableLoteModal';
+import DisableLoteModal from '../../shared/components/DisableLoteModal';
 import AlignedTableNumber from '../../shared/components/AlignedTableNumber';
 import {
   AlertTriangle,

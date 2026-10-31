@@ -13,7 +13,7 @@ import Campanias from './features/campanias/Campanias';
 import Siembras from './features/siembras/Siembras';
 import Cosechas from './features/cosechas/Cosechas';
 import Almacenamiento from './features/almacenamiento/Almacenamiento';
-import DisableLoteModal from './DisableLoteModal';
+import DisableLoteModal from './shared/components/DisableLoteModal';
 import Distribucion from './features/distribucion/Distribucion';
 import Estadisticas from './features/estadisticas/Estadisticas';
 import ReporteriaIA from './features/reporteria-ia/ReporteriaIA';
