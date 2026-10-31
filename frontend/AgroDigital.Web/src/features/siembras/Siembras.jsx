@@ -6,7 +6,7 @@ import { calcularAvanceSiembra } from "./siembraIndicators.js";
 import { buildApplicationTraceability, getCadenaSiembras } from "./applicationTraceability.js";
 import DisableLoteModal from "../../DisableLoteModal.jsx";
 import AlignedTableNumber from "../../AlignedTableNumber.jsx";
-import { RANGOS_DENSIDAD_SIEMBRA, RANGOS_PMG, RANGOS_PROFUNDIDAD, RANGOS_UREA, fueraDeRangoOrientativo } from "../../agronomicRanges.js";
+import { RANGOS_DENSIDAD_SIEMBRA, RANGOS_PMG, RANGOS_PROFUNDIDAD, RANGOS_UREA, fueraDeRangoOrientativo } from "../../shared/utils/agronomicRanges.js";
 import { SINIESTROS_RESIEMBRA } from "../../siniestros.js";
 import L from "leaflet";
 import { AlertTriangle, ArrowLeft, ArrowRight, Ban, Building2, CalendarDays, Calculator, ClipboardCheck, CheckCircle2, Download, Edit, Eye, FileText, Flag, Filter, FlaskConical, Gauge, HelpCircle, Info, Leaf, Lightbulb, LockKeyhole, LoaderCircle, Map, MapPin, PlusCircle, RotateCcw, Route, Save, Search, Settings2, Sprout, UploadCloud, UserRound, Trash2 } from "lucide-react";

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import L from 'leaflet';
 import { calcularAvanceApto, finPeriodoCampania } from './cosechaIndicators.js';
 import { calcularKgCosechados, calcularRindeKgHa, formatearEnteroConMiles, parsearEnteroConMiles } from './cosechaResultado.js';
-import { RANGOS_RINDE_COSECHA, fueraDeRangoOrientativo } from '../../agronomicRanges.js';
+import { RANGOS_RINDE_COSECHA, fueraDeRangoOrientativo } from '../../shared/utils/agronomicRanges.js';
 import {
   AlertTriangle,
   CheckCircle2,
