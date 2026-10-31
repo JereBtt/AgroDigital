@@ -29,13 +29,15 @@
 @import './features/usuarios/usuarios-aprobacion.css';
 @import './features/usuarios/usuarios-equipos.css';
 @import './features/perfil/perfil.css';
-@import './styles/ocupacion-y-filtros.css';
+@import './features/silos/silos-ocupacion.css';
+@import './styles/filtros-padres.css';
 @import './features/campanias/campanias-consulta.css';
 @import './features/lotes/lotes-ajustes.css';
 
 @import './styles/modales-y-bajas.css';
 
 @import './features/siembras/siembras-ajustes.css';
+@import './features/silos/silos.css';
 @import './styles/bloque-operativo-posterior.css';
 @import './features/admin/admin-invitaciones.css';
 @import './features/usuarios/usuarios-invitaciones.css';
