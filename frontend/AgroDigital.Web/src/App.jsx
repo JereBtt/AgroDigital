@@ -12,7 +12,7 @@ import Silos from './features/silos/Silos';
 import Campanias from './features/campanias/Campanias';
 import Siembras from './features/siembras/Siembras';
 import Cosechas from './features/cosechas/Cosechas';
-import Almacenamiento from './Almacenamiento';
+import Almacenamiento from './features/almacenamiento/Almacenamiento';
 import DisableLoteModal from './DisableLoteModal';
 import Distribucion from './Distribucion';
 import Estadisticas from './Estadisticas';
