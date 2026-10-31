@@ -23,3 +23,7 @@ El recorrido visual previo al primer traslado queda pendiente de ejecución con 
 ## Extracción 1: reglas globales
 
 Las reglas iniciales de `:root`, `*`, `body` y controles básicos se trasladaron sin cambios a `src/styles/base.css`. `src/styles.css` la importa inmediatamente después de Leaflet. `npm run build` terminó correctamente y el CSS compilado conservó el nombre `index-QRaE5sgT.css` y el SHA-256 `CB3EF9628D051B32220C08335ABC0C1C1019A49DA65846B1BFF0770891C48FCD` de la línea base.
+
+## Extracción 2: acceso inicial
+
+El bloque contiguo desde `.auth-shell` hasta `.join-team-link` se trasladó a `src/styles/acceso.css`, incluidas las reglas que también seleccionan elementos de administración. `src/styles.css` lo importa después de `base.css` y antes de `.admin-page`. `npm run build` terminó correctamente y el CSS compilado conservó el nombre `index-QRaE5sgT.css` y el SHA-256 `CB3EF9628D051B32220C08335ABC0C1C1019A49DA65846B1BFF0770891C48FCD` de la línea base. Queda pendiente comprobar las pantallas de acceso en una sesión funcional.
