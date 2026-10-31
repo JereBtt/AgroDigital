@@ -104,3 +104,7 @@ El final de `src/styles.css` se dividió en `features/siembras/seguimiento-traza
 ## Extracción por módulos 7: Silos
 
 `styles/ocupacion-y-filtros.css` se dividió en `features/silos/silos-ocupacion.css` y `styles/filtros-padres.css`, sin cambiar sus reglas ni orden. El bloque de Silos desde su encabezado de tablero hasta el final de ficha y control se trasladó desde `styles/bloque-operativo-posterior.css` a `features/silos/silos.css`. La hoja transitoria comienza ahora con Almacenamiento. Ambas compilaciones produjeron `index-QRaE5sgT.css` con SHA-256 `CB3EF9628D051B32220C08335ABC0C1C1019A49DA65846B1BFF0770891C48FCD`, idéntico a la línea base. Falta comprobar visualmente tablero, registro, ficha y controles de Silos.
+
+## Extracción por módulos 8: Almacenamiento
+
+El bloque contiguo desde el encabezado de Almacenamiento hasta antes de Distribución se trasladó de `styles/bloque-operativo-posterior.css` a `features/almacenamiento/almacenamiento.css`. El import conserva su posición después de Silos y antes de Distribución, que reutiliza clases `alm-*`. `npm run build` produjo `index-QRaE5sgT.css` con SHA-256 `CB3EF9628D051B32220C08335ABC0C1C1019A49DA65846B1BFF0770891C48FCD`, idéntico a la línea base. Falta comprobar visualmente consulta, registro y edición de Almacenamiento.

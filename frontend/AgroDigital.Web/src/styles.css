@@ -38,6 +38,7 @@
 
 @import './features/siembras/siembras-ajustes.css';
 @import './features/silos/silos.css';
+@import './features/almacenamiento/almacenamiento.css';
 @import './styles/bloque-operativo-posterior.css';
 @import './features/admin/admin-invitaciones.css';
 @import './features/usuarios/usuarios-invitaciones.css';
