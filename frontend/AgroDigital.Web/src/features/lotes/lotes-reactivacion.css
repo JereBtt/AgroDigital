@@ -1,0 +1,90 @@
+.enable-lote-history-modal {
+  width: min(100%, 560px);
+  border-color: #d9e9dc;
+}
+
+.enable-lote-history-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.enable-lote-history-current {
+  display: grid;
+  gap: 4px;
+  padding: 13px 16px;
+  border: 1px solid #d9e9dc;
+  border-radius: 13px;
+  background: #f4faf5;
+  color: #173522;
+}
+
+.enable-lote-history-current span {
+  font-size: calc(12px * var(--text-scale, 1));
+  color: #607066;
+}
+
+.enable-lote-history-current strong {
+  font-size: calc(14px * var(--text-scale, 1));
+}
+
+.enable-lote-history-modal .enable-lote-history-notice {
+  padding: 12px 14px;
+  border: 1px solid #f2d6a7;
+  border-radius: 12px;
+  background: #fff9ed;
+  color: #805000;
+}
+
+.enable-lote-history-option {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 13px;
+  padding: 15px;
+  border: 1px solid #cfe3d3;
+  border-radius: 14px;
+  background: #fff;
+  color: #18883b;
+  text-align: left;
+  cursor: pointer;
+}
+
+.enable-lote-history-option:hover:not(:disabled),
+.enable-lote-history-option:focus-visible {
+  border-color: #1f963f;
+  background: #f1faf3;
+}
+
+.enable-lote-history-option > span {
+  display: grid;
+  gap: 3px;
+}
+
+.enable-lote-history-option strong {
+  color: #173522;
+  font-size: calc(14px * var(--text-scale, 1));
+}
+
+.enable-lote-history-option small {
+  color: #607066;
+  font-size: calc(12px * var(--text-scale, 1));
+  line-height: 1.4;
+}
+
+.enable-lote-history-option:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+.enable-lote-history-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.enable-lote-history-footer button {
+  min-height: 42px;
+  padding: 0 18px;
+  border-radius: 12px;
+  font-weight: 800;
+}
