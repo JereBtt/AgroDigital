@@ -1,0 +1,29 @@
+.campaign-form-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: start;
+}
+
+.campaign-form-grid > .field:not(.campaign-observations-field) {
+  min-width: 0;
+  grid-template-rows: 22px 46px auto;
+  align-content: start;
+}
+
+.campaign-form-grid > .field > input,
+.campaign-form-grid > .field > select {
+  width: 100%;
+  min-width: 0;
+  height: 46px;
+}
+
+@media (max-width: 1200px) {
+  .campaign-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .campaign-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

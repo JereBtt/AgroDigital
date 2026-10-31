@@ -1,0 +1,24 @@
+/* Cosechas: indicadores por grano, foco visual y catalogos de maquinaria */
+.siembras-summary-grid { grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); }
+.siembras-summary-grid .siembras-progress-card strong { font-size: calc(20px * var(--text-scale, 1)); line-height: 1.2; }
+.siembras-summary-grid .siembras-grain-card span { font-size: calc(18px * var(--text-scale, 1)); }
+.siembras-summary-grid .siembras-grain-card strong { font-size: calc(26px * var(--text-scale, 1)); line-height: 1.15; }
+.siembras-summary-grid .siembras-grain-area { display: block; margin-top: 4px; color: #101c15; font-size: calc(21px * var(--text-scale, 1)); font-weight: 700; line-height: 1.2; }
+.siembras-materials-card { display: flex; flex-direction: column; align-items: stretch; gap: 10px; }
+.siembras-materials-heading { display: flex; align-items: center; gap: 14px; margin-bottom: 3px; }
+.siembras-materials-heading .summary-icon { flex: 0 0 48px; width: 48px; height: 48px; }
+.siembras-materials-heading > div:last-child > span { font-size: calc(18px * var(--text-scale, 1)); line-height: 1.2; }
+.siembras-materials-heading small { display: block; margin-top: 3px; color: #64736a; font-size: calc(11px * var(--text-scale, 1)); }
+.siembras-materials-line { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; padding-top: 8px; border-top: 1px solid #e8eee9; }
+.siembras-materials-line span { color: #5f6e65; font-size: calc(12px * var(--text-scale, 1)); font-weight: 700; }
+.siembras-materials-line strong { margin: 0; font-size: calc(20px * var(--text-scale, 1)); white-space: nowrap; }
+.cos-summary-grid { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.cos-lote-name { display: block; color: #123b25; font-size: calc(15px * var(--text-scale, 1)); font-weight: 900; line-height: 1.25; }
+.cos-related-sowing { display: block; margin-top: 3px; color: #64736a; font-size: calc(11px * var(--text-scale, 1)); font-weight: 600; }
+.cos-catalog-field { display: flex; gap: 8px; align-items: stretch; }
+.cos-catalog-field input { min-width: 0; flex: 1 1 auto; }
+.cos-catalog-add { flex: 0 0 auto; min-height: 42px; padding: 0 11px; gap: 6px; white-space: nowrap; }
+@media (max-width: 720px) {
+  .cos-summary-grid { grid-template-columns: 1fr; }
+  .cos-catalog-field { flex-wrap: wrap; }
+}

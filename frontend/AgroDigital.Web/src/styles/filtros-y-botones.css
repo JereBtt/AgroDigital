@@ -1,0 +1,128 @@
+.status-segmented button {
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #496055;
+  font-weight: 900;
+}
+
+.status-segmented-active {
+  background: #1f963d !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 18px rgba(31, 150, 61, 0.22);
+}
+
+.siembra-registration-type {
+  min-height: 52px;
+}
+
+.siembra-registration-type button {
+  min-height: 40px;
+  padding: 8px 12px;
+}
+
+.siembra-quantity-with-unit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  gap: 8px;
+}
+
+.siembra-quantity-with-unit input,
+.siembra-quantity-with-unit select {
+  min-width: 0;
+}
+
+@media (max-width: 520px) {
+  .siembra-quantity-with-unit {
+    grid-template-columns: 1fr;
+  }
+}
+
+.search-field {
+  position: relative;
+  display: block;
+}
+
+.search-field svg {
+  position: absolute;
+  left: 14px;
+  top: 13px;
+  color: #8b9a90;
+}
+
+.search-field input {
+  padding: 0 14px 0 46px;
+}
+
+.soft-filter-button,
+.clear-button {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px solid #dfe7e0;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #244432;
+  font-weight: 900;
+}
+
+.soft-filter-button {
+  background: #edf7ee;
+  color: #245b35;
+}
+
+.extra-filters-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 260px));
+  gap: 14px;
+  padding-top: 8px;
+  border-top: 1px solid #e4ece5;
+}
+
+.extra-filters-row label {
+  display: grid;
+  gap: 7px;
+  color: #193923;
+  font-size: calc(13px * var(--text-scale, 1));
+  font-weight: 900;
+}
+
+.extra-filters-row input {
+  padding: 0 14px;
+}
+
+.green-button,
+.back-button {
+  min-width: 142px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #35a342, #228738);
+  color: #ffffff;
+  font-weight: 800;
+  box-shadow: 0 12px 24px rgba(31, 132, 51, 0.24);
+}
+
+.add-lote-button {
+  min-width: 214px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.green-button.secondary {
+  background: #18883b;
+}
+
+.green-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}

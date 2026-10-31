@@ -1,0 +1,200 @@
+.field,
+.area-grid label,
+.corner-grid label {
+  display: grid;
+  gap: 6px;
+  color: #171717;
+  font-size: calc(13px * var(--text-scale, 1));
+  font-weight: 800;
+}
+
+.area-grid label {
+  color: #12351f;
+  font-size: calc(15px * var(--text-scale, 1));
+  font-weight: 900;
+}
+
+.corner-grid label {
+  color: #243b2d;
+  font-size: calc(12px * var(--text-scale, 1));
+  font-weight: 900;
+}
+
+.field b {
+  color: #d62727;
+}
+
+/* La marca obligatoria no debe ocupar una fila propia dentro de la grilla. */
+.field {
+  position: relative;
+}
+
+.field > .field-label {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 4px;
+  grid-row: 1;
+  width: max-content;
+  max-width: 100%;
+}
+
+.field-label b {
+  position: static;
+  color: #e53935;
+  font-size: calc(18px * var(--text-scale, 1));
+  font-weight: 900;
+  line-height: 0.8;
+}
+
+.field > input,
+.field > select,
+.field > textarea,
+.field > .grain-change-field,
+.field > .readonly-output {
+  grid-row: 2;
+}
+
+.field input,
+.field select,
+.area-grid input,
+.corner-grid input {
+  height: 46px;
+  border: 1px solid #dddddd;
+  border-radius: 9px;
+  padding: 0 12px;
+  background: #ffffff;
+  color: #1b1b1b;
+  font-size: calc(15px * var(--text-scale, 1));
+  font-weight: 800;
+}
+
+.corner-grid input {
+  height: 40px;
+  color: #27372e;
+  font-size: calc(13px * var(--text-scale, 1));
+  font-weight: 800;
+}
+
+.field input:focus,
+.field select:focus {
+  outline: 2px solid rgba(24, 136, 59, 0.24);
+  border-color: #18883b;
+}
+
+.field-with-error input,
+.field-with-error select,
+.field-with-error .dropdown-button {
+  border-color: rgba(220, 38, 38, 0.72);
+  background: #fffafa;
+}
+
+.field-error {
+  display: block;
+  color: #b91c1c;
+  font-size: calc(12px * var(--text-scale, 1));
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.map-field-error {
+  margin-top: 8px;
+}
+
+.read-only-field input {
+  border-color: #e4ece5;
+  background: linear-gradient(180deg, #f8fbf8, #ffffff);
+  color: #263c2e;
+  font-weight: 900;
+}
+
+.dropdown-field {
+  position: relative;
+}
+
+.dropdown-button {
+  width: 100%;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #dddddd;
+  border-radius: 9px;
+  padding: 0 12px;
+  background: #ffffff;
+  color: #1b1b1b;
+  text-align: left;
+  font-size: calc(15px * var(--text-scale, 1));
+  font-weight: 800;
+}
+
+.dropdown-button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdown-button:focus {
+  outline: 2px solid rgba(24, 136, 59, 0.24);
+  border-color: #18883b;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 3000;
+  overflow: hidden;
+  border: 1px solid #dddddd;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.15);
+}
+
+.dropdown-search {
+  width: 100%;
+  height: 44px;
+  border: 0;
+  border-bottom: 1px solid #e2e2e2;
+  border-radius: 0;
+  padding: 0 12px;
+  font-size: calc(15px * var(--text-scale, 1));
+  font-weight: 800;
+}
+
+.dropdown-search:focus {
+  outline: 0;
+}
+
+.dropdown-options {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 5px;
+}
+
+.dropdown-option {
+  width: 100%;
+  min-height: 40px;
+  border: 0;
+  border-radius: 5px;
+  padding: 8px 10px;
+  background: #ffffff;
+  color: #303a34;
+  text-align: left;
+  font-size: calc(15px * var(--text-scale, 1));
+  font-weight: 700;
+}
+
+.dropdown-option:hover,
+.dropdown-option-selected {
+  background: rgba(24, 136, 59, 0.12);
+  color: #116a2d;
+}
+
+.dropdown-empty {
+  margin: 7px 10px 9px;
+  color: #607067;
+  font-size: calc(13px * var(--text-scale, 1));
+  font-weight: 800;
+}

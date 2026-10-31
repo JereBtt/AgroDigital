@@ -1,0 +1,59 @@
+/* ---------- Usuarios: vista de consulta (roles que no son Gerente) ---------- */
+
+.my-access-card { display: grid; gap: 14px; }
+
+.my-access-group {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #e3eee5;
+  border-radius: 14px;
+  background: #fbfdfb;
+}
+
+.my-access-block { display: grid; gap: 8px; }
+
+.my-access-label {
+  color: #607067;
+  font-size: calc(12px * var(--text-scale));
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.my-access-contact {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e3eee5;
+}
+
+.my-access-contact > div { display: grid; gap: 3px; }
+.my-access-contact strong { color: #0c321e; font-size: calc(15px * var(--text-scale)); }
+
+.my-access-contact-text {
+  color: #3b4f42;
+  font-size: calc(13px * var(--text-scale));
+  font-weight: 700;
+}
+
+.my-access-contact a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #18883b;
+  font-size: calc(13px * var(--text-scale));
+  font-weight: 800;
+}
+
+.my-access-companies { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.my-access-principal {
+  margin-left: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fff3d6;
+  color: #7a4f00;
+  font-size: calc(11px * var(--text-scale));
+  font-weight: 900;
+}

@@ -1,0 +1,107 @@
+/* Los datos de la siembra dependen del lote elegido. */
+.siembra-fields-require-lote {
+  display: contents;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.siembra-fields-require-lote:disabled .field input,
+.siembra-fields-require-lote:disabled .field select,
+.siembra-fields-require-lote:disabled .field textarea,
+.siembra-fields-require-lote:disabled .readonly-output input,
+.siembra-fields-require-lote:disabled .grain-change-field button {
+  color: transparent;
+  background: #f3f5f6;
+  border-color: #dfe5e7;
+  box-shadow: none;
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.siembra-fields-require-lote:disabled .field input::placeholder,
+.siembra-fields-require-lote:disabled .field textarea::placeholder {
+  color: transparent;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9aa7a0;
+  opacity: 0.66;
+}
+
+/* Orden del bloque informativo en la siembra original. */
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-lote-divider {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-ciclo-field {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-lote {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-hectareas {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-afectado {
+  grid-column: 1;
+  grid-row: 4;
+}
+
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-cultivo {
+  grid-column: 2;
+  grid-row: 4;
+}
+
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-normal-divider {
+  grid-column: 1 / -1;
+  grid-row: 5;
+}
+
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-fecha-inicio {
+  grid-column: 1;
+  grid-row: 6;
+}
+
+.siembra-wizard-grid:not(.siembra-wizard-grid-reseeding) .siembra-reseed-fecha-fin {
+  grid-column: 2;
+  grid-row: 6;
+}
+
+.field .readonly-output input::placeholder {
+  color: #aab4ba;
+  opacity: 0.58;
+}
+
+.siembra-insumo-parent {
+  margin: 0 0 14px;
+  padding: 16px;
+  border: 1px solid #dbece0;
+  border-radius: 16px;
+  background: #f5fbf7;
+}
+
+.siembra-insumo-parent .siembra-insumo-title {
+  margin-bottom: 14px;
+}
+
+.siembra-insumo-detail-modal {
+  width: min(920px, 100%);
+}
+
+.catalogo-select { position: relative; display: flex; }
+.catalogo-select input { width: 100%; padding-right: 44px; }
+.catalogo-select > button { position: absolute; right: 5px; top: 5px; width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 9px; color: #177b37; background: #eaf7ed; }
+.catalogo-select-menu { position: absolute; z-index: 30; top: calc(100% + 5px); left: 0; right: 0; max-height: 220px; overflow: auto; padding: 6px; border: 1px solid #cfe2d4; border-radius: 12px; background: #fff; box-shadow: 0 14px 28px rgba(20, 68, 35, .16); }
+.catalogo-select-menu > button, .catalogo-select-menu > span { display: flex; width: 100%; align-items: center; gap: 8px; padding: 10px; border: 0; border-radius: 8px; color: #244332; background: transparent; text-align: left; font: inherit; }
+.catalogo-select-menu > button:hover { background: #edf8ef; }
+.catalogo-select-menu .catalogo-select-add { color: #177b37; font-weight: 800; }

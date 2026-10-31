@@ -1,0 +1,113 @@
+.parent-filters-bar {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: -8px 0 22px;
+  padding: 14px;
+  border: 1px solid #dceadf;
+  border-radius: 18px;
+  background: rgba(247, 252, 248, 0.86);
+  box-shadow: 0 14px 28px rgba(18, 57, 33, 0.05);
+}
+
+.parent-filter-select {
+  position: relative;
+  min-width: min(330px, 100%);
+  display: grid;
+  gap: 7px;
+}
+
+.parent-filter-select > span {
+  color: #113e24;
+  font-size: calc(0.78rem * var(--text-scale, 1));
+  font-weight: 900;
+}
+
+.parent-filter-select > button {
+  min-height: 48px;
+  border: 1px solid #cfe3d4;
+  border-radius: 12px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  color: #12351f;
+  background: #ffffff;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.parent-filter-select > button:hover,
+.parent-filter-select > button:focus-visible {
+  border-color: #83c994;
+  box-shadow: 0 10px 22px rgba(24, 136, 59, 0.11);
+  outline: none;
+}
+
+.parent-filter-select > button strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(0.92rem * var(--text-scale, 1));
+  font-weight: 900;
+}
+
+.parent-filter-popover {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(360px, calc(100vw - 42px));
+  padding: 10px;
+  border: 1px solid #d7eadb;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 22px 46px rgba(18, 57, 33, 0.16);
+}
+
+.parent-filter-search {
+  min-height: 42px;
+}
+
+.parent-filter-search input {
+  min-height: 40px;
+}
+
+.parent-filter-options {
+  max-height: 230px;
+  overflow: auto;
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+}
+
+.parent-filter-options button {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: #263d30;
+  background: transparent;
+  font-weight: 850;
+  text-align: left;
+  cursor: pointer;
+}
+
+.parent-filter-options button:hover,
+.parent-filter-option-active {
+  color: #08712e;
+  border-color: #c8ecd0 !important;
+  background: #eef9f1 !important;
+}
+
+.parent-filter-options em {
+  padding: 12px;
+  color: #65766b;
+  font-size: calc(0.85rem * var(--text-scale, 1));
+  font-style: normal;
+  font-weight: 850;
+}
