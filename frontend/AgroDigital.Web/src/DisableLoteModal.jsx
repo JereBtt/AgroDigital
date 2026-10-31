@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Ban, Info, LoaderCircle } from 'lucide-react';
-import { SINIESTROS_RESIEMBRA } from './siniestros';
+import { SINIESTROS_RESIEMBRA } from './shared/utils/siniestros';
 
 const motivos = ['Fin de alquiler', 'Siniestro', 'Otro motivo'];
 

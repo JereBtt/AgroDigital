@@ -122,7 +122,7 @@ Estructura inicial definida:
 - `frontend/AgroDigital.Web/src/features/campanias/`: pantalla Campañas. Sus estilos siguen en `src/styles.css` y reutiliza componentes compartidos de `src/`.
 - `frontend/AgroDigital.Web/src/features/siembras/`: Siembras y Seguimientos, cálculos, trazabilidad y pruebas del módulo. Sus estilos siguen en `src/styles.css`; los componentes y catálogos compartidos permanecen en `src/`.
 - `frontend/AgroDigital.Web/src/features/silos/`: pantalla `Silos.jsx` del módulo Silos. Sus estilos siguen en `src/styles.css`; utiliza la utilidad compartida `src/shared/utils/periodoFechas.js`.
-- `frontend/AgroDigital.Web/src/shared/utils/`: utilidades usadas por varios módulos; `agronomicRanges.js` define rangos agronómicos orientativos para Siembras y Cosechas, y `periodoFechas.js` reúne límites de períodos para Silos, Almacenamiento y Distribución.
+- `frontend/AgroDigital.Web/src/shared/utils/`: utilidades usadas por varios módulos; `agronomicRanges.js` define rangos agronómicos orientativos para Siembras y Cosechas, `periodoFechas.js` reúne límites de períodos para Silos, Almacenamiento y Distribución, y `siniestros.js` comparte el catálogo de siniestros entre Siembras y el modal de baja de lote.
 - `database/`: scripts SQL, documentacion y recursos de base de datos.
 - `database/scripts/00_master_create_database.sql`: script madre de creacion completa de la base de datos.
 - `database/scripts/09_cosechas.sql`: script incremental del modulo Cosechas y documentos adjuntos.

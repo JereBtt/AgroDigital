@@ -7,7 +7,7 @@ import { buildApplicationTraceability, getCadenaSiembras } from "./applicationTr
 import DisableLoteModal from "../../DisableLoteModal.jsx";
 import AlignedTableNumber from "../../AlignedTableNumber.jsx";
 import { RANGOS_DENSIDAD_SIEMBRA, RANGOS_PMG, RANGOS_PROFUNDIDAD, RANGOS_UREA, fueraDeRangoOrientativo } from "../../shared/utils/agronomicRanges.js";
-import { SINIESTROS_RESIEMBRA } from "../../siniestros.js";
+import { SINIESTROS_RESIEMBRA } from "../../shared/utils/siniestros.js";
 import L from "leaflet";
 import { AlertTriangle, ArrowLeft, ArrowRight, Ban, Building2, CalendarDays, Calculator, ClipboardCheck, CheckCircle2, Download, Edit, Eye, FileText, Flag, Filter, FlaskConical, Gauge, HelpCircle, Info, Leaf, Lightbulb, LockKeyhole, LoaderCircle, Map, MapPin, PlusCircle, RotateCcw, Route, Save, Search, Settings2, Sprout, UploadCloud, UserRound, Trash2 } from "lucide-react";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5135";
