@@ -31,3 +31,7 @@ El bloque contiguo desde `.auth-shell` hasta `.join-team-link` se trasladó a `s
 ## Extracción 3: registro y administración
 
 El bloque contiguo desde `.admin-page` hasta `.regenerate-password-button:hover` se trasladó sin cambiar reglas a `src/styles/administracion.css`. `src/styles.css` lo importa después de `acceso.css` y antes de `.app-frame`. `npm run build` terminó correctamente y el CSS compilado conservó el nombre `index-QRaE5sgT.css` y el SHA-256 `CB3EF9628D051B32220C08335ABC0C1C1019A49DA65846B1BFF0770891C48FCD` de la línea base. Queda pendiente comprobar visualmente el registro y el panel administrativo con una sesión funcional.
+
+## Extracción 4: estructura de la aplicación
+
+El bloque contiguo desde `.app-frame` hasta `.user-avatar` se trasladó sin cambiar reglas a `src/styles/estructura-app.css`. Contiene el marco, menú lateral, encabezado y controles de navegación; su única referencia `url(...)` es un SVG embebido. `src/styles.css` lo importa después de `administracion.css` y antes de `.content-panel`. `npm run build` terminó correctamente y el CSS compilado conservó el nombre `index-QRaE5sgT.css` y el SHA-256 `CB3EF9628D051B32220C08335ABC0C1C1019A49DA65846B1BFF0770891C48FCD` de la línea base. Queda pendiente la revisión visual de menú expandido/contraído y encabezado con una sesión funcional.
