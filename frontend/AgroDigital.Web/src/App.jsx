@@ -9,7 +9,7 @@ import profileCardLandscape from './assets/profile-card-landscape.png';
 import sidebarLandscapeCollapsed from './assets/sidebar-landscape-collapsed.png';
 import sidebarLandscapeExpanded from './assets/sidebar-landscape-expanded.png';
 import Silos from './Silos';
-import Campanias from './Campanias';
+import Campanias from './features/campanias/Campanias';
 import Siembras from './Siembras';
 import Cosechas from './Cosechas';
 import Almacenamiento from './Almacenamiento';

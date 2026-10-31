@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import DisableLoteModal from './DisableLoteModal';
-import AlignedTableNumber from './AlignedTableNumber';
+import DisableLoteModal from '../../DisableLoteModal';
+import AlignedTableNumber from '../../AlignedTableNumber';
 import {
   AlertTriangle,
   Ban,
