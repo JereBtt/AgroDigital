@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import AlignedTableNumber from './AlignedTableNumber';
+import AlignedTableNumber from './shared/components/AlignedTableNumber';
 import L from 'leaflet';
 import agroDigitalCompactLogo from './assets/agrodigital-compact-logo.png';
 import agroDigitalLogo from './assets/agrodigital-logo.png';

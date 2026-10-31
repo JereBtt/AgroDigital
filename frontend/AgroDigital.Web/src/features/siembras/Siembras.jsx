@@ -5,7 +5,7 @@ import { getRelevantHarvest } from "./siembraHarvest.js";
 import { calcularAvanceSiembra } from "./siembraIndicators.js";
 import { buildApplicationTraceability, getCadenaSiembras } from "./applicationTraceability.js";
 import DisableLoteModal from "../../DisableLoteModal.jsx";
-import AlignedTableNumber from "../../AlignedTableNumber.jsx";
+import AlignedTableNumber from "../../shared/components/AlignedTableNumber.jsx";
 import { RANGOS_DENSIDAD_SIEMBRA, RANGOS_PMG, RANGOS_PROFUNDIDAD, RANGOS_UREA, fueraDeRangoOrientativo } from "../../shared/utils/agronomicRanges.js";
 import { SINIESTROS_RESIEMBRA } from "../../shared/utils/siniestros.js";
 import L from "leaflet";
