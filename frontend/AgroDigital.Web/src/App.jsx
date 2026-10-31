@@ -14,7 +14,7 @@ import Siembras from './features/siembras/Siembras';
 import Cosechas from './features/cosechas/Cosechas';
 import Almacenamiento from './features/almacenamiento/Almacenamiento';
 import DisableLoteModal from './DisableLoteModal';
-import Distribucion from './Distribucion';
+import Distribucion from './features/distribucion/Distribucion';
 import Estadisticas from './Estadisticas';
 import ReporteriaIA from './ReporteriaIA';
 import AgroBot from './AgroBot';
