@@ -119,6 +119,7 @@ Estructura inicial definida:
 - `frontend/`: aplicacion web en React.
 - `frontend/AgroDigital.Web/`: frontend inicial en React + Vite.
 - `frontend/AgroDigital.Web/src/features/inicio/`: pantalla Inicio, agenda, utilidades y estilos del módulo. `App.jsx` la importa desde esta carpeta.
+- `frontend/AgroDigital.Web/src/styles/base.css`: reglas globales iniciales (raíz, caja, cuerpo y controles básicos). `src/styles.css` la importa después de Leaflet para conservar la cascada.
 - `frontend/AgroDigital.Web/src/features/acceso/`: pantallas de login, solicitud de ingreso y registro inicial del gerente.
 - `frontend/AgroDigital.Web/src/features/perfil/`: menú, pantalla y hook de estado y operaciones de perfil del usuario.
 - `frontend/AgroDigital.Web/src/features/admin/`: panel administrativo, adaptación de datos y hook de cuentas administrativas.

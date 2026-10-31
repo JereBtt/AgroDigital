@@ -19,3 +19,7 @@ La compilación terminó correctamente. Vite informó el aviso ya existente de u
 4. Comprobar visualmente las pantallas afectadas en ancho de escritorio y móvil, incluidos menús, formularios, tablas, mapas y modales.
 
 El recorrido visual previo al primer traslado queda pendiente de ejecución con una sesión funcional del sistema. En particular, conviene revisar Acceso/Perfil, Lotes, Campañas, Siembras/Cosechas, Silos/Almacenamiento/Distribución y las pantallas de estadísticas e IA.
+
+## Extracción 1: reglas globales
+
+Las reglas iniciales de `:root`, `*`, `body` y controles básicos se trasladaron sin cambios a `src/styles/base.css`. `src/styles.css` la importa inmediatamente después de Leaflet. `npm run build` terminó correctamente y el CSS compilado conservó el nombre `index-QRaE5sgT.css` y el SHA-256 `CB3EF9628D051B32220C08335ABC0C1C1019A49DA65846B1BFF0770891C48FCD` de la línea base.
