@@ -118,6 +118,7 @@ Estructura inicial definida:
 - `backend/AgroDigital.Api/`: API REST inicial en ASP.NET Core Web API.
 - `frontend/`: aplicacion web en React.
 - `frontend/AgroDigital.Web/`: frontend inicial en React + Vite.
+- `frontend/AgroDigital.Web/src/features/inicio/`: pantalla Inicio, agenda, utilidades y estilos del módulo. `App.jsx` la importa desde esta carpeta.
 - `database/`: scripts SQL, documentacion y recursos de base de datos.
 - `database/scripts/00_master_create_database.sql`: script madre de creacion completa de la base de datos.
 - `database/scripts/09_cosechas.sql`: script incremental del modulo Cosechas y documentos adjuntos.

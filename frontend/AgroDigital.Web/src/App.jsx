@@ -18,7 +18,7 @@ import Distribucion from './Distribucion';
 import Estadisticas from './Estadisticas';
 import ReporteriaIA from './ReporteriaIA';
 import AgroBot from './AgroBot';
-import Inicio from './Inicio';
+import Inicio from './features/inicio/Inicio';
 import { LayoutDashboard, MessageCircle, Send, XCircle } from 'lucide-react';
 import {
   AlertTriangle,
