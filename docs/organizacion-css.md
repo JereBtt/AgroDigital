@@ -112,3 +112,9 @@ El bloque contiguo desde el encabezado de Almacenamiento hasta antes de Distribu
 ## Extracción por módulos 9: Distribución
 
 El bloque contiguo desde el encabezado de Distribución hasta antes de Estadísticas se trasladó de `styles/bloque-operativo-posterior.css` a `features/distribucion/distribucion.css`. El import conserva su posición después de Almacenamiento para reutilizar clases `alm-*`. La hoja transitoria comienza ahora con Estadísticas. `npm run build` produjo `index-QRaE5sgT.css` con SHA-256 `CB3EF9628D051B32220C08335ABC0C1C1019A49DA65846B1BFF0770891C48FCD`, idéntico a la línea base. Falta comprobar visualmente consulta, registro, conciliación y detalle de Distribución.
+
+## Extracción por módulos 10: Estadísticas y revisión de IA
+
+El último tramo transitorio se dividió entre `features/estadisticas/estadisticas.css` (filtros, indicadores y gráficos) y `styles/tarjetas-alerta.css` (tarjeta compartida en alerta). `styles/bloque-operativo-posterior.css` se eliminó y `src/styles.css` importa ambos archivos en su posición original. `npm run build` produjo `index-QRaE5sgT.css` con SHA-256 `CB3EF9628D051B32220C08335ABC0C1C1019A49DA65846B1BFF0770891C48FCD`, idéntico a la línea base.
+
+`features/estadisticas/EstadisticasAgricolas.jsx`, `features/reporteria-ia/ReporteriaIA.jsx` y `features/agrobot/AgroBot.jsx` ya importan sus respectivas hojas CSS. La burbuja para abrir AgroBot usa `.bot-button` en `styles/controles-globales.css` porque se renderiza en los controles compartidos de la aplicación. No hizo falta mover CSS de Reportería IA ni del panel de AgroBot. Queda pendiente revisar visualmente Estadísticas, Reportería IA y AgroBot con una sesión funcional.

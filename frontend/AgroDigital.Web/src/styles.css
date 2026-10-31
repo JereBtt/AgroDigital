@@ -40,7 +40,8 @@
 @import './features/silos/silos.css';
 @import './features/almacenamiento/almacenamiento.css';
 @import './features/distribucion/distribucion.css';
-@import './styles/bloque-operativo-posterior.css';
+@import './features/estadisticas/estadisticas.css';
+@import './styles/tarjetas-alerta.css';
 @import './features/admin/admin-invitaciones.css';
 @import './features/usuarios/usuarios-invitaciones.css';
 @import './styles/notificaciones.css';
