@@ -119,6 +119,7 @@ Estructura inicial definida:
 - `frontend/`: aplicacion web en React.
 - `frontend/AgroDigital.Web/`: frontend inicial en React + Vite.
 - `frontend/AgroDigital.Web/src/features/inicio/`: pantalla Inicio, agenda, utilidades y estilos del módulo. `App.jsx` la importa desde esta carpeta.
+- `frontend/AgroDigital.Web/src/features/lotes/`: utilidades de geometría, formulario y generación del PDF de Lotes (`loteUtils.js` y `lotePdf.js`), con pruebas junto a cada archivo. `App.jsx` conserva por ahora la pantalla y las operaciones del módulo.
 - `frontend/AgroDigital.Web/src/features/campanias/`: pantalla Campañas. Sus estilos siguen en `src/styles.css` y reutiliza componentes compartidos de `src/`.
 - `frontend/AgroDigital.Web/src/features/siembras/`: Siembras y Seguimientos, cálculos, trazabilidad y pruebas del módulo. Sus estilos siguen en `src/styles.css`; los componentes y catálogos compartidos están en `src/shared/`.
 - `frontend/AgroDigital.Web/src/features/silos/`: pantalla `Silos.jsx` del módulo Silos. Sus estilos siguen en `src/styles.css`; utiliza la utilidad compartida `src/shared/utils/periodoFechas.js`.
