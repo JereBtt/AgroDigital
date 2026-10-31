@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { limitesPeriodoCampania } from './periodoFechas';
+import { limitesPeriodoCampania } from '../../periodoFechas';
 import L from 'leaflet';
 import { Gauge } from 'lucide-react';
 import {

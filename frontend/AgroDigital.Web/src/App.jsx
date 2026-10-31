@@ -8,7 +8,7 @@ import agroBotMascot from './assets/agrobot-mascot.png';
 import profileCardLandscape from './assets/profile-card-landscape.png';
 import sidebarLandscapeCollapsed from './assets/sidebar-landscape-collapsed.png';
 import sidebarLandscapeExpanded from './assets/sidebar-landscape-expanded.png';
-import Silos from './Silos';
+import Silos from './features/silos/Silos';
 import Campanias from './features/campanias/Campanias';
 import Siembras from './features/siembras/Siembras';
 import Cosechas from './features/cosechas/Cosechas';
