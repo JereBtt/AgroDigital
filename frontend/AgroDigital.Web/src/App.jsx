@@ -10,7 +10,7 @@ import sidebarLandscapeCollapsed from './assets/sidebar-landscape-collapsed.png'
 import sidebarLandscapeExpanded from './assets/sidebar-landscape-expanded.png';
 import Silos from './Silos';
 import Campanias from './features/campanias/Campanias';
-import Siembras from './Siembras';
+import Siembras from './features/siembras/Siembras';
 import Cosechas from './Cosechas';
 import Almacenamiento from './Almacenamiento';
 import DisableLoteModal from './DisableLoteModal';
