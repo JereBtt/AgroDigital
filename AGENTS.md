@@ -123,6 +123,7 @@ Estructura inicial definida:
 - `frontend/AgroDigital.Web/src/styles/acceso.css`: bloque inicial de acceso y reglas que comparte con administración. `src/styles.css` la importa después de `base.css`.
 - `frontend/AgroDigital.Web/src/styles/administracion.css`: bloque contiguo de registro inicial del gerente, formularios y panel administrativo. `src/styles.css` la importa después de `acceso.css`.
 - `frontend/AgroDigital.Web/src/styles/estructura-app.css`: marco de la aplicación, menú lateral, encabezado y controles de navegación. `src/styles.css` la importa antes de los estilos de contenido.
+- `frontend/AgroDigital.Web/src/styles/contenido-compartido.css`: bloque inicial de paneles, tarjetas y filtros compartidos. Otros estilos compartidos siguen intercalados con reglas de módulos en `src/styles.css`.
 - `frontend/AgroDigital.Web/src/features/acceso/`: pantallas de login, solicitud de ingreso y registro inicial del gerente.
 - `frontend/AgroDigital.Web/src/features/perfil/`: menú, pantalla y hook de estado y operaciones de perfil del usuario.
 - `frontend/AgroDigital.Web/src/features/admin/`: panel administrativo, adaptación de datos y hook de cuentas administrativas.

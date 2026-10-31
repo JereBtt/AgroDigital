@@ -35,3 +35,9 @@ El bloque contiguo desde `.admin-page` hasta `.regenerate-password-button:hover`
 ## Extracción 4: estructura de la aplicación
 
 El bloque contiguo desde `.app-frame` hasta `.user-avatar` se trasladó sin cambiar reglas a `src/styles/estructura-app.css`. Contiene el marco, menú lateral, encabezado y controles de navegación; su única referencia `url(...)` es un SVG embebido. `src/styles.css` lo importa después de `administracion.css` y antes de `.content-panel`. `npm run build` terminó correctamente y el CSS compilado conservó el nombre `index-QRaE5sgT.css` y el SHA-256 `CB3EF9628D051B32220C08335ABC0C1C1019A49DA65846B1BFF0770891C48FCD` de la línea base. Queda pendiente la revisión visual de menú expandido/contraído y encabezado con una sesión funcional.
+
+## Extracción 5: primer bloque de contenido compartido
+
+El bloque contiguo desde `.content-panel` hasta `.status-segmented` se trasladó sin cambiar reglas a `src/styles/contenido-compartido.css`. Incluye paneles, tarjetas de resumen, encabezados y filtros básicos. `src/styles.css` lo importa antes del primer ajuste específico de Lotes. `npm run build` terminó correctamente y el CSS compilado conservó el nombre `index-QRaE5sgT.css` y el SHA-256 `CB3EF9628D051B32220C08335ABC0C1C1019A49DA65846B1BFF0770891C48FCD` de la línea base.
+
+La extracción del contenido compartido continúa pendiente: después de este corte hay reglas genéricas de búsqueda, botones y tablas intercaladas con Lotes y Siembras. Antes de trasladarlas hay que definir cortes adicionales que preserven su posición en la cascada. Queda pendiente revisar visualmente paneles, tarjetas y filtros con una sesión funcional.
