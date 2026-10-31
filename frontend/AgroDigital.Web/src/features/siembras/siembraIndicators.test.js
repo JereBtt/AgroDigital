@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { calcularAvanceSiembra } from './siembraIndicators.js';
-import { calcularAvanceApto } from '../../cosechaIndicators.js';
+import { calcularAvanceApto } from '../cosechas/cosechaIndicators.js';
 
 test('el avance de siembra separa ciclos, cuenta bajas y no duplica resiembras', () => {
   const planes = [

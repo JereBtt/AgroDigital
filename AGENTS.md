@@ -125,7 +125,7 @@ Estructura inicial definida:
 - `database/scripts/00_master_create_database.sql`: script madre de creacion completa de la base de datos.
 - `database/scripts/09_cosechas.sql`: script incremental del modulo Cosechas y documentos adjuntos.
 - `database/scripts/29_cosechas_rediseno.sql`: rediseño de Cosechas (EmpresaId, EstadoControl, maquinaria, rinde seco, tolerancias por grano, partes diarios y vista vw_CosechasAvance).
-- `frontend/AgroDigital.Web/src/Cosechas.jsx`: consulta con avance y control de perdidas, registrar/editar, modal de finalizacion, partes diarios, Tirada de Aros con mapa y detalle. Estilos: bloque `cos-*` al final de `styles.css`.
+- `frontend/AgroDigital.Web/src/features/cosechas/`: consulta con avance y control de perdidas, registrar/editar, modal de finalizacion, partes diarios, Tirada de Aros con mapa y detalle; incluye `Cosechas.jsx`, `cosechaIndicators.js` y `cosechaResultado.js`. Estilos: bloque `cos-*` al final de `src/styles.css`.
 - `database/scripts/09_almacenamiento.sql` y `10_almacenamiento_campania_cosecha.sql`: estructura de Almacenamiento y referencias textuales. Comparten prefijos numericos con scripts de otros modulos; identificarlos por nombre completo y respetar sus dependencias.
 - `frontend/AgroDigital.Web/src/Almacenamiento.jsx`: consulta, registro y edicion de movimientos de almacenamiento.
 - `frontend/AgroDigital.Web/src/Estadisticas.jsx`: modulo Estadisticas con Rinde, Siniestros, Productividad, Silos y almacenamiento y Distribucion. La empresa sale del selector superior de App. Las dos ultimas pestanias conservan sus filtros de periodo y grano.
