@@ -37,7 +37,8 @@ import {
     - Control de pérdidas (Tirada de Aros): Sin controles -> En curso -> Finalizado.
 
   Vistas: consulta, registrar / editar, detalle, partes diarios y Tirada de Aros.
-  Estilos: bloque cos-* al final de styles.css; reutiliza las clases de Siembras.
+  Estilos: cosechas-base.css y cosechas-ajustes.css, cargados desde styles.css;
+  reutiliza clases compartidas con Siembras.
 */
 
 // Permisos por rol (los calcula App.jsx segun el rol en la empresa). Sin la prop, se muestra todo.

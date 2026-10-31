@@ -118,3 +118,18 @@ El bloque contiguo desde el encabezado de Distribución hasta antes de Estadíst
 El último tramo transitorio se dividió entre `features/estadisticas/estadisticas.css` (filtros, indicadores y gráficos) y `styles/tarjetas-alerta.css` (tarjeta compartida en alerta). `styles/bloque-operativo-posterior.css` se eliminó y `src/styles.css` importa ambos archivos en su posición original. `npm run build` produjo `index-QRaE5sgT.css` con SHA-256 `CB3EF9628D051B32220C08335ABC0C1C1019A49DA65846B1BFF0770891C48FCD`, idéntico a la línea base.
 
 `features/estadisticas/EstadisticasAgricolas.jsx`, `features/reporteria-ia/ReporteriaIA.jsx` y `features/agrobot/AgroBot.jsx` ya importan sus respectivas hojas CSS. La burbuja para abrir AgroBot usa `.bot-button` en `styles/controles-globales.css` porque se renderiza en los controles compartidos de la aplicación. No hizo falta mover CSS de Reportería IA ni del panel de AgroBot. Queda pendiente revisar visualmente Estadísticas, Reportería IA y AgroBot con una sesión funcional.
+
+## Cierre de la segunda capa: estilos compartidos
+
+`src/styles.css` es el manifiesto de imports globales. Las hojas de `src/styles/` conservan reglas usadas por más de una pantalla o tramos intercalados que no se pueden desplazar sin alterar la cascada. Se clasifican así:
+
+| Grupo | Hojas | Uso principal |
+| --- | --- | --- |
+| Base y navegación | `base.css`, `estructura-app.css`, `controles-globales.css` | Reglas generales, marco de la aplicación, navegación y controles flotantes. |
+| Acceso y administración | `acceso.css`, `administracion.css`, `notificaciones.css` | Ingreso, panel administrativo y avisos. `acceso.css` conserva selectores de administración intercalados. |
+| Consultas y controles | `contenido-compartido.css`, `filtros-y-botones.css`, `tablas-operativas.css`, `filtros-padres.css`, `vistas-compartidas.css` | Paneles, filtros, botones, tablas y estados vacíos de varios módulos. `tablas-operativas.css` incluye reglas de Lotes y Siembras. |
+| Formularios y estados | `formularios-compartidos.css`, `estados-agricolas.css`, `modales-y-bajas.css`, `tarjetas-alerta.css` | Campos, avisos, confirmaciones y tarjetas reutilizadas. `modales-y-bajas.css` conserva selectores de Lotes y Siembras intercalados. |
+
+También hay reglas compartidas dentro de hojas de módulo: `lotes-formulario-mapa.css` conserva selectores de Seguimientos; `siembras-ajustes.css` incluye un ajuste del catálogo común; `almacenamiento.css` define clases `alm-*` que utiliza Distribución. Sus imports mantienen la posición previa a la reorganización. Las hojas de Inicio, Estadísticas Agrícolas, Reportería IA y AgroBot se importan desde sus componentes.
+
+La revisión de escritorio se hizo en una sesión funcional con la API conectada: se observaron las vistas principales de Lotes, Campañas, Siembras, Cosechas, Silos, Almacenamiento, Estadísticas y Reportería IA, y se abrió el panel de AgroBot. No se observaron desajustes de presentación en esas vistas. Distribución mostró una capa de carga durante la observación, por lo que su contenido queda pendiente de revisión visual. Tampoco se recorrieron formularios, mapas, modales, Seguimientos, acceso ni tamaños móviles. La igualdad del CSS compilado con la línea base comprueba que esta separación no cambió las reglas entregadas por Vite; la revisión visual anterior cubre solo las vistas indicadas.
