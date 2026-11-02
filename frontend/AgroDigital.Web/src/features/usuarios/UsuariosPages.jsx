@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { MessageCircle, Send, XCircle, AlertTriangle, Building2, CheckCircle2, ChevronDown, ClipboardList, Copy, Eye, EyeOff, KeyRound, LoaderCircle, RotateCcw, Search, Mail, Phone, ShieldCheck, Trash2, User, UserPlus, Users, Warehouse } from 'lucide-react';
+import { MessageCircle, Send, XCircle, AlertTriangle, Building2, CheckCircle2, ChevronDown, ClipboardList, Copy, Edit, Eye, EyeOff, KeyRound, LoaderCircle, RotateCcw, Search, Mail, Phone, ShieldCheck, Trash2, User, UserPlus, Users, Warehouse } from 'lucide-react';
 import { formatRole } from '../../shared/utils/roles.js';
 import { formatDate } from '../../shared/utils/formatDate.js';
 import { normalizeSearchText } from '../../shared/utils/normalizeSearchText.js';
@@ -9,10 +9,27 @@ function ManagerUsersPage({
   context, error, generatedOtp, copiedKey, loadingOtp, onGenerateOtp, onCopy,
   requests = [], users = [], userSaving, actionStatus, onApproveRequest, onResolveRequest, onToggleUserStatus,
   invitations = [], invitationSaving = '', invitationResult = null, invitationError = '',
-  onCreateInvitation, onResendInvitation, onCancelInvitation
+  onCreateInvitation, onResendInvitation, onCancelInvitation,
+  selectedEmpresaId = '', onSelectEmpresa, onUpdateUserAccess
 }) {
   const [invitationTab, setInvitationTab] = useState('correo');
   const empresas = context?.empresas ?? [];
+  const empresasActivas = empresas.filter((empresa) => empresa.activo);
+  // Empresa de trabajo de la pantalla: la elegida en el selector (compartido con el resto del sistema)
+  // o, si no hay una valida, la principal.
+  const empresaSeleccionada = empresasActivas.find((empresa) => String(empresa.empresaId) === String(selectedEmpresaId))
+    ?? empresasActivas.find((empresa) => empresa.esPrincipal)
+    ?? empresasActivas[0]
+    ?? null;
+  const empresaSeleccionadaId = empresaSeleccionada ? String(empresaSeleccionada.empresaId) : '';
+  const invitacionesEmpresa = invitations.filter((inv) => !inv.empresaId || String(inv.empresaId) === empresaSeleccionadaId);
+  const otpEmpresa = generatedOtp && (!generatedOtp.empresaId || String(generatedOtp.empresaId) === empresaSeleccionadaId)
+    ? generatedOtp
+    : null;
+  const [alcanceUsuarios, setAlcanceUsuarios] = useState('empresa');
+  const usersEmpresa = empresaSeleccionada && alcanceUsuarios === 'empresa'
+    ? users.filter((user) => (user.empresas ?? []).some((empresa) => String(empresa.empresaId) === empresaSeleccionadaId))
+    : users;
   const [userFilters, setUserFilters] = useState({
     search: '',
     estado: 'todos',
@@ -21,9 +38,9 @@ function ManagerUsersPage({
   });
   const principal = empresas.find((empresa) => empresa.esPrincipal);
   const solicitudesPendientes = requests.length;
-  const usuariosHabilitados = users.filter((user) => user.activo).length;
-  const usuariosDeshabilitados = users.filter((user) => !user.activo).length;
-  const filteredUsers = users.filter((user) => {
+  const usuariosHabilitados = usersEmpresa.filter((user) => user.activo).length;
+  const usuariosDeshabilitados = usersEmpresa.filter((user) => !user.activo).length;
+  const filteredUsers = usersEmpresa.filter((user) => {
     const search = normalizeSearchText(userFilters.search.trim());
     const userDate = user.fechaAlta ? new Date(user.fechaAlta) : null;
     const fromDate = userFilters.desde ? new Date(`${userFilters.desde}T00:00:00`) : null;
@@ -55,18 +72,22 @@ function ManagerUsersPage({
           <h1>Usuarios</h1>
           <p>Gestioná accesos, solicitudes y empresas vinculadas a tu grupo de gestión.</p>
         </div>
-        <button
-          className="green-button add-lote-button"
-          type="button"
-          onClick={() => {
-            setInvitationTab('correo');
-            document.getElementById('invitacion-correo')?.focus();
-          }}
-          disabled={!context?.grupoGestionCodigo}
-        >
-          <UserPlus size={18} />
-          <span>Invitar empleado</span>
-        </button>
+        {empresasActivas.length > 0 && (
+          <label className="users-company-selector">
+            <span><Building2 size={16} /> Empresa</span>
+            <select
+              value={empresaSeleccionadaId}
+              onChange={(event) => onSelectEmpresa?.(event.target.value)}
+              aria-label="Empresa para invitar y gestionar usuarios"
+            >
+              {empresasActivas.map((empresa) => (
+                <option key={empresa.empresaId} value={empresa.empresaId}>
+                  {empresa.nombre}{empresa.esPrincipal ? ' (principal)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       {error && <p className="auth-error">{error}</p>}
@@ -74,24 +95,30 @@ function ManagerUsersPage({
 
       <div className="summary-grid users-summary-grid">
         <SummaryCard icon={<Users size={30} />} label="Grupo de gestión" value={context?.grupoGestionCodigo ?? 'Sin código'} helper="Código que se comparte junto a una OTP" />
-        <SummaryCard icon={<Warehouse size={30} />} label="Empresa principal" value={principal?.nombre ?? 'Sin empresa'} helper="Contexto operativo seleccionado" />
+        <SummaryCard
+          icon={<Warehouse size={30} />}
+          label="Empresa seleccionada"
+          value={empresaSeleccionada?.nombre ?? 'Sin empresa'}
+          helper={empresaSeleccionada?.esPrincipal ? 'Empresa principal del grupo' : `Principal: ${principal?.nombre ?? 'sin definir'}`}
+        />
         <SummaryCard icon={<ClipboardList size={30} />} label="Solicitudes pendientes" value={solicitudesPendientes} helper="Altas esperando aprobación" />
       </div>
 
       <div className="manager-users-grid">
         <EmployeeInvitationCard
           context={context}
+          empresa={empresaSeleccionada}
           tab={invitationTab}
           onTabChange={setInvitationTab}
-          invitations={invitations}
+          invitations={invitacionesEmpresa}
           saving={invitationSaving}
           result={invitationResult}
           error={invitationError}
-          generatedOtp={generatedOtp}
+          generatedOtp={otpEmpresa}
           loadingOtp={loadingOtp}
           copiedKey={copiedKey}
           onCopy={onCopy}
-          onGenerateOtp={onGenerateOtp}
+          onGenerateOtp={() => onGenerateOtp(empresaSeleccionada?.empresaId ?? null)}
           onCreate={onCreateInvitation}
           onResend={onResendInvitation}
           onCancel={onCancelInvitation}
@@ -102,7 +129,7 @@ function ManagerUsersPage({
             <div className="card-heading-icon"><Building2 size={18} /></div>
             <div>
               <h2>Empresas disponibles</h2>
-              <p>Al aprobar una solicitud vas a poder asignar acceso a todas o a empresas puntuales.</p>
+              <p>Elegí una empresa para invitar personas y ver sus usuarios. Al aprobar podés sumar más empresas.</p>
             </div>
           </div>
           {empresas.length === 0 ? (
@@ -113,16 +140,32 @@ function ManagerUsersPage({
             </div>
           ) : (
             <div className="company-access-list">
-              {empresas.map((empresa) => (
-                <article className="company-access-item" key={empresa.empresaId}>
-                  <span><Building2 size={18} /></span>
-                  <div>
-                    <strong>{empresa.nombre}</strong>
-                    <small>{empresa.esPrincipal ? 'Empresa principal' : 'Empresa asociada'}</small>
-                  </div>
-                  <em className={empresa.activo ? 'company-active' : 'company-disabled'}>{empresa.activo ? 'Activa' : 'Deshabilitada'}</em>
-                </article>
-              ))}
+              {empresas.map((empresa) => {
+                const isSelected = String(empresa.empresaId) === empresaSeleccionadaId;
+                const usuariosEnEmpresa = users.filter((user) => (user.empresas ?? []).some((item) => item.empresaId === empresa.empresaId && item.activo)).length;
+                return (
+                  <button
+                    className={`company-access-item ${isSelected ? 'company-access-item-selected' : ''}`}
+                    key={empresa.empresaId}
+                    type="button"
+                    onClick={() => empresa.activo && onSelectEmpresa?.(String(empresa.empresaId))}
+                    disabled={!empresa.activo}
+                    aria-pressed={isSelected}
+                  >
+                    <span><Building2 size={18} /></span>
+                    <div>
+                      <strong>{empresa.nombre}</strong>
+                      <small>
+                        {empresa.esPrincipal ? 'Empresa principal' : 'Empresa asociada'}
+                        {` · ${usuariosEnEmpresa} ${usuariosEnEmpresa === 1 ? 'usuario' : 'usuarios'}`}
+                      </small>
+                    </div>
+                    <em className={empresa.activo ? 'company-active' : 'company-disabled'}>
+                      {!empresa.activo ? 'Deshabilitada' : isSelected ? 'Seleccionada' : 'Activa'}
+                    </em>
+                  </button>
+                );
+              })}
             </div>
           )}
         </section>
@@ -147,7 +190,7 @@ function ManagerUsersPage({
           ) : (
             <div className="pending-request-list">
               {requests.map((request) => (
-                <PendingUserRequestCard key={request.solicitudUsuarioId} request={request} empresas={empresas} onApprove={onApproveRequest} onResolve={onResolveRequest} />
+                <PendingUserRequestCard key={request.solicitudUsuarioId} request={request} empresas={empresasActivas} onApprove={onApproveRequest} onResolve={onResolveRequest} />
               ))}
             </div>
           )}
@@ -158,8 +201,13 @@ function ManagerUsersPage({
         <div className="card-heading">
           <div className="card-heading-icon"><Users size={18} /></div>
           <div>
-            <h2>Usuarios del grupo</h2>
-            <p>Usuarios aprobados o deshabilitados, con sus accesos por empresa y rol.</p>
+            <h2>{alcanceUsuarios === 'empresa' && empresaSeleccionada ? `Usuarios de ${empresaSeleccionada.nombre}` : 'Usuarios del grupo'}</h2>
+            <p>
+              {alcanceUsuarios === 'empresa'
+                ? 'Usuarios con acceso a la empresa seleccionada.'
+                : 'Todos los usuarios de tu grupo de gestión, con sus accesos por empresa y rol.'}
+              {' Con "Editar accesos" podés sumarlos a otras empresas o cambiar su rol.'}
+            </p>
           </div>
           <span className="points-count">{usuariosHabilitados} habilitados · {usuariosDeshabilitados} deshabilitados</span>
         </div>
@@ -173,6 +221,13 @@ function ManagerUsersPage({
               onChange={(event) => setUserFilters((current) => ({ ...current, search: event.target.value }))}
               placeholder="Buscar por nombre, correo, empresa o rol..."
             />
+          </label>
+          <label className="approved-filter-field">
+            <span>Ver</span>
+            <select value={alcanceUsuarios} onChange={(event) => setAlcanceUsuarios(event.target.value)}>
+              <option value="empresa">Empresa seleccionada</option>
+              <option value="grupo">Todo el grupo</option>
+            </select>
           </label>
           <label className="approved-filter-field">
             <span>Estado</span>
@@ -196,11 +251,15 @@ function ManagerUsersPage({
           </button>
         </div>
 
-        {users.length === 0 ? (
+        {usersEmpresa.length === 0 ? (
           <div className="pending-users-empty-row approved-users-empty-row">
             <Users size={52} strokeWidth={1.8} />
-            <strong>Aún no hay usuarios aprobados</strong>
-            <span>Cuando apruebes una solicitud, el usuario aparecerá en esta tabla.</span>
+            <strong>{users.length === 0 ? 'Aún no hay usuarios aprobados' : `Todavía no hay usuarios en ${empresaSeleccionada?.nombre ?? 'esta empresa'}`}</strong>
+            <span>
+              {users.length === 0
+                ? 'Cuando apruebes una solicitud, el usuario aparecerá en esta tabla.'
+                : 'Invitá a alguien nuevo, o elegí "Todo el grupo" y usá "Editar accesos" para sumar a un usuario existente.'}
+            </span>
           </div>
         ) : filteredUsers.length === 0 ? (
           <div className="pending-users-empty-row approved-users-empty-row">
@@ -211,7 +270,14 @@ function ManagerUsersPage({
         ) : (
           <div className="approved-users-table">
             {filteredUsers.map((user) => (
-              <ApprovedUserRow key={user.usuarioId} user={user} saving={userSaving} onToggleStatus={onToggleUserStatus} />
+              <ApprovedUserRow
+                key={user.usuarioId}
+                user={user}
+                saving={userSaving}
+                onToggleStatus={onToggleUserStatus}
+                empresas={empresasActivas}
+                onUpdateAccess={onUpdateUserAccess}
+              />
             ))}
           </div>
         )}
@@ -220,10 +286,12 @@ function ManagerUsersPage({
   );
 }
 
-function ApprovedUserRow({ user, saving, onToggleStatus, readOnly = false }) {
+function ApprovedUserRow({ user, saving, onToggleStatus, readOnly = false, empresas = [], onUpdateAccess }) {
   const fullName = `${user.nombre ?? ''} ${user.apellido ?? ''}`.trim() || user.correoElectronico;
   const action = user.activo ? 'deshabilitar' : 'habilitar';
   const isSaving = saving === `${action}-${user.usuarioId}`;
+  const [editingAccess, setEditingAccess] = useState(false);
+  const canEditAccess = !readOnly && user.activo && typeof onUpdateAccess === 'function' && empresas.length > 0;
 
   return (
     <article className={`approved-user-row ${!user.activo ? 'approved-user-row-disabled' : ''}`}>
@@ -254,6 +322,12 @@ function ApprovedUserRow({ user, saving, onToggleStatus, readOnly = false }) {
       </div>
       <div className="approved-user-status-actions">
         <em className={user.activo ? 'company-active' : 'company-disabled'}>{user.activo ? 'Habilitado' : 'Deshabilitado'}</em>
+        {canEditAccess && !editingAccess && (
+          <button className="team-action-button" type="button" onClick={() => setEditingAccess(true)} disabled={Boolean(saving)}>
+            <Edit size={16} />
+            Editar accesos
+          </button>
+        )}
         {!readOnly && <button
           className={'team-action-button ' + (user.activo ? 'team-danger-action' : 'team-enable-action')}
           type="button"
@@ -264,7 +338,81 @@ function ApprovedUserRow({ user, saving, onToggleStatus, readOnly = false }) {
           {user.activo ? 'Deshabilitar' : 'Habilitar'}
         </button>}
       </div>
+      {canEditAccess && editingAccess && (
+        <UserAccessEditor
+          user={user}
+          empresas={empresas}
+          saving={saving === `accesos-${user.usuarioId}`}
+          onCancel={() => setEditingAccess(false)}
+          onSave={async (payload) => {
+            const ok = await onUpdateAccess(user, payload);
+            if (ok) setEditingAccess(false);
+          }}
+        />
+      )}
     </article>
+  );
+}
+
+/** Edita las empresas (y el rol en cada una) de un usuario que ya pertenece al grupo. */
+function UserAccessEditor({ user, empresas, saving, onCancel, onSave }) {
+  const accesosActuales = Object.fromEntries((user.empresas ?? [])
+    .filter((empresa) => empresa.activo)
+    .map((empresa) => [empresa.empresaId, empresa.rol]));
+  const rolPorDefecto = user.rolGeneral && ROLE_OPTIONS.some((role) => role.value === user.rolGeneral) ? user.rolGeneral : 'EmpleadoCampo';
+  const [selected, setSelected] = useState(() => Object.fromEntries(empresas.map((empresa) => [empresa.empresaId, Boolean(accesosActuales[empresa.empresaId])])));
+  const [roles, setRoles] = useState(() => Object.fromEntries(empresas.map((empresa) => [empresa.empresaId, accesosActuales[empresa.empresaId] ?? rolPorDefecto])));
+
+  const payload = empresas
+    .filter((empresa) => selected[empresa.empresaId])
+    .map((empresa) => ({ empresaId: empresa.empresaId, rol: roles[empresa.empresaId] ?? rolPorDefecto }));
+  const hasChanges = empresas.some((empresa) => {
+    const tenia = Boolean(accesosActuales[empresa.empresaId]);
+    const tiene = Boolean(selected[empresa.empresaId]);
+    return tenia !== tiene || (tiene && accesosActuales[empresa.empresaId] !== roles[empresa.empresaId]);
+  });
+  const canSave = payload.length > 0 && hasChanges && !saving;
+
+  return (
+    <div className="user-access-editor">
+      <div className="user-access-editor-heading">
+        <strong>Accesos por empresa</strong>
+        <small>Marcá las empresas a las que puede ingresar y su rol en cada una.</small>
+      </div>
+      <div className="company-role-grid">
+        {empresas.map((empresa) => {
+          const companySelected = Boolean(selected[empresa.empresaId]);
+          return (
+            <div className={`company-role-item ${companySelected ? '' : 'company-role-item-disabled'}`} key={empresa.empresaId}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={companySelected}
+                  onChange={(event) => setSelected((current) => ({ ...current, [empresa.empresaId]: event.target.checked }))}
+                />
+                <span>{empresa.nombre}</span>
+              </label>
+              <RoleDropdown
+                value={roles[empresa.empresaId] ?? rolPorDefecto}
+                onChange={(nextRole) => setRoles((current) => ({ ...current, [empresa.empresaId]: nextRole }))}
+                disabled={!companySelected}
+                ariaLabel={`Seleccionar rol de ${user.nombre ?? 'usuario'} para ${empresa.nombre}`}
+              />
+            </div>
+          );
+        })}
+      </div>
+      {payload.length === 0 && (
+        <small className="user-access-editor-warning">Seleccioná al menos una empresa. Para quitarle todo el acceso, deshabilitá al usuario.</small>
+      )}
+      <div className="user-access-editor-actions">
+        <button className="approve-request-button" type="button" onClick={() => onSave({ empresas: payload })} disabled={!canSave}>
+          {saving ? <LoaderCircle className="spin-icon" size={18} /> : <CheckCircle2 size={18} />}
+          {saving ? 'Guardando...' : 'Guardar accesos'}
+        </button>
+        <button className="team-action-button" type="button" onClick={onCancel} disabled={saving}>Cancelar</button>
+      </div>
+    </div>
   );
 }
 
@@ -481,13 +629,15 @@ function RoleDropdown({ value, onChange, disabled = false, ariaLabel = 'Seleccio
 }
 
 function PendingUserRequestCard({ request, empresas, onApprove, onResolve }) {
-  const [accesoATodas, setAccesoATodas] = useState(true);
+  // Si la solicitud viene de una invitacion para una empresa puntual, esa empresa llega preseleccionada.
+  const empresaInvitada = empresas.find((empresa) => empresa.empresaId === request.empresaId) ?? null;
+  const [accesoATodas, setAccesoATodas] = useState(() => !empresaInvitada);
   const [rolGeneral, setRolGeneral] = useState('EmpleadoCampo');
-  const [selectedCompanies, setSelectedCompanies] = useState(() => Object.fromEntries(empresas.map((empresa) => [empresa.empresaId, true])));
+  const [selectedCompanies, setSelectedCompanies] = useState(() => Object.fromEntries(empresas.map((empresa) => [empresa.empresaId, empresaInvitada ? empresa.empresaId === empresaInvitada.empresaId : true])));
   const [companyRoles, setCompanyRoles] = useState(() => Object.fromEntries(empresas.map((empresa) => [empresa.empresaId, 'EmpleadoCampo'])));
 
   useEffect(() => {
-    setSelectedCompanies((current) => Object.fromEntries(empresas.map((empresa) => [empresa.empresaId, current[empresa.empresaId] ?? true])));
+    setSelectedCompanies((current) => Object.fromEntries(empresas.map((empresa) => [empresa.empresaId, current[empresa.empresaId] ?? !request.empresaId])));
     setCompanyRoles((current) => Object.fromEntries(empresas.map((empresa) => [empresa.empresaId, current[empresa.empresaId] ?? 'EmpleadoCampo'])));
   }, [empresas]);
 
@@ -512,6 +662,9 @@ function PendingUserRequestCard({ request, empresas, onApprove, onResolve }) {
           <strong>{request.nombre} {request.apellido}</strong>
           <small>{request.correoElectronico}</small>
           <small>{request.telefono} · Solicitó el {formatDate(request.fechaCreacion)}</small>
+          {request.empresaNombre && (
+            <span className="pending-request-company"><Building2 size={14} /> Invitado a {request.empresaNombre}</span>
+          )}
         </div>
       </div>
 
@@ -604,7 +757,7 @@ function ShareInvitationActions({ message, copiedKey, onCopy }) {
 }
 
 function EmployeeInvitationCard({
-  context, tab, onTabChange, invitations, saving, result, error,
+  context, empresa = null, tab, onTabChange, invitations, saving, result, error,
   generatedOtp, loadingOtp, copiedKey, onCopy, onGenerateOtp, onCreate, onResend, onCancel
 }) {
   const [form, setForm] = useState({ correoElectronico: '', nombre: '' });
@@ -618,7 +771,7 @@ function EmployeeInvitationCard({
   async function submit(event) {
     event.preventDefault();
     if (!canSend) return;
-    const ok = await onCreate({ correoElectronico: correo, nombre: form.nombre.trim() || null });
+    const ok = await onCreate({ correoElectronico: correo, nombre: form.nombre.trim() || null, empresaId: empresa?.empresaId ?? null });
     if (ok) setForm({ correoElectronico: '', nombre: '' });
   }
 
@@ -643,6 +796,13 @@ function EmployeeInvitationCard({
           <p>Invitá a una persona por correo o compartí el código manualmente.</p>
         </div>
       </div>
+
+      {empresa && (
+        <p className="invite-company-banner">
+          <Building2 size={16} />
+          <span>Invitando a <strong>{empresa.nombre}</strong>. Cambiá la empresa desde el selector de arriba.</span>
+        </p>
+      )}
 
       <div className="invite-tabs" role="tablist" aria-label="Forma de invitar">
         <button type="button" role="tab" aria-selected={tab === 'correo'} className={tab === 'correo' ? 'active' : ''} onClick={() => onTabChange('correo')}>
@@ -728,6 +888,7 @@ function EmployeeInvitationCard({
                     <div className="invite-item-main">
                       <strong>{inv.nombre || inv.correoElectronico}</strong>
                       {inv.nombre && <small>{inv.correoElectronico}</small>}
+                      {!inv.empresaId && <small>Sin empresa asignada (se elige al aprobar)</small>}
                       <small>
                         {vencida ? `Venció el ${vence}` : `Vence el ${vence}`}
                         {inv.cantidadEnvios > 1 ? ` · ${inv.cantidadEnvios} envíos` : ''}

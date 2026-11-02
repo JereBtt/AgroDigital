@@ -12,7 +12,7 @@ namespace AgroDigital.Api.Controllers;
 /// Invitacion de empleados por correo. Solo el Gerente del grupo.
 ///
 ///   GET  api/manager/invitaciones                 invitaciones pendientes y vencidas
-///   POST api/manager/invitaciones                 { correoElectronico, nombre? }
+///   POST api/manager/invitaciones                 { correoElectronico, nombre?, empresaId? }
 ///   POST api/manager/invitaciones/{id}/reenviar   nueva OTP (la anterior deja de servir)
 ///   POST api/manager/invitaciones/{id}/cancelar
 ///
@@ -65,10 +65,24 @@ public sealed class InvitacionesEmpleadoController(
             return BadRequest($"El nombre no puede superar los {LargoMaximoNombre} caracteres.");
         }
 
-        switch (await repository.ObtenerSituacionCorreoAsync(grupo.GrupoGestionId, correo))
+        string? empresaNombre = null;
+        if (request.EmpresaId is { } empresaId)
+        {
+            empresaNombre = await repository.ObtenerNombreEmpresaActivaAsync(grupo.GrupoGestionId, empresaId);
+            if (empresaNombre is null)
+            {
+                return BadRequest("La empresa seleccionada no pertenece a tu grupo de gestión o está deshabilitada.");
+            }
+        }
+
+        switch (await repository.ObtenerSituacionCorreoAsync(grupo.GrupoGestionId, correo, request.EmpresaId))
         {
             case SituacionCorreoInvitacion.YaEsMiembro:
-                return Conflict("Esa persona ya forma parte de tu grupo de gestión.");
+                return Conflict(empresaNombre is null
+                    ? "Esa persona ya forma parte de tu grupo de gestión."
+                    : $"Esa persona ya tiene acceso a {empresaNombre}.");
+            case SituacionCorreoInvitacion.MiembroDeOtraEmpresa:
+                return Conflict($"Esa persona ya forma parte de tu grupo de gestión. Para sumarla a {empresaNombre}, usá \"Editar accesos\" en Usuarios del grupo.");
             case SituacionCorreoInvitacion.SolicitudPendiente:
                 return Conflict("Esa persona ya envió una solicitud de acceso. Revisala en Solicitudes pendientes.");
             case SituacionCorreoInvitacion.InvitacionVigente:
@@ -77,7 +91,7 @@ public sealed class InvitacionesEmpleadoController(
 
         var otp = CrearOtp();
         var invitacion = await repository.CrearAsync(
-            grupo.GrupoGestionId, UsuarioId, correo, nombre, passwordHasher.Hash(otp), DateTime.UtcNow.AddDays(DiasVigencia));
+            grupo.GrupoGestionId, UsuarioId, correo, nombre, passwordHasher.Hash(otp), DateTime.UtcNow.AddDays(DiasVigencia), request.EmpresaId);
 
         return Ok(await EnviarAsync(grupo, invitacion, otp));
     }
@@ -133,7 +147,7 @@ public sealed class InvitacionesEmpleadoController(
         var enlace = $"{url}/?unirse={Uri.EscapeDataString(grupo.Codigo)}&otp={Uri.EscapeDataString(otp)}&correo={Uri.EscapeDataString(invitacion.CorreoElectronico)}";
 
         var correo = PlantillasCorreo.InvitacionEmpleado(
-            invitacion.Nombre, grupo.NombreGerente, grupo.Empresas, grupo.Codigo, otp, enlace, invitacion.FechaVencimiento);
+            invitacion.Nombre, grupo.NombreGerente, invitacion.EmpresaNombre ?? grupo.Empresas, grupo.Codigo, otp, enlace, invitacion.FechaVencimiento);
 
         var resultado = await emailService.EnviarAsync(
             invitacion.CorreoElectronico, invitacion.Nombre ?? invitacion.CorreoElectronico, correo.Asunto, correo.Html, correo.Texto);

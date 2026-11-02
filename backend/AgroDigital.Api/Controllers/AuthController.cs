@@ -18,13 +18,18 @@ public sealed class AuthController : ControllerBase
     private readonly IAuthTokenService _authTokenService;
     private readonly INotificacionesSolicitudService _notificaciones;
     private readonly string _connectionString;
+    private readonly string _carpetaFotosPerfil;
+
+    private const long TamanioMaximoFotoPerfil = 5 * 1024 * 1024;
+    private static readonly string[] ExtensionesFotoPerfil = [".jpg", ".png", ".webp"];
 
     public AuthController(
         IAuthRepository authRepository,
         IPasswordHasher passwordHasher,
         IAuthTokenService authTokenService,
         INotificacionesSolicitudService notificaciones,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IWebHostEnvironment environment)
     {
         _authRepository = authRepository;
         _passwordHasher = passwordHasher;
@@ -32,6 +37,7 @@ public sealed class AuthController : ControllerBase
         _notificaciones = notificaciones;
         _connectionString = configuration.GetConnectionString("AgroDigital")
             ?? throw new InvalidOperationException("No se encontro la cadena de conexion AgroDigital.");
+        _carpetaFotosPerfil = Path.Combine(environment.ContentRootPath, "App_Data", "perfiles");
     }
 
     [HttpPost("login")]
@@ -39,13 +45,13 @@ public sealed class AuthController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(request.Usuario) || string.IsNullOrWhiteSpace(request.Password))
         {
-            return BadRequest("Usuario y contrasenia son obligatorios.");
+            return BadRequest("Usuario y contraseña son obligatorios.");
         }
 
         var usuario = await _authRepository.ObtenerPorUsuarioAsync(request.Usuario);
         if (usuario is null || !usuario.Activo || !_passwordHasher.Verify(request.Password, usuario.PasswordHash))
         {
-            return Unauthorized("Usuario o contrasenia incorrectos.");
+            return Unauthorized("Usuario o contraseña incorrectos.");
         }
 
         return Ok(new LoginResponse(usuario.Usuario, NombreCompleto(usuario), usuario.Rol, _authTokenService.CreateToken(usuario), usuario.DebeCambiarPassword));
@@ -87,12 +93,12 @@ public sealed class AuthController : ControllerBase
 
         if (!EsPasswordSegura(request.Password))
         {
-            return BadRequest("La contrasenia debe tener al menos 8 caracteres y mezclar mayusculas, minusculas, numeros y simbolos.");
+            return BadRequest("La contraseña debe tener al menos 8 caracteres y mezclar mayúsculas, minúsculas, números y símbolos.");
         }
 
         if (request.Password != request.RepetirPassword)
         {
-            return BadRequest("Las contrasenias no coinciden.");
+            return BadRequest("Las contraseñas no coinciden.");
         }
 
         var correo = request.CorreoElectronico.Trim().ToLowerInvariant();
@@ -159,15 +165,35 @@ public sealed class AuthController : ControllerBase
             return BadRequest("Ingresa un correo electronico valido.");
         }
 
+        var usuarioActual = await _authRepository.ObtenerPorIdAsync(autenticado.UsuarioId);
+        if (usuarioActual is null || !usuarioActual.Activo)
+        {
+            return Unauthorized("Sesion no valida.");
+        }
+
         var usuarioActualizado = await _authRepository.ActualizarPerfilAsync(autenticado.UsuarioId, nombre, apellido, telefono, correo);
         if (usuarioActualizado is null)
         {
             return BadRequest("No se pudo actualizar el perfil. Verifica que el correo no este usado por otra cuenta.");
         }
 
+        // Si cambio el usuario de ingreso (el correo), no se emite un token nuevo:
+        // la persona debe volver a iniciar sesion con sus nuevas credenciales.
+        var cambioUsuarioIngreso = !string.Equals(usuarioActual.Usuario, usuarioActualizado.Usuario, StringComparison.OrdinalIgnoreCase);
+        if (cambioUsuarioIngreso)
+        {
+            return Ok(new
+            {
+                perfil = CrearPerfilResponse(usuarioActualizado),
+                requiereReingreso = true,
+                mensaje = $"Tu correo se actualizó. Iniciá sesión nuevamente con {usuarioActualizado.Usuario}."
+            });
+        }
+
         return Ok(new
         {
             perfil = CrearPerfilResponse(usuarioActualizado),
+            requiereReingreso = false,
             login = new LoginResponse(
                 usuarioActualizado.Usuario,
                 NombreCompleto(usuarioActualizado),
@@ -176,6 +202,94 @@ public sealed class AuthController : ControllerBase
                 usuarioActualizado.DebeCambiarPassword
             )
         });
+    }
+
+    [HttpGet("perfil/foto")]
+    public async Task<IActionResult> ObtenerFotoPerfil()
+    {
+        if (!TryGetAuthenticatedUser(out var autenticado, out var error))
+        {
+            return error;
+        }
+
+        var usuario = await _authRepository.ObtenerPorIdAsync(autenticado.UsuarioId);
+        if (usuario is null || !usuario.Activo)
+        {
+            return Unauthorized("Sesion no valida.");
+        }
+
+        var ruta = BuscarFotoPerfil(autenticado.UsuarioId);
+        if (ruta is null)
+        {
+            return NotFound();
+        }
+
+        Response.Headers.CacheControl = "no-store";
+        return PhysicalFile(ruta, TipoContenidoFotoPerfil(Path.GetExtension(ruta)));
+    }
+
+    [HttpPost("perfil/foto")]
+    [RequestSizeLimit(6_000_000)]
+    public async Task<ActionResult<PerfilUsuarioResponse>> SubirFotoPerfil(IFormFile archivo)
+    {
+        if (!TryGetAuthenticatedUser(out var autenticado, out var error))
+        {
+            return error;
+        }
+
+        var usuario = await _authRepository.ObtenerPorIdAsync(autenticado.UsuarioId);
+        if (usuario is null || !usuario.Activo)
+        {
+            return Unauthorized("Sesion no valida.");
+        }
+
+        if (archivo is null || archivo.Length == 0)
+        {
+            return BadRequest("Seleccioná una imagen para tu foto de perfil.");
+        }
+
+        if (archivo.Length > TamanioMaximoFotoPerfil)
+        {
+            return BadRequest("La foto de perfil no puede superar los 5 MB.");
+        }
+
+        byte[] contenido;
+        await using (var memoria = new MemoryStream())
+        {
+            await archivo.CopyToAsync(memoria);
+            contenido = memoria.ToArray();
+        }
+
+        // Se valida el contenido real del archivo, no la extension que informa el navegador.
+        var extension = DetectarExtensionImagen(contenido);
+        if (extension is null)
+        {
+            return BadRequest("Formato no permitido. Usá una imagen JPG, PNG o WEBP.");
+        }
+
+        Directory.CreateDirectory(_carpetaFotosPerfil);
+        EliminarFotosPerfil(autenticado.UsuarioId);
+        await System.IO.File.WriteAllBytesAsync(RutaFotoPerfil(autenticado.UsuarioId, extension), contenido);
+
+        return Ok(CrearPerfilResponse(usuario));
+    }
+
+    [HttpDelete("perfil/foto")]
+    public async Task<ActionResult<PerfilUsuarioResponse>> EliminarFotoPerfil()
+    {
+        if (!TryGetAuthenticatedUser(out var autenticado, out var error))
+        {
+            return error;
+        }
+
+        var usuario = await _authRepository.ObtenerPorIdAsync(autenticado.UsuarioId);
+        if (usuario is null || !usuario.Activo)
+        {
+            return Unauthorized("Sesion no valida.");
+        }
+
+        EliminarFotosPerfil(autenticado.UsuarioId);
+        return Ok(CrearPerfilResponse(usuario));
     }
 
     [HttpPut("perfil/password")]
@@ -190,17 +304,17 @@ public sealed class AuthController : ControllerBase
             || string.IsNullOrWhiteSpace(request.PasswordNueva)
             || string.IsNullOrWhiteSpace(request.RepetirPasswordNueva))
         {
-            return BadRequest("Completa la contrasenia actual y la nueva contrasenia.");
+            return BadRequest("Completá la contraseña actual y la nueva contraseña.");
         }
 
         if (request.PasswordNueva != request.RepetirPasswordNueva)
         {
-            return BadRequest("Las contrasenias nuevas no coinciden.");
+            return BadRequest("Las contraseñas nuevas no coinciden.");
         }
 
         if (!EsPasswordSegura(request.PasswordNueva))
         {
-            return BadRequest("La nueva contrasenia debe tener al menos 8 caracteres y mezclar mayusculas, minusculas, numeros y simbolos.");
+            return BadRequest("La nueva contraseña debe tener al menos 8 caracteres y mezclar mayúsculas, minúsculas, números y símbolos.");
         }
 
         var usuario = await _authRepository.ObtenerPorIdAsync(autenticado.UsuarioId);
@@ -211,21 +325,21 @@ public sealed class AuthController : ControllerBase
 
         if (!_passwordHasher.Verify(request.PasswordActual, usuario.PasswordHash))
         {
-            return BadRequest("La contrasenia actual no es correcta.");
+            return BadRequest("La contraseña actual no es correcta.");
         }
 
         if (_passwordHasher.Verify(request.PasswordNueva, usuario.PasswordHash))
         {
-            return BadRequest("La nueva contrasenia no puede ser igual a la actual.");
+            return BadRequest("La nueva contraseña no puede ser igual a la actual.");
         }
 
         var updated = await _authRepository.ActualizarPasswordAsync(usuario.UsuarioId, _passwordHasher.Hash(request.PasswordNueva));
         if (!updated)
         {
-            return BadRequest("No se pudo actualizar la contrasenia.");
+            return BadRequest("No se pudo actualizar la contraseña.");
         }
 
-        return Ok(new { mensaje = "Contrasenia actualizada correctamente." });
+        return Ok(new { mensaje = "Contraseña actualizada correctamente." });
     }
 
     [HttpPost("solicitar-union-grupo")]
@@ -237,12 +351,25 @@ public sealed class AuthController : ControllerBase
         var correo = request.CorreoElectronico?.Trim().ToLowerInvariant() ?? string.Empty;
         var grupoCodigo = request.GrupoGestionCodigo?.Trim().ToUpperInvariant() ?? string.Empty;
         var otpIngresada = request.Otp?.Trim().ToUpperInvariant() ?? string.Empty;
+        var password = request.Password ?? string.Empty;
 
-        if (string.IsNullOrWhiteSpace(nombre)
+        if (request.UsuarioExistente)
+        {
+            // Cuenta existente: los datos personales se toman de la cuenta y la contraseña
+            // es la actual, por eso no se exigen las reglas de una contraseña nueva.
+            if (string.IsNullOrWhiteSpace(correo)
+                || string.IsNullOrWhiteSpace(password)
+                || string.IsNullOrWhiteSpace(grupoCodigo)
+                || string.IsNullOrWhiteSpace(otpIngresada))
+            {
+                return BadRequest("Completa tu correo, tu contraseña actual, el codigo de grupo y la OTP.");
+            }
+        }
+        else if (string.IsNullOrWhiteSpace(nombre)
             || string.IsNullOrWhiteSpace(apellido)
             || string.IsNullOrWhiteSpace(telefono)
             || string.IsNullOrWhiteSpace(correo)
-            || string.IsNullOrWhiteSpace(request.Password)
+            || string.IsNullOrWhiteSpace(password)
             || string.IsNullOrWhiteSpace(grupoCodigo)
             || string.IsNullOrWhiteSpace(otpIngresada))
         {
@@ -252,16 +379,6 @@ public sealed class AuthController : ControllerBase
         if (!EsCorreoValido(correo))
         {
             return BadRequest("Ingresa un correo electronico valido.");
-        }
-
-        if (!EsPasswordSegura(request.Password))
-        {
-            return BadRequest("La contrasenia debe tener al menos 8 caracteres y mezclar mayusculas, minusculas, numeros y simbolos.");
-        }
-
-        if (request.Password != request.RepetirPassword)
-        {
-            return BadRequest("Las contrasenias no coinciden.");
         }
 
         await using var connection = new SqlConnection(_connectionString);
@@ -288,9 +405,35 @@ public sealed class AuthController : ControllerBase
         }
 
         var usuarioExistente = await ObtenerUsuarioPorCorreoAsync(connection, correo);
-        if (usuarioExistente is not null && !_passwordHasher.Verify(request.Password, usuarioExistente.PasswordHash))
+        if (usuarioExistente is not null)
         {
-            return BadRequest("Ya existe un usuario con ese correo. Ingresa su contrasenia actual para solicitar acceso a otro grupo.");
+            // La cuenta ya existe: se suma al grupo con sus datos actuales si la contraseña coincide.
+            if (!_passwordHasher.Verify(password, usuarioExistente.PasswordHash))
+            {
+                return BadRequest(request.UsuarioExistente
+                    ? "El correo o la contraseña de tu cuenta no son correctos."
+                    : "Ya existe una cuenta con ese correo. Marcá \"Ya tengo cuenta en AgroDigital\" e ingresá tu contraseña actual.");
+            }
+
+            nombre = usuarioExistente.Nombre;
+            apellido = usuarioExistente.Apellido;
+            telefono = usuarioExistente.Telefono;
+        }
+        else if (request.UsuarioExistente)
+        {
+            return BadRequest("El correo o la contraseña de tu cuenta no son correctos.");
+        }
+        else
+        {
+            if (!EsPasswordSegura(password))
+            {
+                return BadRequest("La contraseña debe tener al menos 8 caracteres y mezclar mayúsculas, minúsculas, números y símbolos.");
+            }
+
+            if (password != request.RepetirPassword)
+            {
+                return BadRequest("Las contraseñas no coinciden.");
+            }
         }
 
         var solicitudDuplicada = await ExisteSolicitudPendienteAsync(connection, grupo.Value.GrupoGestionId, correo);
@@ -303,14 +446,14 @@ public sealed class AuthController : ControllerBase
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
-            var usuarioId = usuarioExistente?.UsuarioId ?? await CrearUsuarioEmpleadoPendienteAsync(connection, (SqlTransaction)transaction, nombre, apellido, telefono, correo, _passwordHasher.Hash(request.Password));
+            var usuarioId = usuarioExistente?.UsuarioId ?? await CrearUsuarioEmpleadoPendienteAsync(connection, (SqlTransaction)transaction, nombre, apellido, telefono, correo, _passwordHasher.Hash(password));
 
             await using (var solicitudCommand = new SqlCommand("""
                 INSERT INTO dbo.SolicitudesUsuario
-                    (GrupoGestionId, UsuarioId, Nombre, Apellido, Telefono, CorreoElectronico, Estado)
+                    (GrupoGestionId, UsuarioId, Nombre, Apellido, Telefono, CorreoElectronico, Estado, EmpresaId)
                 OUTPUT INSERTED.SolicitudUsuarioId
                 VALUES
-                    (@GrupoGestionId, @UsuarioId, @Nombre, @Apellido, @Telefono, @CorreoElectronico, N'Pendiente');
+                    (@GrupoGestionId, @UsuarioId, @Nombre, @Apellido, @Telefono, @CorreoElectronico, N'Pendiente', @EmpresaId);
                 """, connection, (SqlTransaction)transaction))
             {
                 solicitudCommand.Parameters.AddWithValue("@GrupoGestionId", grupo.Value.GrupoGestionId);
@@ -319,6 +462,7 @@ public sealed class AuthController : ControllerBase
                 solicitudCommand.Parameters.AddWithValue("@Apellido", apellido);
                 solicitudCommand.Parameters.AddWithValue("@Telefono", telefono);
                 solicitudCommand.Parameters.AddWithValue("@CorreoElectronico", correo);
+                solicitudCommand.Parameters.AddWithValue("@EmpresaId", (object?)otp.Value.EmpresaId ?? DBNull.Value);
                 solicitudId = Convert.ToInt32(await solicitudCommand.ExecuteScalarAsync());
             }
 
@@ -348,7 +492,7 @@ public sealed class AuthController : ControllerBase
     }
 
 
-    private static PerfilUsuarioResponse CrearPerfilResponse(UsuarioLogin usuario)
+    private PerfilUsuarioResponse CrearPerfilResponse(UsuarioLogin usuario)
     {
         return new PerfilUsuarioResponse(
             usuario.UsuarioId,
@@ -358,8 +502,67 @@ public sealed class AuthController : ControllerBase
             usuario.Telefono,
             usuario.CorreoElectronico,
             usuario.Rol,
-            usuario.Activo
+            usuario.Activo,
+            BuscarFotoPerfil(usuario.UsuarioId) is not null
         );
+    }
+
+    private string RutaFotoPerfil(int usuarioId, string extension)
+    {
+        return Path.Combine(_carpetaFotosPerfil, $"usuario-{usuarioId}{extension}");
+    }
+
+    private string? BuscarFotoPerfil(int usuarioId)
+    {
+        return ExtensionesFotoPerfil
+            .Select(extension => RutaFotoPerfil(usuarioId, extension))
+            .FirstOrDefault(System.IO.File.Exists);
+    }
+
+    private void EliminarFotosPerfil(int usuarioId)
+    {
+        foreach (var extension in ExtensionesFotoPerfil)
+        {
+            var ruta = RutaFotoPerfil(usuarioId, extension);
+            if (System.IO.File.Exists(ruta))
+            {
+                System.IO.File.Delete(ruta);
+            }
+        }
+    }
+
+    private static string TipoContenidoFotoPerfil(string extension)
+    {
+        return extension.ToLowerInvariant() switch
+        {
+            ".png" => "image/png",
+            ".webp" => "image/webp",
+            _ => "image/jpeg"
+        };
+    }
+
+    private static string? DetectarExtensionImagen(byte[] contenido)
+    {
+        if (contenido.Length >= 3 && contenido[0] == 0xFF && contenido[1] == 0xD8 && contenido[2] == 0xFF)
+        {
+            return ".jpg";
+        }
+
+        if (contenido.Length >= 8
+            && contenido[0] == 0x89 && contenido[1] == 0x50 && contenido[2] == 0x4E && contenido[3] == 0x47
+            && contenido[4] == 0x0D && contenido[5] == 0x0A && contenido[6] == 0x1A && contenido[7] == 0x0A)
+        {
+            return ".png";
+        }
+
+        if (contenido.Length >= 12
+            && contenido[0] == (byte)'R' && contenido[1] == (byte)'I' && contenido[2] == (byte)'F' && contenido[3] == (byte)'F'
+            && contenido[8] == (byte)'W' && contenido[9] == (byte)'E' && contenido[10] == (byte)'B' && contenido[11] == (byte)'P')
+        {
+            return ".webp";
+        }
+
+        return null;
     }
 
     private static string NombreCompleto(UsuarioLogin usuario)
@@ -402,10 +605,10 @@ public sealed class AuthController : ControllerBase
         return (reader.GetInt32(0), reader.GetString(1));
     }
 
-    private async Task<(int Id, string? CorreoInvitado)?> ObtenerOtpValidaAsync(SqlConnection connection, int grupoGestionId, string otpIngresada)
+    private async Task<(int Id, string? CorreoInvitado, int? EmpresaId)?> ObtenerOtpValidaAsync(SqlConnection connection, int grupoGestionId, string otpIngresada)
     {
         await using var command = new SqlCommand("""
-            SELECT GrupoGestionOtpId, CodigoOtpHash, CorreoInvitado
+            SELECT GrupoGestionOtpId, CodigoOtpHash, CorreoInvitado, EmpresaId
             FROM dbo.GrupoGestionOtps
             WHERE GrupoGestionId = @GrupoGestionId
               AND Activo = 1
@@ -422,7 +625,7 @@ public sealed class AuthController : ControllerBase
             var otpHash = reader.GetString(1);
             if (_passwordHasher.Verify(otpIngresada, otpHash))
             {
-                return (otpId, reader.IsDBNull(2) ? null : reader.GetString(2));
+                return (otpId, reader.IsDBNull(2) ? null : reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetInt32(3));
             }
         }
 
@@ -432,7 +635,7 @@ public sealed class AuthController : ControllerBase
     private async Task<UsuarioExistente?> ObtenerUsuarioPorCorreoAsync(SqlConnection connection, string correo)
     {
         await using var command = new SqlCommand("""
-            SELECT TOP (1) UsuarioId, PasswordHash
+            SELECT TOP (1) UsuarioId, PasswordHash, Nombre, ISNULL(Apellido, N''), ISNULL(Telefono, N'')
             FROM dbo.Usuarios
             WHERE Usuario = @Correo OR CorreoElectronico = @Correo;
             """, connection);
@@ -440,7 +643,7 @@ public sealed class AuthController : ControllerBase
 
         await using var reader = await command.ExecuteReaderAsync();
         if (!await reader.ReadAsync()) return null;
-        return new UsuarioExistente(reader.GetInt32(0), reader.GetString(1));
+        return new UsuarioExistente(reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4));
     }
 
     private static async Task<bool> ExisteSolicitudPendienteAsync(SqlConnection connection, int grupoGestionId, string correo)
@@ -508,7 +711,7 @@ public sealed class AuthController : ControllerBase
         return $"GG-{token}";
     }
 
-    private sealed record UsuarioExistente(int UsuarioId, string PasswordHash);
+    private sealed record UsuarioExistente(int UsuarioId, string PasswordHash, string Nombre, string Apellido, string Telefono);
 }
 
 

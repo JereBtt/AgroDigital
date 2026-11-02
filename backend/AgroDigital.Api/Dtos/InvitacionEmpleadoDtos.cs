@@ -11,11 +11,17 @@ public sealed record InvitacionEmpleadoDto(
     string Estado,
     string? EstadoEnvio,
     DateTime? FechaUltimoEnvio,
-    int CantidadEnvios
+    int CantidadEnvios,
+    // Empresa para la que se invito (NULL en invitaciones anteriores al script 36)
+    int? EmpresaId = null,
+    string? EmpresaNombre = null
 );
 
-/// <summary>El Gerente invita a un empleado. Nombre es opcional (solo para el saludo del correo).</summary>
-public sealed record CrearInvitacionEmpleadoRequest(string? CorreoElectronico, string? Nombre);
+/// <summary>
+/// El Gerente invita a un empleado. Nombre es opcional (solo para el saludo del correo).
+/// EmpresaId es la empresa seleccionada en la pantalla Usuarios.
+/// </summary>
+public sealed record CrearInvitacionEmpleadoRequest(string? CorreoElectronico, string? Nombre, int? EmpresaId = null);
 
 /// <summary>
 /// Respuesta de crear o reenviar. La OTP se devuelve una sola vez como respaldo,

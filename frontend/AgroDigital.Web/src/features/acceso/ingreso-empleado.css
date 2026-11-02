@@ -131,3 +131,8 @@
   transform: none;
   box-shadow: none;
 }
+
+/* Selector "Soy nuevo" / "Ya tengo cuenta" del formulario de unión al grupo */
+.join-account-tabs {
+  margin-bottom: 0;
+}

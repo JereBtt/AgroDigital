@@ -131,7 +131,7 @@
 
 .approved-users-filters {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(150px, 0.28fr) minmax(150px, 0.24fr) minmax(150px, 0.24fr) auto;
+  grid-template-columns: minmax(220px, 1fr) minmax(170px, 0.3fr) minmax(130px, 0.24fr) minmax(140px, 0.24fr) minmax(140px, 0.24fr) auto;
   gap: 12px;
   align-items: end;
   margin-top: 18px;
@@ -372,6 +372,16 @@
   gap: 14px;
 }
 
+.otp-value-row > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.otp-value-row strong {
+  overflow-wrap: anywhere;
+}
+
 .otp-copy-button {
   width: 44px;
   height: 44px;
@@ -563,4 +573,125 @@
   font-style: normal;
   font-weight: 950;
   animation: copy-fade 1.4s ease both;
+}
+
+/* ---------- Usuarios: empresa seleccionada y edición de accesos ---------- */
+
+.users-company-selector {
+  display: grid;
+  gap: 6px;
+  min-width: min(280px, 100%);
+}
+
+.users-company-selector span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #183824;
+  font-size: calc(13px * var(--text-scale));
+  font-weight: 900;
+}
+
+.users-company-selector select {
+  min-height: 44px;
+  border: 1px solid #cfe6d4;
+  border-radius: 12px;
+  padding: 0 12px;
+  background: #ffffff;
+  color: #0c351e;
+  font-size: calc(14px * var(--text-scale));
+  font-weight: 850;
+}
+
+button.company-access-item {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+button.company-access-item:hover:not(:disabled) {
+  border-color: #9fd3aa;
+}
+
+button.company-access-item:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.company-access-item-selected {
+  border-color: #18883b;
+  box-shadow: 0 0 0 3px rgba(24, 136, 59, 0.12);
+}
+
+.invite-company-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #eef8f0;
+  color: #24452f;
+  font-size: calc(13px * var(--text-scale));
+  font-weight: 800;
+}
+
+.invite-company-banner svg {
+  flex: 0 0 auto;
+  color: #18883b;
+}
+
+.pending-request-company {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: #eaf8ed;
+  color: #18883b;
+  font-size: calc(12px * var(--text-scale));
+  font-weight: 900;
+}
+
+.user-access-editor {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid #e1ece3;
+  padding-top: 14px;
+}
+
+.user-access-editor-heading {
+  display: grid;
+  gap: 3px;
+}
+
+.user-access-editor-heading strong {
+  color: #0c351e;
+  font-size: calc(15px * var(--text-scale));
+  font-weight: 950;
+}
+
+.user-access-editor-heading small,
+.user-access-editor-warning {
+  color: #607067;
+  font-size: calc(12.5px * var(--text-scale));
+  font-weight: 800;
+}
+
+.user-access-editor-warning {
+  color: #b54708;
+}
+
+.user-access-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.user-access-editor-actions .approve-request-button {
+  width: auto;
 }
