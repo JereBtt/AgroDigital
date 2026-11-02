@@ -3,5 +3,7 @@ namespace AgroDigital.Api.Dtos;
 public sealed record ManagerOtpResponse(
     string GrupoGestionCodigo,
     string Otp,
-    DateTime FechaVencimiento
+    DateTime FechaVencimiento,
+    int? EmpresaId = null,
+    string? EmpresaNombre = null
 );

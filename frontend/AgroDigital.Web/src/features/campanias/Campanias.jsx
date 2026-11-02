@@ -779,10 +779,15 @@ function CampaniasList({ permisos = PERMISOS_TODOS, campanias, selectedEmpresaId
             <h2>{hayFiltrosTabla ? 'No encontramos campañas con esos filtros' : 'No hay campañas para la empresa seleccionada'}</h2>
             <p>{hayFiltrosTabla ? 'Limpia los filtros para volver a ver los registros disponibles.' : 'Cambia la empresa o registra una campaña para este periodo.'}</p>
           </div>
-          {hayFiltrosTabla && (
+          {hayFiltrosTabla ? (
             <button className="green-button empty-state-action" type="button" onClick={clearFilters}>
               <RotateCcw size={18} />
               <span>Limpiar</span>
+            </button>
+          ) : permisos.estructura && (
+            <button className="green-button empty-state-action" type="button" onClick={onAdd}>
+              <PlusCircle size={18} />
+              <span>Registrar Campaña</span>
             </button>
           )}
         </section>

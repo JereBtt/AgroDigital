@@ -91,6 +91,7 @@ function App() {
   const [joinRequestStatus, setJoinRequestStatus] = useState('');
   const [copiedKey, setCopiedKey] = useState('');
   const [activeModule, setActiveModule] = useState('inicio');
+  const [profileReturnModule, setProfileReturnModule] = useState('inicio');
   const [managerContext, setManagerContext] = useState(null);
   // Empresas del usuario cuando no es Gerente (el Gerente las toma de managerContext).
   const [misEmpresas, setMisEmpresas] = useState([]);
@@ -150,12 +151,24 @@ function App() {
   const [zoneMapTarget, setZoneMapTarget] = useState(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [showManagerWelcome, setShowManagerWelcome] = useState(true);
+  const [loginNotice, setLoginNotice] = useState('');
   const {
     userProfile, profileError, profileStatus, profileSaving,
     profilePasswordSaving, profilePasswordError, setUserProfile,
     setProfilePasswordError, loadUserProfile, handleUpdateProfile,
-    handleChangeProfilePassword, resetProfile
-  } = useProfile({ session, setSession, authHeaders, apiBaseUrl: API_BASE_URL });
+    handleChangeProfilePassword, resetProfile,
+    profilePhotoUrl, profilePhotoSaving, profilePhotoError,
+    handleUploadProfilePhoto, handleDeleteProfilePhoto
+  } = useProfile({
+    session,
+    setSession,
+    authHeaders,
+    apiBaseUrl: API_BASE_URL,
+    onRequireRelogin: (message) => {
+      handleLogout();
+      setLoginNotice(message);
+    }
+  });
   const userMenuRef = useRef(null);
 
   const areaM2 = useMemo(() => polygonAreaSquareMeters(form.coordenadas), [form.coordenadas]);
@@ -439,14 +452,15 @@ function App() {
       setManagerContextError(error.message.replace(/^"|"$/g, '') || 'No se pudo cargar el contexto del gerente.');
     }
   }
-  async function handleGenerateOtp() {
+  async function handleGenerateOtp(empresaId = null) {
     if (!session?.token) return;
 
     setOtpLoading(true);
     setOtpError('');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/manager/otp`, {
+      const query = empresaId ? `?empresaId=${encodeURIComponent(empresaId)}` : '';
+      const response = await fetch(`${API_BASE_URL}/api/manager/otp${query}`, {
         method: 'POST',
         headers: authHeaders()
       });
@@ -623,25 +637,11 @@ function App() {
         if (ignore) return;
 
         setAvailableZones(names);
-        setForm((current) => {
-          if (current.provincia !== form.provincia || names.includes(current.ciudad)) {
-            return current;
-          }
-
-          return { ...current, ciudad: names[0] };
-        });
       } catch {
         const fallbackZones = ARGENTINA_ZONES[form.provincia] ?? [];
         if (ignore) return;
 
         setAvailableZones(fallbackZones);
-        setForm((current) => {
-          if (current.provincia !== form.provincia || fallbackZones.includes(current.ciudad)) {
-            return current;
-          }
-
-          return { ...current, ciudad: fallbackZones[0] ?? '' };
-        });
       } finally {
         if (!ignore) {
           setZonesLoading(false);
@@ -1230,6 +1230,35 @@ function App() {
     }
   }
 
+  // Cambia las empresas y roles de un usuario que ya pertenece al grupo.
+  async function handleUpdateManagerUserAccess(user, payload) {
+    if (!session?.token || !user) return false;
+    setManagerActionStatus('');
+    setManagerUsersError('');
+    setManagerUserSaving(`accesos-${user.usuarioId}`);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/manager/usuarios/${user.usuarioId}/empresas`, {
+        method: 'PUT',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      const data = await response.json();
+      setManagerActionStatus(data.mensaje ?? 'Accesos actualizados correctamente.');
+      setManagerTeamUsers({});
+      await loadManagerUsers();
+      return true;
+    } catch (error) {
+      setManagerUsersError(error.message.replace(/^"|"$/g, '') || 'No se pudieron actualizar los accesos.');
+      return false;
+    } finally {
+      setManagerUserSaving('');
+    }
+  }
+
   async function handleToggleManagerUserStatus(user) {
     if (!session?.token || !user) return;
     const action = user.activo ? 'deshabilitar' : 'habilitar';
@@ -1514,10 +1543,15 @@ function App() {
           />
         ) : (
           <LoginPage
-            onLogin={handleLogin}
+            onLogin={(credentials) => {
+              setLoginNotice('');
+              handleLogin(credentials);
+            }}
             error={loginError}
+            notice={loginNotice}
             onJoin={() => {
               setAuthView('join');
+              setLoginNotice('');
               setLoginError('');
               setJoinRequestStatus('');
             }}
@@ -1709,10 +1743,12 @@ function App() {
             <UserProfileMenu
               session={session}
               profile={userProfile}
+              photoUrl={profilePhotoUrl}
               open={profileMenuOpen}
               menuRef={userMenuRef}
               onToggle={() => setProfileMenuOpen((current) => !current)}
               onOpenProfile={() => {
+                if (activeModule !== 'profile') setProfileReturnModule(activeModule);
                 navigateModule('profile');
                 setView('list');
                 setIsMapExpanded(false);
@@ -1737,8 +1773,16 @@ function App() {
             onSave={handleUpdateProfile}
             onChangePassword={handleChangeProfilePassword}
             onClearPasswordError={() => setProfilePasswordError('')}
+            photoUrl={profilePhotoUrl}
+            photoSaving={profilePhotoSaving}
+            photoError={profilePhotoError}
+            onUploadPhoto={handleUploadProfilePhoto}
+            onDeletePhoto={handleDeleteProfilePhoto}
             onReload={loadUserProfile}
-            onBack={goToList}
+            onBack={() => {
+              navigateModule(profileReturnModule || 'inicio');
+              setView('list');
+            }}
             managerContext={managerContext}
           />
         ) : activeModule === 'users' && session.role !== 'Gerente' ? (
@@ -1766,6 +1810,9 @@ function App() {
             onCreateInvitation={handleCreateInvitation}
             onResendInvitation={handleResendInvitation}
             onCancelInvitation={handleCancelInvitation}
+            selectedEmpresaId={selectedParentEmpresaId}
+            onSelectEmpresa={setSelectedParentEmpresaId}
+            onUpdateUserAccess={handleUpdateManagerUserAccess}
           />
         ) : activeModule === 'teams' && session.role !== 'Gerente' ? (
           <MyCompaniesPage acceso={miAcceso} error={equipoError} />
