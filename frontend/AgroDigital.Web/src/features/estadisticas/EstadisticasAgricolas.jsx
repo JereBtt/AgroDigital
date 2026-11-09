@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { RotateCcw } from 'lucide-react';
+import { ChevronDown, RotateCcw } from 'lucide-react';
 import L from 'leaflet';
 import { agrupar, calcularSiniestros, calcularSuperficie, construirFlujoPlanificacion, desvioDias, filtrar, granoTexto, normalizar, productividad, resumirParticipacionGranos, resumirRindes, suma } from './estadisticasAgricolas.js';
 import './estadisticasAgricolas.css';
@@ -29,6 +29,43 @@ function Table({ headers, rows }) {
 }
 function Kpis({ items }) {
   return <div className="agr-kpis">{items.map(([label, value, note]) => <article className="dashboard-card" key={label}><span>{label}</span><strong>{value}</strong><small>{note}</small></article>)}</div>;
+}
+function CampaniasComparar({ periodos, seleccionadas, onChange }) {
+  const [abierto, setAbierto] = useState(false);
+  const [busqueda, setBusqueda] = useState('');
+  const contenedor = useRef(null);
+  useEffect(() => {
+    if (!abierto) return;
+    const cerrarFuera = event => {
+      if (!contenedor.current?.contains(event.target)) setAbierto(false);
+    };
+    const cerrarEscape = event => {
+      if (event.key === 'Escape') {
+        setAbierto(false);
+        contenedor.current?.querySelector('.agr-campaign-trigger')?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', cerrarFuera);
+    document.addEventListener('focusin', cerrarFuera);
+    document.addEventListener('keydown', cerrarEscape);
+    return () => {
+      document.removeEventListener('pointerdown', cerrarFuera);
+      document.removeEventListener('focusin', cerrarFuera);
+      document.removeEventListener('keydown', cerrarEscape);
+    };
+  }, [abierto]);
+  const visibles = periodos.filter(periodo => normalizar(periodo).includes(normalizar(busqueda)));
+  const resumen = seleccionadas.length === 1 ? seleccionadas[0] : `${seleccionadas.length} campañas seleccionadas`;
+  return <div className="field agr-campaign-select" ref={contenedor}>
+    <span id="agr-campaign-label">Campañas a comparar</span>
+    <button type="button" className="agr-campaign-trigger" aria-labelledby="agr-campaign-label agr-campaign-value" aria-expanded={abierto} aria-controls="agr-campaign-options" onClick={() => { setAbierto(valor => !valor); setBusqueda(''); }}><span id="agr-campaign-value">{resumen}</span><ChevronDown size={17} aria-hidden="true" /></button>
+    {abierto && <div className="agr-campaign-menu" id="agr-campaign-options" role="group" aria-label="Elegir campañas">
+      {periodos.length > 6 && <input type="search" aria-label="Buscar campaña" placeholder="Buscar campaña..." value={busqueda} onChange={event => setBusqueda(event.target.value)} />}
+      <div className="agr-campaign-options">{visibles.map(periodo => <label key={periodo}><input type="checkbox" checked={seleccionadas.includes(periodo)} disabled={seleccionadas.length === 1 && seleccionadas.includes(periodo)} onChange={event => { const marcada = event.target.checked; onChange(actuales => marcada ? [...actuales, periodo] : actuales.filter(valor => valor !== periodo)); }} /><span>{periodo}</span></label>)}
+        {!visibles.length && <p>No hay campañas que coincidan.</p>}
+      </div>
+    </div>}
+  </div>;
 }
 function pieSegmentPath(start, end) {
   const point = angle => {
@@ -76,7 +113,28 @@ function Pie({ rows, base }) {
 function FlujoPlanificacion({ rows }) {
   const [tooltip, setTooltip] = useState(null);
   const tooltipTimer = useRef(null);
+  const tooltipRef = useRef(null);
   useEffect(() => () => clearTimeout(tooltipTimer.current), []);
+  useEffect(() => {
+    if (!tooltip) return;
+    const cerrarConEscape = event => {
+      if (event.key === 'Escape') {
+        clearTimeout(tooltipTimer.current);
+        setTooltip(null);
+      }
+    };
+    const cerrarFuera = event => {
+      if (!tooltip.pinned || tooltipRef.current?.contains(event.target) || event.target.closest?.('.agr-flow-point')) return;
+      clearTimeout(tooltipTimer.current);
+      setTooltip(null);
+    };
+    document.addEventListener('keydown', cerrarConEscape);
+    document.addEventListener('pointerdown', cerrarFuera);
+    return () => {
+      document.removeEventListener('keydown', cerrarConEscape);
+      document.removeEventListener('pointerdown', cerrarFuera);
+    };
+  }, [tooltip]);
   const { puntos, totalPrevisto, totalReal, excluidos } = construirFlujoPlanificacion(rows);
   if (!puntos.length) return <Empty />;
   const width = 1000;
@@ -93,19 +151,26 @@ function FlujoPlanificacion({ rows }) {
   const step = Math.max(1, Math.ceil(max / 4));
   const ticks = [...new Set([0, ...Array.from({ length: Math.ceil(max / step) }, (_, i) => Math.min(max, (i + 1) * step)), max])];
   const dateTicks = Array.from({ length: 5 }, (_, i) => new Date(first + (last - first) * i / 4).toISOString().slice(0, 10));
+  const posicionTooltip = target => {
+    const rect = target.getBoundingClientRect();
+    return { left: Math.max(12, Math.min(rect.left, window.innerWidth - Math.min(360, window.innerWidth - 24) - 12)), top: Math.max(12, Math.min(rect.bottom + 12, window.innerHeight - Math.min(330, window.innerHeight - 24) - 12)) };
+  };
   const mostrarTooltip = (event, serie, day, items, delay = 700) => {
+    if (tooltip?.pinned) return;
     clearTimeout(tooltipTimer.current);
-    setTooltip(null);
     const target = event.currentTarget;
     tooltipTimer.current = setTimeout(() => {
-      const rect = target.getBoundingClientRect();
-      setTooltip({ serie, day, items, left: Math.max(12, Math.min(rect.left, window.innerWidth - Math.min(360, window.innerWidth - 24) - 12)), top: Math.max(12, Math.min(rect.bottom + 12, window.innerHeight - Math.min(330, window.innerHeight - 24) - 12)) });
+      setTooltip({ serie, day, items, ...posicionTooltip(target), pinned: false });
     }, delay);
   };
-  const ocultarTooltip = () => { clearTimeout(tooltipTimer.current); setTooltip(null); };
-  const programarOcultarTooltip = () => {
+  const fijarTooltip = (event, serie, day, items) => {
     clearTimeout(tooltipTimer.current);
-    tooltipTimer.current = setTimeout(() => setTooltip(null), 250);
+    setTooltip({ serie, day, items, ...posicionTooltip(event.currentTarget), pinned: true });
+  };
+  const programarOcultarTooltip = () => {
+    if (tooltip?.pinned) return;
+    clearTimeout(tooltipTimer.current);
+    tooltipTimer.current = setTimeout(() => setTooltip(actual => actual?.pinned ? actual : null), 350);
   };
   return <div className="agr-flow">
     <div className="agr-flow-head"><div className="agr-flow-legend"><span><i className="agr-flow-key agr-flow-expected" />Flujo esperado</span><span><i className="agr-flow-key agr-flow-actual" />Flujo real</span></div><p>{totalReal} de {totalPrevisto} operaciones finalizadas</p></div>
@@ -119,12 +184,12 @@ function FlujoPlanificacion({ rows }) {
         const reales = rows.filter(r => r.estado === 'Finalizado' && r.finTentativo && r.finReal?.slice(0, 10) === point.fecha);
         const coinciden = point.esperado === point.real && previstas.length && reales.length;
         return <g key={point.fecha}>
-          {previstas.length > 0 && <circle className="agr-flow-point agr-flow-point-expected" cx={x(point.fecha) - (coinciden ? 6 : 0)} cy={y(point.esperado)} r="6" tabIndex="0" aria-label={`Flujo esperado el ${fecha(point.fecha)}: ${previstas.length} operaciones. Ver fechas tentativas y reales.`} onMouseEnter={e => mostrarTooltip(e, 'esperado', point.fecha, previstas)} onMouseLeave={programarOcultarTooltip} onFocus={e => mostrarTooltip(e, 'esperado', point.fecha, previstas, 0)} onBlur={programarOcultarTooltip} />}
-          {reales.length > 0 && <circle className="agr-flow-point agr-flow-point-actual" cx={x(point.fecha) + (coinciden ? 6 : 0)} cy={y(point.real)} r="6" tabIndex="0" aria-label={`Flujo real el ${fecha(point.fecha)}: ${reales.length} operaciones. Ver fechas tentativas y reales.`} onMouseEnter={e => mostrarTooltip(e, 'real', point.fecha, reales)} onMouseLeave={programarOcultarTooltip} onFocus={e => mostrarTooltip(e, 'real', point.fecha, reales, 0)} onBlur={programarOcultarTooltip} />}
+          {previstas.length > 0 && <circle className="agr-flow-point agr-flow-point-expected" cx={x(point.fecha) - (coinciden ? 6 : 0)} cy={y(point.esperado)} r="6" tabIndex="0" role="button" aria-pressed={Boolean(tooltip?.pinned && tooltip.serie === 'esperado' && tooltip.day === point.fecha)} aria-label={`Flujo esperado el ${fecha(point.fecha)}: ${previstas.length} operaciones. Clic para fijar el detalle.`} onMouseEnter={e => mostrarTooltip(e, 'esperado', point.fecha, previstas)} onMouseLeave={programarOcultarTooltip} onFocus={e => mostrarTooltip(e, 'esperado', point.fecha, previstas, 0)} onBlur={programarOcultarTooltip} onClick={e => fijarTooltip(e, 'esperado', point.fecha, previstas)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fijarTooltip(e, 'esperado', point.fecha, previstas); } }} />}
+          {reales.length > 0 && <circle className="agr-flow-point agr-flow-point-actual" cx={x(point.fecha) + (coinciden ? 6 : 0)} cy={y(point.real)} r="6" tabIndex="0" role="button" aria-pressed={Boolean(tooltip?.pinned && tooltip.serie === 'real' && tooltip.day === point.fecha)} aria-label={`Flujo real el ${fecha(point.fecha)}: ${reales.length} operaciones. Clic para fijar el detalle.`} onMouseEnter={e => mostrarTooltip(e, 'real', point.fecha, reales)} onMouseLeave={programarOcultarTooltip} onFocus={e => mostrarTooltip(e, 'real', point.fecha, reales, 0)} onBlur={programarOcultarTooltip} onClick={e => fijarTooltip(e, 'real', point.fecha, reales)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fijarTooltip(e, 'real', point.fecha, reales); } }} />}
         </g>;
       })}
     </svg></div>
-    {tooltip && createPortal(<div className="agr-flow-tooltip" role="tooltip" tabIndex={0} style={{ left: tooltip.left, top: tooltip.top }} onMouseEnter={() => clearTimeout(tooltipTimer.current)} onMouseLeave={programarOcultarTooltip} onFocus={() => clearTimeout(tooltipTimer.current)} onBlur={programarOcultarTooltip} onKeyDown={e => { if (e.key === 'Escape') ocultarTooltip(); }}><strong>{tooltip.serie === 'esperado' ? 'Flujo esperado' : 'Flujo real'} · {fecha(tooltip.day)}</strong><span>{tooltip.items.length} {tooltip.items.length === 1 ? 'operación' : 'operaciones'} en este punto</span><div className="agr-flow-tooltip-items">{tooltip.items.map((r, i) => <div key={`${r.operacion}-${r.id ?? i}`}><b>{r.operacion} · {r.nombre}</b>{r.loteNombre && <span>Lote: {r.loteNombre}</span>}<span>Cultivo: {r.grano ? granoTexto(r.grano) : 'Sin dato'}</span><span>Fin tentativo: {fecha(r.finTentativo)}</span><span>Fin real: {r.estado === 'Finalizado' ? fecha(r.finReal) : 'Pendiente'}</span>{r.motivoDesvio?.trim() && <span>Motivo del desvío: {r.motivoDesvio.trim()}</span>}</div>)}</div></div>, document.body)}
+    {tooltip && createPortal(<div ref={tooltipRef} className="agr-flow-tooltip" role="tooltip" tabIndex={0} style={{ left: tooltip.left, top: tooltip.top }} onMouseEnter={() => clearTimeout(tooltipTimer.current)} onMouseLeave={programarOcultarTooltip} onFocus={() => clearTimeout(tooltipTimer.current)} onBlur={programarOcultarTooltip}><strong>{tooltip.serie === 'esperado' ? 'Flujo esperado' : 'Flujo real'} · {fecha(tooltip.day)}</strong><span>{tooltip.items.length} {tooltip.items.length === 1 ? 'operación' : 'operaciones'} en este punto</span><div className="agr-flow-tooltip-items">{tooltip.items.map((r, i) => <div key={`${r.operacion}-${r.id ?? i}`}><b>{r.operacion} · {r.nombre}</b>{r.loteNombre && <span>Lote: {r.loteNombre}</span>}<span>Cultivo: {r.grano ? granoTexto(r.grano) : 'Sin dato'}</span><span>Fin tentativo: {fecha(r.finTentativo)}</span><span>Fin real: {r.estado === 'Finalizado' ? fecha(r.finReal) : 'Pendiente'}</span>{r.motivoDesvio?.trim() && <span>Motivo del desvío: {r.motivoDesvio.trim()}</span>}</div>)}</div></div>, document.body)}
     <p className="agr-flow-caption">Cada salto representa una operación. Las pendientes avanzan solo en la línea esperada.{excluidos > 0 ? ` ${excluidos} registro(s) sin fecha tentativa quedaron fuera del gráfico.` : ''}</p>
   </div>;
 }
@@ -174,7 +239,7 @@ export default function EstadisticasAgricolas({ session, empresaId, tab }) {
     <section className="dashboard-card agr-filters" aria-label="Filtros de estadísticas agrícolas">
       <div className="agr-mode"><button type="button" className={!comparar ? 'active' : ''} onClick={() => { setComparar(false); setCampanias(c => c.slice(0, 1)); }}>Una campaña</button><button type="button" className={comparar ? 'active' : ''} onClick={() => { setComparar(true); setCampanias(periodos.slice(0, 3)); }}>Comparar campañas</button></div>
       <div className="agr-filter-grid">
-        {comparar ? <fieldset className="agr-periods"><legend>Campañas a comparar</legend>{periodos.map(p => <label key={p}><input type="checkbox" checked={campanias.includes(p)} disabled={campanias.length === 1 && campanias.includes(p)} onChange={e => setCampanias(c => e.target.checked ? [...c, p] : c.filter(v => v !== p))} />{p}</label>)}</fieldset>
+        {comparar ? <CampaniasComparar periodos={periodos} seleccionadas={campanias} onChange={setCampanias} />
           : <label className="field"><span>Campaña</span><select value={campanias[0] || ''} onChange={e => setCampanias([e.target.value])}>{periodos.map(p => <option key={p}>{p}</option>)}</select></label>}
         {select('Ciclo estacional', ciclo, setCiclo, [['Verano', 'Verano'], ['Invierno', 'Invierno']], 'Todos los ciclos')}
         {select('Grano', grano, v => { setGrano(v); setEpoca(''); setVariedad(''); }, cultivos.map(v => [v, granoTexto(v)]))}
@@ -208,7 +273,10 @@ function Rinde({ data, filtros, base, setBase, cruzar, setCruzar, comparar }) {
     <div className="agr-grid">
       {agrupar(porCampania, r => normalizar(r.grano)).map(([g, items]) => <Card key={g} title={`Rinde ${base === 'humedo' ? 'húmedo' : 'seco'} · ${granoTexto(g)}`} note="Cada barra representa una campaña; incluye solo cosechas finalizadas."><Bars unit="kg/ha" decimals={0} rows={items.map(r => ({ id: r.id, label: r.campania, value: r.rinde, detail: `${n(r.ha)} ha · ${r.lotes} lotes · ${r.registros} cosechas` }))} /></Card>)}
       {!porCampania.length && <Card title="Rinde por campaña"><Empty /></Card>}
-      {agrupar(volumen, r => normalizar(r.grano)).map(([g, items]) => <Card key={`kg-${g}`} title={`Producción total · ${granoTexto(g)}`} note="Kilos registrados, sin ajuste de humedad."><Bars unit="kg" decimals={0} rows={items.sort((a, b) => compararCampaniasDesc(a.campania, b.campania)).map(r => ({ id: r.id, label: r.campania, value: r.kg, detail: `${n(r.ha)} ha cosechadas` }))} /></Card>)}
+      {agrupar(volumen, r => normalizar(r.grano)).map(([g, items]) => <Card key={`kg-${g}`} title={`Producción total · ${granoTexto(g)}`} note="Kilos registrados, sin ajuste de humedad.">
+        <Bars unit="kg" decimals={0} rows={items.sort((a, b) => compararCampaniasDesc(a.campania, b.campania)).map(r => ({ id: r.id, label: r.campania, value: r.kg, detail: `${n(r.ha)} ha cosechadas` }))} />
+        {items.length > 1 && <div className="agr-production-total"><span>Total de {granoTexto(g)} en la selección</span><strong>{n(suma(items, 'kg'), 0)} kg</strong></div>}
+      </Card>)}
       {!comparar && <Card title="Participación de los granos" note="Porcentaje sobre las hectáreas cosechadas. Los kg son los registrados sin ajuste de humedad; el rinde sigue la base seleccionada." wide><Pie rows={porGrano} base={base} /></Card>}
       {agrupar(ranking, r => normalizar(r.grano)).map(([g, items]) => <Card key={`top-${g}`} title={`Mejores rindes · ${granoTexto(g)}`} note="Hasta 5 combinaciones de lote y campaña, ordenadas por kg/ha."><Bars unit="kg/ha" decimals={0} rows={items.sort((a, b) => b.rinde - a.rinde).slice(0, 5).map(r => ({ id: r.id, label: `${lotes.get(r.loteId)} · ${r.campania}`, value: r.rinde, detail: `${n(r.ha)} ha cosechadas` }))} /></Card>)}
       <Card title="Comparativa por época de siembra" note="Comparación descriptiva: las diferencias también pueden depender del lote, clima y manejo." wide>

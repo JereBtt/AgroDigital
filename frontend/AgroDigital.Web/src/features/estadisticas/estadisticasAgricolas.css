@@ -4,9 +4,19 @@
 .agr-mode button { border: 1px solid #d5e5da; border-radius: 10px; padding: 10px 18px; background: white; color: #244b33; cursor: pointer; font-weight: 700; }
 .agr-mode button.active { background: #e8f5eb; border-color: #25833d; }
 .agr-filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; align-items: end; }
-.agr-periods { border: 1px solid #d7e6db; border-radius: 10px; padding: 8px 12px; max-height: 135px; overflow: auto; }
-.agr-periods label, .agr-check { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
-.agr-periods input, .agr-check input { width: auto; accent-color: #238b40; }
+.agr-campaign-select { min-width: 0; }
+.agr-campaign-trigger { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; height: 46px; padding: 0 12px; border: 1px solid #d7e6db; border-radius: 9px; background: #fff; color: #173524; font: inherit; font-size: calc(15px * var(--text-scale, 1)); font-weight: 700; text-align: left; cursor: pointer; }
+.agr-campaign-trigger:focus-visible { outline: 2px solid rgba(24, 136, 59, 0.24); border-color: #18883b; }
+.agr-campaign-trigger svg { flex: none; transition: transform 150ms ease; }
+.agr-campaign-trigger[aria-expanded="true"] svg { transform: rotate(180deg); }
+.agr-campaign-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; width: max(100%, 230px); max-width: min(320px, calc(100vw - 32px)); padding: 8px; border: 1px solid #d7e6db; border-radius: 10px; background: #fff; box-shadow: 0 12px 30px #17352420; }
+.agr-campaign-menu > input { width: 100%; height: 38px; margin-bottom: 6px; font-weight: 500; }
+.agr-campaign-options { max-height: 240px; overflow-y: auto; }
+.agr-campaign-options label { display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 5px 8px; border-radius: 7px; color: #173524; font-size: calc(14px * var(--text-scale, 1)); font-weight: 600; cursor: pointer; }
+.agr-campaign-options label:hover { background: #f0f8f2; }
+.agr-campaign-options input, .agr-check input { width: auto; height: auto; accent-color: #238b40; }
+.agr-campaign-options p { margin: 8px; color: #64776b; font-size: 13px; }
+.agr-check { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
 .agr-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 .agr-wide { grid-column: 1 / -1; }
 .agr-card { padding: 24px; min-width: 0; }
@@ -26,6 +36,8 @@
 .agr-bar-row small { display: block; margin-top: 5px; color: #64776b; }
 .agr-bar-track { background: #edf2ee; height: 13px; border-radius: 5px; overflow: hidden; }
 .agr-bar-track span { display: block; height: 100%; border-radius: 5px; }
+.agr-production-total { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px 16px; margin-top: 18px; padding: 14px 0 0; border-top: 1px solid #e1ebe4; color: #244b33; }
+.agr-production-total strong { font-size: 20px; color: #153521; white-space: nowrap; }
 .agr-table { width: 100%; overflow: auto; max-height: 560px; margin-top: 14px; }
 .agr-table table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
 .agr-table th { background: #edf6ef; color: #20492f; position: sticky; top: 0; z-index: 1; }
@@ -53,8 +65,8 @@
 .agr-flow-scroll { overflow-x: auto; }
 .agr-flow-chart { display: block; width: 100%; min-width: 820px; height: auto; background: #fbfdfb; border: 1px solid #e1ebe4; border-radius: 12px; }
 .agr-flow-axis { fill: #607469; font-size: 13px; }
-.agr-flow-point { cursor: help; transform-box: fill-box; transform-origin: center; transition: transform 160ms ease, stroke-width 160ms ease; stroke: white; stroke-width: 2px; }
-.agr-flow-point:hover, .agr-flow-point:focus-visible { transform: scale(1.5); stroke-width: 2.5px; outline: none; }
+.agr-flow-point { cursor: pointer; transform-box: fill-box; transform-origin: center; transition: transform 160ms ease, stroke-width 160ms ease; stroke: white; stroke-width: 2px; }
+.agr-flow-point:hover, .agr-flow-point:focus-visible, .agr-flow-point[aria-pressed="true"] { transform: scale(1.5); stroke-width: 2.5px; outline: none; }
 .agr-flow-point-expected { fill: #d97706; }
 .agr-flow-point-actual { fill: #1d4ed8; }
 .agr-flow-tooltip { position: fixed; z-index: 10000; width: min(360px, calc(100vw - 24px)); max-height: min(330px, calc(100vh - 24px)); overflow-y: auto; pointer-events: auto; background: #fff; color: #173524; border: 1px solid #c8d8cd; border-radius: 10px; box-shadow: 0 12px 32px #1735242b; padding: 12px 14px; font-size: calc(15px * var(--text-scale, 1)); line-height: 1.4; overflow-wrap: anywhere; }
