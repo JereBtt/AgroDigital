@@ -54,7 +54,7 @@
   border-radius: 30px;
   padding: clamp(28px, 5vw, 72px);
   background:
-    linear-gradient(150deg, rgba(255, 255, 255, 0.94) 0%, rgba(242, 250, 244, 0.88) 52%, rgba(13, 75, 42, 0.92) 100%);
+    linear-gradient(165deg, rgba(255, 255, 255, 0.96) 0%, rgba(244, 250, 246, 0.94) 55%, rgba(232, 243, 236, 0.94) 100%);
 }
 
 .auth-logo {
@@ -97,24 +97,27 @@
 .auth-hero-visual {
   position: absolute;
   inset: auto 0 0 0;
-  height: 46%;
+  height: 62%;
   z-index: 1;
-  opacity: 0.92;
   pointer-events: none;
+  /* Fundido progresivo del paisaje hacia el fondo de la tarjeta (sin cortes horizontales). */
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 42%);
+  mask-image: linear-gradient(180deg, transparent 0%, #000 42%);
 }
 
 .auth-hero-visual::before {
   content: "";
   position: absolute;
-  inset: -80px 0 0;
+  inset: 0;
   z-index: 2;
-  background: linear-gradient(180deg, rgba(247, 251, 247, 0.94), rgba(247, 251, 247, 0.1) 44%, rgba(7, 54, 30, 0.72));
+  background: linear-gradient(180deg, rgba(247, 251, 247, 0.2) 0%, rgba(247, 251, 247, 0.62) 48%, rgba(247, 251, 247, 0.38) 78%, rgba(7, 54, 30, 0.28) 100%);
 }
 
 .auth-hero-visual img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center bottom;
 }
 
 .login-card {

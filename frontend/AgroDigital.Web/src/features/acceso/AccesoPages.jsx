@@ -6,7 +6,7 @@ import { formatPersonName } from '../../shared/utils/personName.js';
 import { getPasswordRequirements } from '../../shared/utils/passwordRequirements.js';
 import PasswordRequirements from '../../shared/components/PasswordRequirements.jsx';
 
-function LoginPage({ onLogin, error, onJoin }) {
+function LoginPage({ onLogin, error, notice, onJoin }) {
   const [credentials, setCredentials] = useState({ usuario: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
 
@@ -78,6 +78,7 @@ function LoginPage({ onLogin, error, onJoin }) {
           </div>
         </label>
 
+        {notice && !error && <p className="auth-success" role="status">{notice}</p>}
         {error && <p className="auth-error">{error}</p>}
 
         <button className="primary-auth-button" type="submit">
@@ -105,6 +106,9 @@ function JoinTeamPage({ initialValues = null, error, status, onSubmit, onBack })
     otp: initialValues?.otp ?? ''
   });
   const invitedByLink = Boolean(initialValues?.grupoGestionCodigo && initialValues?.otp);
+  // Si la persona ya tiene cuenta en AgroDigital (por ejemplo, en otra empresa o grupo),
+  // solo confirma su correo y contraseña actual: no vuelve a cargar sus datos.
+  const [existingAccount, setExistingAccount] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showRepeatPassword, setShowRepeatPassword] = useState(false);
   const passwordRequirements = useMemo(() => getPasswordRequirements(form.password), [form.password]);
@@ -120,21 +124,28 @@ function JoinTeamPage({ initialValues = null, error, status, onSubmit, onBack })
 
   function submitJoinRequest(event) {
     event.preventDefault();
-    onSubmit({
+    const base = {
       ...form,
       grupoGestionCodigo: form.grupoGestionCodigo.trim().toUpperCase(),
-      otp: form.otp.trim().toUpperCase()
-    });
+      otp: form.otp.trim().toUpperCase(),
+      usuarioExistente: existingAccount
+    };
+    onSubmit(existingAccount
+      ? { ...base, nombre: '', apellido: '', telefono: '', repetirPassword: '' }
+      : base);
   }
 
-  const canSubmit = form.nombre.trim()
-    && form.apellido.trim()
-    && form.telefono.trim()
-    && form.correoElectronico.trim()
+  const commonFieldsReady = form.correoElectronico.trim()
     && form.grupoGestionCodigo.trim()
-    && form.otp.trim()
-    && passwordIsStrong
-    && passwordsMatch;
+    && form.otp.trim();
+  const canSubmit = existingAccount
+    ? commonFieldsReady && form.password.length > 0
+    : commonFieldsReady
+      && form.nombre.trim()
+      && form.apellido.trim()
+      && form.telefono.trim()
+      && passwordIsStrong
+      && passwordsMatch;
 
   return (
     <section className="auth-page join-auth-page">
@@ -195,6 +206,43 @@ function JoinTeamPage({ initialValues = null, error, status, onSubmit, onBack })
           </p>
         )}
 
+        <div className="invite-tabs join-account-tabs" role="tablist" aria-label="Tipo de cuenta">
+          <button type="button" role="tab" aria-selected={!existingAccount} className={!existingAccount ? 'active' : ''} onClick={() => setExistingAccount(false)}>
+            <UserPlus size={16} /> Soy nuevo
+          </button>
+          <button type="button" role="tab" aria-selected={existingAccount} className={existingAccount ? 'active' : ''} onClick={() => setExistingAccount(true)}>
+            <User size={16} /> Ya tengo cuenta en AgroDigital
+          </button>
+        </div>
+
+        {existingAccount && (
+          <p className="join-invite-notice" role="status">
+            <CheckCircle2 size={18} />
+            <span>Ingresá el correo y la contraseña con los que ya entrás a AgroDigital. Usamos los datos de tu cuenta para la solicitud.</span>
+          </p>
+        )}
+
+        {existingAccount ? (
+          <div className="join-form-grid">
+            <label className="auth-field">
+              <span>Correo electrónico *</span>
+              <div>
+                <User size={20} />
+                <input type="email" value={form.correoElectronico} onChange={(event) => updateField('correoElectronico', event.target.value)} placeholder="juan.perez@correo.com" autoComplete="username" required />
+              </div>
+            </label>
+            <label className="auth-field manager-password-field">
+              <span>Contraseña actual *</span>
+              <div>
+                <LockKeyhole size={20} />
+                <input type={showPassword ? 'text' : 'password'} data-text-case="preserve" value={form.password} onChange={(event) => updateField('password', event.target.value)} autoComplete="current-password" placeholder="Tu contraseña de AgroDigital" required />
+                <button className="password-visibility-button" type="button" onClick={() => setShowPassword((current) => !current)} aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
+            </label>
+          </div>
+        ) : (
         <div className="join-form-grid">
           <label className="auth-field">
             <span>Nombre *</span>
@@ -225,6 +273,7 @@ function JoinTeamPage({ initialValues = null, error, status, onSubmit, onBack })
             </div>
           </label>
         </div>
+        )}
 
         <div className="join-form-grid">
           <label className="auth-field">
@@ -243,6 +292,8 @@ function JoinTeamPage({ initialValues = null, error, status, onSubmit, onBack })
           </label>
         </div>
 
+        {!existingAccount && (
+        <>
         <div className="join-form-grid">
           <label className="auth-field manager-password-field">
             <span>Contraseña *</span>
@@ -267,6 +318,8 @@ function JoinTeamPage({ initialValues = null, error, status, onSubmit, onBack })
         </div>
 
         <PasswordRequirements requirements={passwordRequirements} passwordsMatch={passwordsMatch} repeatTouched={form.repetirPassword.length > 0} />
+        </>
+        )}
 
         {error && <p className="auth-error">{error}</p>}
         {status && <p className="auth-success">{status}</p>}

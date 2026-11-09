@@ -2,6 +2,7 @@ using AgroDigital.Api.Dtos;
 using AgroDigital.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
+using System.Data;
 using System.Security.Cryptography;
 
 namespace AgroDigital.Api.Controllers;
@@ -170,6 +171,12 @@ public sealed class ManagerController(
             return NotFound("No se encontro la empresa dentro de tu grupo de gestion.");
         }
 
+        // Una empresa deshabilitada no se edita: primero hay que habilitarla.
+        if (!await EmpresaPerteneceAlGrupoAsync(connection, grupoId.Value, empresaId, incluirInactivos: false))
+        {
+            return BadRequest("No se puede editar una empresa deshabilitada. Habilitala primero para modificarla.");
+        }
+
         if (await ExisteEmpresaConNombreAsync(connection, grupoId.Value, nombre, empresaId))
         {
             return BadRequest("Ya existe otra empresa con ese nombre en tu grupo de gestion.");
@@ -327,11 +334,14 @@ public sealed class ManagerController(
         if (grupoId is null) return NotFound("No se encontro un grupo de gestion activo para este gerente.");
 
         const string sql = """
-            SELECT SolicitudUsuarioId, ISNULL(UsuarioId, 0), Nombre, Apellido, Telefono, CorreoElectronico, Estado, FechaCreacion
-            FROM dbo.SolicitudesUsuario
-            WHERE GrupoGestionId = @GrupoGestionId
-              AND Estado = N'Pendiente'
-            ORDER BY FechaCreacion DESC;
+            SELECT
+                s.SolicitudUsuarioId, ISNULL(s.UsuarioId, 0), s.Nombre, s.Apellido, s.Telefono, s.CorreoElectronico, s.Estado, s.FechaCreacion,
+                s.EmpresaId, e.Nombre AS EmpresaNombre
+            FROM dbo.SolicitudesUsuario AS s
+            LEFT JOIN dbo.Empresas AS e ON e.EmpresaId = s.EmpresaId
+            WHERE s.GrupoGestionId = @GrupoGestionId
+              AND s.Estado = N'Pendiente'
+            ORDER BY s.FechaCreacion DESC;
             """;
 
         await using var command = new SqlCommand(sql, connection);
@@ -349,7 +359,9 @@ public sealed class ManagerController(
                 reader.GetString(4),
                 reader.GetString(5),
                 reader.GetString(6),
-                reader.GetDateTime(7)
+                reader.GetDateTime(7),
+                reader.IsDBNull(8) ? null : reader.GetInt32(8),
+                reader.IsDBNull(9) ? null : reader.GetString(9)
             ));
         }
 
@@ -462,6 +474,141 @@ public sealed class ManagerController(
         return Ok(await LeerUsuariosAsync(reader));
     }
 
+    /// <summary>
+    /// Reemplaza las empresas y roles de un usuario dentro del grupo del Gerente.
+    /// Permite sumar a otra empresa a alguien que ya pertenece al grupo sin que tenga
+    /// que volver a completar la solicitud de acceso.
+    /// </summary>
+    [HttpPut("usuarios/{usuarioId:int}/empresas")]
+    public async Task<ActionResult> ActualizarAccesosUsuario(int usuarioId, [FromBody] ActualizarAccesosUsuarioRequest request)
+    {
+        if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
+        if (usuario.Rol != "Gerente") return StatusCode(StatusCodes.Status403Forbidden, "Solo un gerente puede realizar esta accion.");
+        if (usuarioId == usuario.UsuarioId) return BadRequest("No podes modificar tu propio acceso desde esta pantalla.");
+
+        var empresas = (request.Empresas ?? Array.Empty<EmpresaRolRequest>())
+            .Select(item => new EmpresaRolRequest(item.EmpresaId, NormalizarRol(item.Rol)))
+            .GroupBy(item => item.EmpresaId)
+            .Select(group => group.First())
+            .ToArray();
+
+        if (empresas.Length == 0)
+        {
+            return BadRequest("Selecciona al menos una empresa. Para quitarle todo el acceso, deshabilita al usuario.");
+        }
+
+        if (empresas.Any(item => !RolesPermitidos.Contains(item.Rol)))
+        {
+            return BadRequest("Selecciona un rol valido para cada empresa.");
+        }
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        var grupoId = await ObtenerGrupoGestionIdAsync(connection, usuario.UsuarioId);
+        if (grupoId is null) return NotFound("No se encontro un grupo de gestion activo para este gerente.");
+
+        if (!await EmpresasPertenecenAlGrupoAsync(connection, grupoId.Value, empresas.Select(item => item.EmpresaId).ToArray()))
+        {
+            return BadRequest("Una o mas empresas seleccionadas no pertenecen a tu grupo de gestion o estan deshabilitadas.");
+        }
+
+        if (!await UsuarioPerteneceAlGrupoAsync(connection, grupoId.Value, usuarioId))
+        {
+            return NotFound("No se encontro el usuario dentro de tu grupo de gestion.");
+        }
+
+        await using (var estadoCommand = new SqlCommand("SELECT Activo FROM dbo.Usuarios WHERE UsuarioId = @UsuarioId;", connection))
+        {
+            estadoCommand.Parameters.AddWithValue("@UsuarioId", usuarioId);
+            if (await estadoCommand.ExecuteScalarAsync() is not true)
+            {
+                return BadRequest("Habilita al usuario antes de editar sus accesos.");
+            }
+        }
+
+        await using var transaction = await connection.BeginTransactionAsync();
+        try
+        {
+            var placeholders = string.Join(",", empresas.Select((_, index) => $"@EmpresaId{index}"));
+
+            // Se quitan los accesos del grupo que ya no estan seleccionados. Los de empresas
+            // deshabilitadas se conservan para no perder el historial al volver a habilitarlas.
+            await using (var deleteCommand = new SqlCommand($"""
+                DELETE ue
+                FROM dbo.UsuarioEmpresas AS ue
+                INNER JOIN dbo.Empresas AS e ON e.EmpresaId = ue.EmpresaId
+                WHERE ue.UsuarioId = @UsuarioId
+                  AND e.GrupoGestionId = @GrupoGestionId
+                  AND e.Activo = 1
+                  AND ue.EmpresaId NOT IN ({placeholders});
+                """, connection, (SqlTransaction)transaction))
+            {
+                deleteCommand.Parameters.AddWithValue("@UsuarioId", usuarioId);
+                deleteCommand.Parameters.AddWithValue("@GrupoGestionId", grupoId.Value);
+                for (var index = 0; index < empresas.Length; index++)
+                {
+                    deleteCommand.Parameters.AddWithValue($"@EmpresaId{index}", empresas[index].EmpresaId);
+                }
+
+                await deleteCommand.ExecuteNonQueryAsync();
+            }
+
+            foreach (var empresa in empresas)
+            {
+                await using var upsert = new SqlCommand("""
+                    IF EXISTS (SELECT 1 FROM dbo.UsuarioEmpresas WHERE UsuarioId = @UsuarioId AND EmpresaId = @EmpresaId)
+                    BEGIN
+                        UPDATE dbo.UsuarioEmpresas
+                        SET Rol = @Rol,
+                            Activo = 1,
+                            FechaModificacion = SYSDATETIME()
+                        WHERE UsuarioId = @UsuarioId AND EmpresaId = @EmpresaId;
+                    END
+                    ELSE
+                    BEGIN
+                        INSERT INTO dbo.UsuarioEmpresas (UsuarioId, EmpresaId, Rol)
+                        VALUES (@UsuarioId, @EmpresaId, @Rol);
+                    END;
+                    """, connection, (SqlTransaction)transaction);
+                upsert.Parameters.AddWithValue("@UsuarioId", usuarioId);
+                upsert.Parameters.AddWithValue("@EmpresaId", empresa.EmpresaId);
+                upsert.Parameters.AddWithValue("@Rol", empresa.Rol);
+                await upsert.ExecuteNonQueryAsync();
+            }
+
+            // Si su empresa principal ya no esta entre sus accesos, pasa a la primera seleccionada.
+            await using (var principalCommand = new SqlCommand("""
+                UPDATE dbo.Usuarios
+                SET EmpresaPrincipalId = @EmpresaPrincipalId,
+                    FechaModificacion = SYSDATETIME()
+                WHERE UsuarioId = @UsuarioId
+                  AND (
+                      EmpresaPrincipalId IS NULL
+                      OR NOT EXISTS (
+                          SELECT 1
+                          FROM dbo.UsuarioEmpresas
+                          WHERE UsuarioId = @UsuarioId
+                            AND EmpresaId = dbo.Usuarios.EmpresaPrincipalId
+                            AND Activo = 1)
+                  );
+                """, connection, (SqlTransaction)transaction))
+            {
+                principalCommand.Parameters.AddWithValue("@UsuarioId", usuarioId);
+                principalCommand.Parameters.AddWithValue("@EmpresaPrincipalId", empresas[0].EmpresaId);
+                await principalCommand.ExecuteNonQueryAsync();
+            }
+
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+
+        return Ok(new { mensaje = "Accesos del usuario actualizados correctamente." });
+    }
+
     [HttpPost("usuarios/{usuarioId:int}/deshabilitar")]
     public Task<ActionResult> DeshabilitarUsuario(int usuarioId) => CambiarHabilitacionUsuario(usuarioId, false);
 
@@ -527,7 +674,7 @@ public sealed class ManagerController(
     }
 
     [HttpPost("otp")]
-    public async Task<ActionResult<ManagerOtpResponse>> GenerarOtp()
+    public async Task<ActionResult<ManagerOtpResponse>> GenerarOtp([FromQuery] int? empresaId)
     {
         if (!TryGetAuthenticatedUser(out var usuario, out var error)) return error;
         if (usuario.Rol != "Gerente") return StatusCode(StatusCodes.Status403Forbidden, "Solo un gerente puede realizar esta accion.");
@@ -555,14 +702,34 @@ public sealed class ManagerController(
         var grupoCodigo = reader.GetString(1);
         await reader.CloseAsync();
 
+        // La OTP manual queda asociada a la empresa elegida en la pantalla Usuarios.
+        string? empresaNombre = null;
+        if (empresaId is { } empresaSeleccionadaId)
+        {
+            await using var empresaCommand = new SqlCommand("""
+                SELECT Nombre
+                FROM dbo.Empresas
+                WHERE EmpresaId = @EmpresaId AND GrupoGestionId = @GrupoGestionId AND Activo = 1;
+                """, connection);
+            empresaCommand.Parameters.AddWithValue("@EmpresaId", empresaSeleccionadaId);
+            empresaCommand.Parameters.AddWithValue("@GrupoGestionId", grupoGestionId);
+            var nombreEmpresa = await empresaCommand.ExecuteScalarAsync();
+            if (nombreEmpresa is null || nombreEmpresa == DBNull.Value)
+            {
+                return BadRequest("La empresa seleccionada no pertenece a tu grupo de gestion o esta deshabilitada.");
+            }
+
+            empresaNombre = Convert.ToString(nombreEmpresa);
+        }
+
         var otp = CrearOtp();
         var vence = DateTime.UtcNow.AddDays(7);
 
         const string insertSql = """
             INSERT INTO dbo.GrupoGestionOtps
-                (GrupoGestionId, GeneradoPorUsuarioId, CodigoOtpHash, FechaVencimiento)
+                (GrupoGestionId, GeneradoPorUsuarioId, CodigoOtpHash, FechaVencimiento, EmpresaId)
             VALUES
-                (@GrupoGestionId, @GeneradoPorUsuarioId, @CodigoOtpHash, @FechaVencimiento);
+                (@GrupoGestionId, @GeneradoPorUsuarioId, @CodigoOtpHash, @FechaVencimiento, @EmpresaId);
             """;
 
         await using var insertCommand = new SqlCommand(insertSql, connection);
@@ -570,9 +737,10 @@ public sealed class ManagerController(
         insertCommand.Parameters.AddWithValue("@GeneradoPorUsuarioId", usuario.UsuarioId);
         insertCommand.Parameters.AddWithValue("@CodigoOtpHash", passwordHasher.Hash(otp));
         insertCommand.Parameters.AddWithValue("@FechaVencimiento", vence);
+        insertCommand.Parameters.Add("@EmpresaId", SqlDbType.Int).Value = (object?)empresaId ?? DBNull.Value;
         await insertCommand.ExecuteNonQueryAsync();
 
-        return Ok(new ManagerOtpResponse(grupoCodigo, otp, vence));
+        return Ok(new ManagerOtpResponse(grupoCodigo, otp, vence, empresaId, empresaNombre));
     }
 
     [HttpPost("solicitudes/{solicitudId:int}/aprobar")]
@@ -616,12 +784,17 @@ public sealed class ManagerController(
             var empresaPrincipalId = empresas.First().EmpresaId;
 
             await using (var updateUser = new SqlCommand("""
-                UPDATE dbo.Usuarios
-                SET Rol = @RolGeneral,
+                UPDATE u
+                SET Rol = CASE WHEN u.Rol IN (N'Admin', N'Gerente') THEN u.Rol ELSE @RolGeneral END,
                     Activo = 1,
-                    EmpresaPrincipalId = @EmpresaPrincipalId,
+                    -- Un usuario que ya existia (por ejemplo, de otro grupo) conserva su empresa principal.
+                    EmpresaPrincipalId = CASE WHEN principal.EmpresaId IS NULL THEN @EmpresaPrincipalId ELSE u.EmpresaPrincipalId END,
                     FechaModificacion = SYSDATETIME()
-                WHERE UsuarioId = @UsuarioId;
+                FROM dbo.Usuarios AS u
+                LEFT JOIN dbo.Empresas AS principal
+                    ON principal.EmpresaId = u.EmpresaPrincipalId
+                   AND principal.Activo = 1
+                WHERE u.UsuarioId = @UsuarioId;
                 """, connection, (SqlTransaction)transaction))
             {
                 updateUser.Parameters.AddWithValue("@RolGeneral", rolGeneral);

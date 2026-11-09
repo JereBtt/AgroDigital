@@ -1,9 +1,10 @@
 const emptyForm = {
   nombre: '',
+  // Argentina es el unico pais habilitado; el resto de los datos los elige el usuario.
   pais: 'Argentina',
-  provincia: 'Cordoba',
-  ciudad: 'Los Condores',
-  condicion: 'Propio',
+  provincia: '',
+  ciudad: '',
+  condicion: '',
   cultivoAnterior: '',
   cultivoAnteriorCampania: '',
   coordenadas: [],
@@ -63,7 +64,7 @@ function formFromLote(lote) {
     pais: lote?.pais ?? 'Argentina',
     provincia: lote?.provincia ?? emptyForm.provincia,
     ciudad: lote?.ciudad ?? '',
-    condicion: lote?.condicion ?? 'Propio',
+    condicion: lote?.condicion ?? '',
     cultivoAnterior: lote?.cultivoAnterior ?? '',
     cultivoAnteriorCampania: lote?.cultivoAnteriorCampania ?? '',
     coordenadas: (lote?.coordenadas ?? [])

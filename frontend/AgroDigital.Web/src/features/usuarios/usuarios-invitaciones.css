@@ -3,6 +3,7 @@
 .invite-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  margin-bottom: 18px;
   border: 1px solid #cfe6d2;
   border-radius: 12px;
   overflow: hidden;

@@ -215,7 +215,7 @@ function ManagerTeamsPage({ context, error, status, savingAction, teamUsers = {}
                     {empresa.esPrincipal && <em className="team-main-badge">Principal</em>}
                   </div>
                   <div className="team-row-actions">
-                    {!isEditing && (
+                    {!isEditing && empresa.activo && (
                       <button className="team-action-button" type="button" onClick={() => startEdit(empresa)}>
                         <Edit size={16} />
                         Editar
@@ -231,7 +231,7 @@ function ManagerTeamsPage({ context, error, status, savingAction, teamUsers = {}
                         Principal
                       </button>
                     )}
-                    <button className={'team-action-button ' + (empresa.activo ? 'team-danger-action' : 'team-enable-action')} type="button" onClick={() => onToggleTeamStatus(empresa)} disabled={savingAction === toggleAction + '-' + empresa.empresaId}>
+                    <button className={'team-action-button ' + (empresa.activo ? 'team-danger-action' : 'team-enable-action')} type="button" onClick={() => { if (isEditing) cancelEdit(); onToggleTeamStatus(empresa); }} disabled={savingAction === toggleAction + '-' + empresa.empresaId}>
                       {savingAction === toggleAction + '-' + empresa.empresaId ? <LoaderCircle className="spin-icon" size={16} /> : empresa.activo ? <Trash2 size={16} /> : <CheckCircle2 size={16} />}
                       {empresa.activo ? 'Deshabilitar' : 'Habilitar'}
                     </button>

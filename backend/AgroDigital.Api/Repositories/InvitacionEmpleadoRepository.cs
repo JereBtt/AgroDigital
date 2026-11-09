@@ -12,6 +12,7 @@ public enum SituacionCorreoInvitacion
 {
     Libre,
     YaEsMiembro,
+    MiembroDeOtraEmpresa,
     SolicitudPendiente,
     InvitacionVigente
 }
@@ -21,10 +22,11 @@ public interface IInvitacionEmpleadoRepository
     Task<GrupoInvitacion?> ObtenerGrupoDelGerenteAsync(int gerenteUsuarioId);
     Task<IReadOnlyList<InvitacionEmpleadoDto>> ListarPendientesAsync(int grupoGestionId);
     Task<InvitacionEmpleadoDto?> ObtenerAsync(int invitacionId, int grupoGestionId);
-    Task<SituacionCorreoInvitacion> ObtenerSituacionCorreoAsync(int grupoGestionId, string correo);
+    Task<SituacionCorreoInvitacion> ObtenerSituacionCorreoAsync(int grupoGestionId, string correo, int? empresaId);
+    Task<string?> ObtenerNombreEmpresaActivaAsync(int grupoGestionId, int empresaId);
 
     Task<InvitacionEmpleadoDto> CrearAsync(
-        int grupoGestionId, int gerenteUsuarioId, string correo, string? nombre, string otpHash, DateTime vencimientoUtc);
+        int grupoGestionId, int gerenteUsuarioId, string correo, string? nombre, string otpHash, DateTime vencimientoUtc, int? empresaId);
 
     Task<InvitacionEmpleadoDto?> RenovarAsync(int invitacionId, int grupoGestionId, string otpHash, DateTime vencimientoUtc);
     Task<bool> CancelarAsync(int invitacionId, int grupoGestionId);
@@ -53,7 +55,9 @@ public sealed class InvitacionEmpleadoRepository(IConfiguration configuration) :
             CAST(CASE WHEN otp.FechaVencimiento < SYSUTCDATETIME() THEN 1 ELSE 0 END AS BIT) AS Vencida,
             otp.EstadoEnvio,
             otp.FechaUltimoEnvio,
-            otp.CantidadEnvios
+            otp.CantidadEnvios,
+            otp.EmpresaId,
+            (SELECT e.Nombre FROM dbo.Empresas AS e WHERE e.EmpresaId = otp.EmpresaId) AS EmpresaNombre
         """;
 
     private const string SelectPorId = """
@@ -139,11 +143,23 @@ public sealed class InvitacionEmpleadoRepository(IConfiguration configuration) :
         return await reader.ReadAsync() ? Map(reader) : null;
     }
 
-    public async Task<SituacionCorreoInvitacion> ObtenerSituacionCorreoAsync(int grupoGestionId, string correo)
+    public async Task<SituacionCorreoInvitacion> ObtenerSituacionCorreoAsync(int grupoGestionId, string correo, int? empresaId)
     {
+        // Con empresa: solo es "miembro" si ya tiene acceso a esa empresa. Si pertenece al grupo
+        // por otra empresa, se le suma el acceso desde "Editar accesos" (no hace falta invitarlo).
         const string sql = """
-            SELECT CASE
-                WHEN EXISTS (
+            DECLARE @EsMiembroEmpresa BIT = CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM dbo.UsuarioEmpresas AS ue
+                    INNER JOIN dbo.Empresas AS e ON e.EmpresaId = ue.EmpresaId
+                    INNER JOIN dbo.Usuarios AS u ON u.UsuarioId = ue.UsuarioId
+                    WHERE e.GrupoGestionId = @GrupoGestionId
+                      AND (@EmpresaId IS NULL OR e.EmpresaId = @EmpresaId)
+                      AND ue.Activo = 1
+                      AND (u.CorreoElectronico = @Correo OR u.Usuario = @Correo))
+                THEN 1 ELSE 0 END;
+
+            DECLARE @EsMiembroGrupo BIT = CASE WHEN EXISTS (
                     SELECT 1
                     FROM dbo.UsuarioEmpresas AS ue
                     INNER JOIN dbo.Empresas AS e ON e.EmpresaId = ue.EmpresaId
@@ -151,7 +167,11 @@ public sealed class InvitacionEmpleadoRepository(IConfiguration configuration) :
                     WHERE e.GrupoGestionId = @GrupoGestionId
                       AND ue.Activo = 1
                       AND (u.CorreoElectronico = @Correo OR u.Usuario = @Correo))
-                    THEN 1
+                THEN 1 ELSE 0 END;
+
+            SELECT CASE
+                WHEN @EsMiembroEmpresa = 1 THEN 1
+                WHEN @EsMiembroGrupo = 1 THEN 4
                 WHEN EXISTS (
                     SELECT 1 FROM dbo.SolicitudesUsuario
                     WHERE GrupoGestionId = @GrupoGestionId
@@ -175,18 +195,40 @@ public sealed class InvitacionEmpleadoRepository(IConfiguration configuration) :
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.AddWithValue("@GrupoGestionId", grupoGestionId);
         command.Parameters.Add("@Correo", SqlDbType.NVarChar, 180).Value = correo;
+        command.Parameters.Add("@EmpresaId", SqlDbType.Int).Value = (object?)empresaId ?? DBNull.Value;
 
         return Convert.ToInt32(await command.ExecuteScalarAsync()) switch
         {
             1 => SituacionCorreoInvitacion.YaEsMiembro,
             2 => SituacionCorreoInvitacion.SolicitudPendiente,
             3 => SituacionCorreoInvitacion.InvitacionVigente,
+            4 => SituacionCorreoInvitacion.MiembroDeOtraEmpresa,
             _ => SituacionCorreoInvitacion.Libre
         };
     }
 
+    public async Task<string?> ObtenerNombreEmpresaActivaAsync(int grupoGestionId, int empresaId)
+    {
+        const string sql = """
+            SELECT Nombre
+            FROM dbo.Empresas
+            WHERE EmpresaId = @EmpresaId
+              AND GrupoGestionId = @GrupoGestionId
+              AND Activo = 1;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@EmpresaId", empresaId);
+        command.Parameters.AddWithValue("@GrupoGestionId", grupoGestionId);
+
+        var resultado = await command.ExecuteScalarAsync();
+        return resultado is null || resultado == DBNull.Value ? null : Convert.ToString(resultado);
+    }
+
     public async Task<InvitacionEmpleadoDto> CrearAsync(
-        int grupoGestionId, int gerenteUsuarioId, string correo, string? nombre, string otpHash, DateTime vencimientoUtc)
+        int grupoGestionId, int gerenteUsuarioId, string correo, string? nombre, string otpHash, DateTime vencimientoUtc, int? empresaId)
     {
         // Las invitaciones vencidas al mismo correo se desactivan: queda una sola por persona.
         const string sql = """
@@ -204,11 +246,11 @@ public sealed class InvitacionEmpleadoRepository(IConfiguration configuration) :
 
             INSERT INTO dbo.GrupoGestionOtps
                 (GrupoGestionId, GeneradoPorUsuarioId, CodigoOtpHash, FechaVencimiento,
-                 CorreoInvitado, NombreInvitado, EstadoEnvio)
+                 CorreoInvitado, NombreInvitado, EstadoEnvio, EmpresaId)
             OUTPUT INSERTED.GrupoGestionOtpId INTO @Nueva (Id)
             VALUES
                 (@GrupoGestionId, @GerenteUsuarioId, @OtpHash, @FechaVencimiento,
-                 @Correo, @Nombre, N'Pendiente');
+                 @Correo, @Nombre, N'Pendiente', @EmpresaId);
 
             DECLARE @InvitacionId INT = (SELECT TOP (1) Id FROM @Nueva);
 
@@ -226,6 +268,7 @@ public sealed class InvitacionEmpleadoRepository(IConfiguration configuration) :
         command.Parameters.AddWithValue("@FechaVencimiento", vencimientoUtc);
         command.Parameters.Add("@Correo", SqlDbType.NVarChar, 160).Value = correo;
         command.Parameters.Add("@Nombre", SqlDbType.NVarChar, 150).Value = (object?)nombre ?? DBNull.Value;
+        command.Parameters.Add("@EmpresaId", SqlDbType.Int).Value = (object?)empresaId ?? DBNull.Value;
 
         await using var reader = await command.ExecuteReaderAsync();
         if (!await reader.ReadAsync())
@@ -348,5 +391,7 @@ public sealed class InvitacionEmpleadoRepository(IConfiguration configuration) :
         r.GetBoolean(5) ? "Vencida" : "Pendiente",
         r.IsDBNull(6) ? null : r.GetString(6),
         r.IsDBNull(7) ? null : Utc(r.GetDateTime(7)),
-        r.GetInt32(8));
+        r.GetInt32(8),
+        r.IsDBNull(9) ? null : r.GetInt32(9),
+        r.IsDBNull(10) ? null : r.GetString(10));
 }

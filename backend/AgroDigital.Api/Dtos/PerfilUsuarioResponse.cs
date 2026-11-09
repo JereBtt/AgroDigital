@@ -8,5 +8,6 @@ public sealed record PerfilUsuarioResponse(
     string? Telefono,
     string? CorreoElectronico,
     string Rol,
-    bool Activo
+    bool Activo,
+    bool TieneFoto = false
 );

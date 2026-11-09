@@ -8,5 +8,8 @@ public sealed record SolicitudUsuarioDto(
     string Telefono,
     string CorreoElectronico,
     string Estado,
-    DateTime FechaCreacion
+    DateTime FechaCreacion,
+    // Empresa de la invitacion usada (NULL en solicitudes sin empresa)
+    int? EmpresaId = null,
+    string? EmpresaNombre = null
 );

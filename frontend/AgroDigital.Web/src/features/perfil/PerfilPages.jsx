@@ -1,11 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Building2, CheckCircle2, ChevronDown, ChevronLeft, Eye, EyeOff, LogOut, LockKeyhole, LoaderCircle, Settings, Save, Mail, Phone, ShieldCheck, User, Users } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Building2, Camera, CheckCircle2, ChevronDown, ChevronLeft, Eye, EyeOff, LogOut, LockKeyhole, LoaderCircle, Settings, Save, Mail, Phone, ShieldCheck, Trash2, User, Users } from 'lucide-react';
 import profileCardLandscape from '../../assets/profile-card-landscape.png';
 import { formatPersonName } from '../../shared/utils/personName.js';
 import { getPasswordRequirements } from '../../shared/utils/passwordRequirements.js';
 import PasswordRequirements from '../../shared/components/PasswordRequirements.jsx';
 
-function UserProfileMenu({ session, profile, open, menuRef, onToggle, onOpenProfile, onLogout, managerContext }) {
+function ProfileAvatar({ className, photoUrl, initial, name }) {
+  return (
+    <span className={`${className} ${photoUrl ? 'profile-avatar-has-photo' : ''}`}>
+      {photoUrl ? <img src={photoUrl} alt={name ? `Foto de perfil de ${name}` : 'Foto de perfil'} /> : initial}
+    </span>
+  );
+}
+
+function UserProfileMenu({ session, profile, photoUrl, open, menuRef, onToggle, onOpenProfile, onLogout, managerContext }) {
   const fullName = profile
     ? [profile.nombre, profile.apellido].filter(Boolean).join(' ')
     : session?.name || session?.usuario || 'Usuario';
@@ -22,7 +30,7 @@ function UserProfileMenu({ session, profile, open, menuRef, onToggle, onOpenProf
   return (
     <div className="user-menu-wrapper" ref={menuRef}>
       <button className={`user-chip ${open ? 'user-chip-open' : ''}`} type="button" onClick={onToggle} aria-haspopup="menu" aria-expanded={open}>
-        <span className="user-avatar">{initial}</span>
+        <ProfileAvatar className="user-avatar" photoUrl={photoUrl} initial={initial} name={displayName} />
         <strong>{displayName}</strong>
         <ChevronDown size={15} />
       </button>
@@ -32,7 +40,7 @@ function UserProfileMenu({ session, profile, open, menuRef, onToggle, onOpenProf
           <div className="profile-popover-hero">
             <img src={profileCardLandscape} alt="" />
             <div className="profile-popover-hero-overlay" />
-            <span className="profile-popover-avatar">{initial}</span>
+            <ProfileAvatar className="profile-popover-avatar" photoUrl={photoUrl} initial={initial} name={displayName} />
             <div className="profile-popover-title">
               <strong>{displayName}</strong>
               <span>{role}</span>
@@ -79,7 +87,12 @@ function UserProfileMenu({ session, profile, open, menuRef, onToggle, onOpenProf
   );
 }
 
-function ProfilePage({ profile, session, error, status, saving, passwordSaving, passwordError, onSave, onChangePassword, onClearPasswordError, onBack, managerContext }) {
+function ProfilePage({
+  profile, session, error, status, saving, passwordSaving, passwordError, onSave, onChangePassword, onClearPasswordError, onBack, managerContext,
+  photoUrl = '', photoSaving = false, photoError = '', onUploadPhoto, onDeletePhoto
+}) {
+  const photoInputRef = useRef(null);
+  const [confirmDeletePhoto, setConfirmDeletePhoto] = useState(false);
   const initialForm = useMemo(() => ({
     nombre: profile?.nombre || session?.name?.split(' ')[0] || '',
     apellido: profile?.apellido || session?.name?.split(' ').slice(1).join(' ') || '',
@@ -119,6 +132,19 @@ function ProfilePage({ profile, session, error, status, saving, passwordSaving, 
     setPasswordForm((current) => ({ ...current, [field]: value }));
   }
 
+  async function handlePhotoSelected(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setConfirmDeletePhoto(false);
+    await onUploadPhoto?.(file);
+  }
+
+  async function deletePhoto() {
+    const deleted = await onDeletePhoto?.();
+    if (deleted) setConfirmDeletePhoto(false);
+  }
+
   async function submitPassword(event) {
     event.preventDefault();
     const updated = await onChangePassword(passwordForm);
@@ -129,6 +155,7 @@ function ProfilePage({ profile, session, error, status, saving, passwordSaving, 
 
   const displayName = [form.nombre, form.apellido].filter(Boolean).join(' ') || session?.name || 'Tu perfil';
   const groupCode = (profile?.rol || session?.role) === 'Gerente' ? managerContext?.grupoGestionCodigo : null;
+  const emailChanged = form.correoElectronico.trim().toLocaleLowerCase('es-AR') !== initialForm.correoElectronico.trim().toLocaleLowerCase('es-AR');
   const profileHasChanges = form.nombre !== initialForm.nombre
     || form.apellido !== initialForm.apellido
     || form.telefono !== initialForm.telefono
@@ -157,7 +184,41 @@ function ProfilePage({ profile, session, error, status, saving, passwordSaving, 
 
       <div className="profile-grid">
         <section className="dashboard-card profile-summary-card">
-          <span className="profile-page-avatar">{displayName.charAt(0).toLocaleUpperCase('es-AR') || 'U'}</span>
+          <div className="profile-photo-block">
+            <ProfileAvatar
+              className="profile-page-avatar"
+              photoUrl={photoUrl}
+              initial={displayName.charAt(0).toLocaleUpperCase('es-AR') || 'U'}
+              name={displayName}
+            />
+            <div className="profile-photo-actions">
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                hidden
+                onChange={handlePhotoSelected}
+              />
+              <button className="profile-photo-button" type="button" onClick={() => photoInputRef.current?.click()} disabled={photoSaving}>
+                {photoSaving ? <LoaderCircle className="spin-icon" size={16} /> : <Camera size={16} />}
+                {photoSaving ? 'Guardando...' : photoUrl ? 'Cambiar foto' : 'Agregar foto'}
+              </button>
+              {photoUrl && (confirmDeletePhoto ? (
+                <span className="profile-photo-confirm">
+                  ¿Eliminar foto?
+                  <button className="profile-photo-button profile-photo-button-danger" type="button" onClick={deletePhoto} disabled={photoSaving}>Sí</button>
+                  <button className="profile-photo-button" type="button" onClick={() => setConfirmDeletePhoto(false)} disabled={photoSaving}>No</button>
+                </span>
+              ) : (
+                <button className="profile-photo-button profile-photo-button-danger" type="button" onClick={() => setConfirmDeletePhoto(true)} disabled={photoSaving}>
+                  <Trash2 size={16} />
+                  Eliminar
+                </button>
+              ))}
+              <small>JPG, PNG o WEBP. Máximo 5 MB.</small>
+              {photoError && <small className="profile-field-error">{photoError}</small>}
+            </div>
+          </div>
           <div>
             <h2>{displayName}</h2>
             <p>{profile?.rol || session?.role || 'Usuario'}</p>
@@ -200,13 +261,17 @@ function ProfilePage({ profile, session, error, status, saving, passwordSaving, 
 
           <div className="profile-form-note">
             <ShieldCheck size={18} />
-            <span>Si cambiás el correo, también cambia tu usuario de ingreso al sistema.</span>
+            <span>
+              {emailChanged
+                ? 'Cambiaste el correo: al guardar se cerrará tu sesión y vas a tener que ingresar con el nuevo correo.'
+                : 'Si cambiás el correo, también cambia tu usuario de ingreso y vas a tener que iniciar sesión nuevamente.'}
+            </span>
           </div>
 
           <div className="form-actions">
             <button className="green-button" type="submit" disabled={saving || !canSave}>
               {saving ? <LoaderCircle className="spin-icon" size={18} /> : <Save size={18} />}
-              {saving ? 'Guardando...' : 'Guardar cambios'}
+              {saving ? 'Guardando...' : emailChanged ? 'Guardar y volver a ingresar' : 'Guardar cambios'}
             </button>
             <button className="back-button" type="button" onClick={onBack}>Cancelar</button>
           </div>
