@@ -161,6 +161,137 @@ public sealed class ReporteriaRepository(IConfiguration configuration)
         return await LeerAsync(SqlConsulta(consulta), empresaId, null, campania, lote, cultivo, ct);
     }
 
+    // Reúne lecturas ya disponibles en un único resultado acotado para el modelo.
+    // El ranking se calcula sobre todas las cosechas finalizadas del mismo grano y período.
+    public async Task<object> ConsultarRindeContextoLoteAsync(int empresaId, string lote,
+        string? campania, string? cultivo, CancellationToken ct)
+    {
+        var periodo = campania ?? (await UltimasCampaniasAsync(empresaId, ct)).FirstOrDefault();
+        if (periodo is null)
+            return new { campania = (string?)null, lote, sinCampania = true };
+
+        var siembras = await ConsultarAsync(empresaId, "siembras_detalle", periodo, lote, cultivo, ct);
+        var cosechas = await ConsultarAsync(empresaId, "cosechas_detalle", periodo, lote, cultivo, ct);
+        var agroquimicos = await ConsultarAsync(empresaId, "agroquimicos_detalle", periodo, lote, cultivo, ct);
+        var refertilizaciones = await ConsultarAsync(empresaId, "refertilizaciones_detalle", periodo, lote, cultivo, ct);
+        var siniestros = await ConsultarAsync(empresaId, "siniestros", periodo, lote, cultivo, ct);
+        var ranking = await ConsultarRankingRindeLoteAsync(empresaId, periodo, lote, cultivo, ct);
+
+        static object Acotar(IReadOnlyList<object> filas, int maximo, params string[] campos)
+        {
+            var primera = filas.FirstOrDefault() as Dictionary<string, object?>;
+            var total = Convert.ToInt32(primera?.GetValueOrDefault("totalCoincidencias")
+                ?? primera?.GetValueOrDefault("totalAplicaciones") ?? filas.Count);
+            return new
+            {
+                totalCoincidencias = total,
+                detalleTruncado = total > maximo,
+                filas = filas.Take(maximo).Select(fila => campos.ToDictionary(
+                    campo => campo, campo => ((Dictionary<string, object?>)fila).GetValueOrDefault(campo)))
+            };
+        }
+
+        return new
+        {
+            campania = periodo, lote, cultivo,
+            siembras = Acotar(siembras, 8, "siembra", "tipoRegistro", "ciclo", "cultivo", "variedad", "epoca",
+                "cicloCultivo", "semillasPorHa", "pmgGramos", "profundidadCm", "hectareasSembradas",
+                "semillaTotalKg", "ureaKgHa", "ureaTotalKg", "inicio", "finTentativo", "finReal", "bajaId"),
+            cosechas = Acotar(cosechas, 8, "cosecha", "cultivo", "estado", "hectareasCosechadas", "kgCosechados",
+                "rindeKgHa", "rindeSecoKgHa", "finReal"),
+            agroquimicos = Acotar(agroquimicos, 12, "siembra", "cultivo", "etapa", "fecha", "tipo", "variedad",
+                "dosisPorHa", "unidadBase"),
+            refertilizaciones = Acotar(refertilizaciones, 10, "siembra", "cultivo", "fecha", "hectareasBase",
+                "ureaKgHa", "ureaTotalKg"),
+            siniestros = Acotar(siniestros, 12, "cultivo", "ciclo", "fecha", "siniestro", "alcance", "resiembraAutomatica"),
+            rankingPorCultivo = ranking,
+            criterioRanking = "Kg cosechados / ha cosechadas de cosechas finalizadas, por cultivo y campaña; empates comparten puesto.",
+            nota = "Los factores registrados son contexto, no una prueba de causalidad. Las dosis de agroquímicos son por hectárea. Una lista vacía de refertilizaciones o siniestros se considera evento no realizado en este informe; un valor null de urea en una siembra significa que ese registro no la consigna, no que se haya demostrado una aplicación de cero."
+        };
+    }
+
+    // Primero identifica el extremo entre lotes del mismo grano; luego obtiene el contexto
+    // solo de los lotes elegidos. Así una pregunta sin nombre de lote usa una sola herramienta.
+    public async Task<object> ConsultarExtremosRindeAsync(int empresaId, string? campania,
+        string? cultivo, bool incluirMayor, bool incluirMenor, CancellationToken ct)
+    {
+        var periodo = campania ?? (await UltimasCampaniasAsync(empresaId, ct)).FirstOrDefault();
+        if (periodo is null) return new { campania = (string?)null, cultivo, sinCampania = true };
+        if (cultivo is null) return new { campania = periodo, cultivo, faltaFiltro = "cultivo" };
+
+        var mayores = incluirMayor
+            ? await ConsultarAsync(empresaId, "mejores_rindes", periodo, null, cultivo, ct) : [];
+        var menores = incluirMenor
+            ? await ConsultarAsync(empresaId, "peores_rindes", periodo, null, cultivo, ct) : [];
+        if (mayores.Count == 0 && menores.Count == 0)
+            return new { campania = periodo, cultivo, sinCosechasFinalizadas = true };
+
+        static Dictionary<string, object?>? Primero(IReadOnlyList<object> filas) =>
+            filas.FirstOrDefault() as Dictionary<string, object?>;
+        static string[] Empatados(IReadOnlyList<object> filas)
+        {
+            var primero = Primero(filas);
+            if (primero is null) return [];
+            var rinde = Convert.ToDecimal(primero["rindeKgHa"]);
+            return filas.Cast<Dictionary<string, object?>>()
+                .TakeWhile(fila => Convert.ToDecimal(fila["rindeKgHa"]) == rinde)
+                .Select(fila => Convert.ToString(fila["lote"])!).ToArray();
+        }
+
+        var mejor = Primero(mayores);
+        var peor = Primero(menores);
+        var lotes = new[] { mejor, peor }.Where(fila => fila is not null)
+            .Select(fila => Convert.ToString(fila!["lote"])!)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var contextos = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        foreach (var nombre in lotes)
+            contextos[nombre] = await ConsultarRindeContextoLoteAsync(empresaId, nombre, periodo, cultivo, ct);
+
+        return new
+        {
+            campania = periodo, cultivo,
+            criterio = "Kg cosechados / ha cosechadas de cosechas finalizadas del mismo grano y campaña; no comparar entre granos.",
+            mayor = mejor is null ? null : new { lote = mejor["lote"], rindeKgHa = mejor["rindeKgHa"],
+                kg = mejor["kg"], hectareas = mejor["hectareas"], empates = Empatados(mayores),
+                empatesPosiblementeTruncados = mayores.Count == 10 && Empatados(mayores).Length == 10 },
+            menor = peor is null ? null : new { lote = peor["lote"], rindeKgHa = peor["rindeKgHa"],
+                kg = peor["kg"], hectareas = peor["hectareas"], empates = Empatados(menores),
+                empatesPosiblementeTruncados = menores.Count == 10 && Empatados(menores).Length == 10 },
+            contextos
+        };
+    }
+
+    private async Task<IReadOnlyList<object>> ConsultarRankingRindeLoteAsync(int empresaId, string campania,
+        string lote, string? cultivo, CancellationToken ct)
+    {
+        const string sql = """
+            WITH rendimientos AS (
+                SELECT l.LoteId, l.Nombre AS lote, c.Producto AS cultivo,
+                    SUM(c.CantidadGranoCosechado) AS kg,
+                    SUM(c.CantidadHectareasTrabajadas) AS hectareas,
+                    SUM(c.CantidadGranoCosechado)/NULLIF(SUM(c.CantidadHectareasTrabajadas),0) AS rindeKgHa
+                FROM dbo.Cosechas c JOIN dbo.Lotes l ON l.LoteId=c.LoteId
+                WHERE l.EmpresaId=@EmpresaId AND (c.EmpresaId=@EmpresaId OR c.EmpresaId IS NULL)
+                  AND c.Estado=N'Finalizado' AND LEFT(LTRIM(c.CampaniaNombre),9)=@Campania
+                  AND c.CantidadHectareasTrabajadas>0
+                  AND (@Cultivo IS NULL OR c.Producto COLLATE Latin1_General_CI_AI=@Cultivo COLLATE Latin1_General_CI_AI)
+                GROUP BY l.LoteId,l.Nombre,c.Producto
+            ), puestos AS (
+                SELECT *, DENSE_RANK() OVER(PARTITION BY cultivo ORDER BY rindeKgHa DESC) AS puestoMayor,
+                    DENSE_RANK() OVER(PARTITION BY cultivo ORDER BY rindeKgHa ASC) AS puestoMenor,
+                    COUNT(*) OVER(PARTITION BY cultivo) AS lotesComparados,
+                    MAX(rindeKgHa) OVER(PARTITION BY cultivo) AS mejorRindeKgHa,
+                    MIN(rindeKgHa) OVER(PARTITION BY cultivo) AS menorRindeKgHa
+                FROM rendimientos
+            )
+            SELECT lote,cultivo,kg,hectareas,rindeKgHa,puestoMayor,puestoMenor,lotesComparados,
+                mejorRindeKgHa,menorRindeKgHa
+            FROM puestos WHERE lote COLLATE Latin1_General_CI_AI=@Lote COLLATE Latin1_General_CI_AI
+            ORDER BY cultivo;
+            """;
+        return await LeerAsync(sql, empresaId, null, campania, lote, cultivo, ct);
+    }
+
     // Un solo viaje a SQL Server y un único resultado compacto para el informe general.
     // Reutiliza las mismas consultas fijas que las preguntas individuales.
     public async Task<InformeCampaniaDatos> ConsultarInformeCampaniaAsync(int empresaId, string? campania, CancellationToken ct)

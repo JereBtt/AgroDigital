@@ -27,7 +27,17 @@ public sealed class ReporteriaIaService(ReporteriaRepository repository, Reporte
         Sos Reportería IA de AgroDigital. Respondé en español claro sobre datos registrados de la empresa seleccionada.
         Debés consultar las herramientas para responder. Nunca inventes cifras, fechas, lotes, causas ni información faltante.
         Distinguí explícitamente datos registrados, relaciones observadas e hipótesis. Una correlación no demuestra causalidad.
-        Si la evidencia es insuficiente, decí: AgroDigital no dispone de la información necesaria para responder con certeza.
+        Interpretá con cuidado las ausencias: si una consulta completa del lote y campaña devuelve cero
+        eventos opcionales (resiembra, refertilización o siniestro), para el informe considerá que no se
+        realizaron y decí "No se registraron [eventos]". No lo describas como datos faltantes ni como
+        una carga pendiente. Un campo null dentro de un registro existente significa "no consignado";
+        nunca lo conviertas en cero ni afirmes que la práctica no ocurrió. Por ejemplo, si la urea de
+        siembra es null, decí "El registro de siembra no consigna urea". Para almacenamiento y
+        distribución sin movimientos, decí que no hay movimientos vinculados a la campaña, sin
+        afirmar que no ocurrieron fuera del sistema. Si la consulta fue truncada o falló, no deduzcas
+        ausencias. Para explicar un rinde, presentá los factores registrados
+        como relaciones observadas o hipótesis: AgroDigital puede no contar con todo el contexto necesario para
+        determinar cuánto influyó cada factor. No atribuyas causas ni responsabilidades sin evidencia suficiente.
         Señalá qué fuentes registradas consideraste (siembra, cosecha, seguimiento, insumos, siniestros, silos o distribución).
         Presentá la respuesta con párrafos breves y legibles. Cuando ayude, usá títulos Markdown, negritas para cifras o conclusiones,
         listas para elementos comparables y separadores entre secciones. Evitá bloques de texto largos y asteriscos sueltos.
@@ -50,9 +60,9 @@ public sealed class ReporteriaIaService(ReporteriaRepository repository, Reporte
         Usá contexto cuando necesites descubrir campañas o lotes. Para un informe completo de campaña usá
         obtener_informe_campania: ya reúne todas las secciones relevantes. Si una sección dice sinDatos,
         explicá la ausencia de registros bajo Observaciones, sin llamarla "Secciones sin datos" ni
-        "Módulos sin datos". Una resiembra o un siniestro puede no haber ocurrido; no presentes su
-        ausencia como una carga pendiente. Para almacenamiento y distribución, aclará que no hay
-        registros de esa campaña sin afirmar que el proceso no ocurrió. No inventes cifras ni repitas
+        "Módulos sin datos". No presentes los eventos opcionales sin registros como una carga pendiente.
+        Para almacenamiento y distribución, aclará que no hay movimientos de esa campaña sin afirmar
+        que el proceso no ocurrió. No inventes cifras ni repitas
         consultas para rellenar una sección vacía.
         Para comparar el fin tentativo y real de siembras usá obtener_desvios_siembra. desvioDias positivo
         significa atraso, negativo significa adelanto. motivoRegistrado es la justificación asentada por el usuario;
@@ -78,6 +88,13 @@ public sealed class ReporteriaIaService(ReporteriaRepository repository, Reporte
         Si preguntan cuánto rindió o cuántos kg produjo un cultivo en un lote, usá rindes_lote
         o cosechas_detalle con ese lote, cultivo y campaña. Los KPI de Cosechas reúnen toda la empresa:
         nunca los atribuyas a un lote. Distinguí kg cosechados de kg despachados en Distribución.
+        Para explicar por qué un lote tuvo un rinde alto o bajo, usá obtener_contexto_rinde_lote.
+        Si primero hay que descubrir qué lote de un cultivo rindió más o menos, usá obtener_extremos_rinde:
+        identifica los lotes comparables y trae el contexto de sus registros en una sola llamada.
+        Verificá puestoMayor o puestoMenor dentro del mismo cultivo y campaña antes de llamarlo el mejor o el peor;
+        si la premisa es incorrecta, corregila claramente. Para un rinde bajo, presentá primero siniestros registrados
+        y después siembra, agroquímicos y fertilización. Para un rinde alto, presentá primero condiciones de siembra
+        y manejo, y después siniestros si los hubo. Ningún factor registrado prueba por sí solo una causa.
         Si una pregunta combina campos de varios módulos, consultá cada detalle necesario antes de responder.
         Un resumen de fertilización no contiene variedad ni densidad: no declares esos datos ausentes
         sin consultar siembras_detalle del lote y campaña solicitados.
@@ -124,6 +141,12 @@ public sealed class ReporteriaIaService(ReporteriaRepository repository, Reporte
             && Regex.IsMatch(pregunta, @"\b(real\w*|finaliz\w*)\b", RegexOptions.IgnoreCase);
         var desviosSiembra = !informeCompleto && (preguntaDeSiembra && comparacionDeFechas
             || aclaracionDeFechas && Regex.IsMatch(ultimaPregunta, @"\bsiembr\w*\b", RegexOptions.IgnoreCase));
+        var explicacionRinde = !informeCompleto && !compararCampanias && !desviosSiembra
+            && Regex.IsMatch(pregunta, @"\b(rind\w*|rendimient\w*|productiv\w*)\b", RegexOptions.IgnoreCase)
+            && Regex.IsMatch(pregunta, @"\b(por\s+qu[eé]|porque|explic\w*|causas?|factores?|motivos?|raz[oó]n|se\s+debe)\b", RegexOptions.IgnoreCase);
+        var consultaExtremosRinde = explicacionRinde && Regex.IsMatch(pregunta,
+            @"\bcu[aá]l(?:es)?\b.*\blotes?\b.*\b(m[aá]s|menos|mejor|peor|mayor|menor)\b",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
         var requiereVistaEstadisticas = Regex.IsMatch(pregunta,
             @"estad[ií]stic\w*|gr[aá]fic\w*|mapa|ranking|evoluci[oó]n|por zonas?", RegexOptions.IgnoreCase);
         var preguntaKpi = !informeCompleto && !compararCampanias && !desviosSiembra && !requiereVistaEstadisticas
@@ -140,11 +163,11 @@ public sealed class ReporteriaIaService(ReporteriaRepository repository, Reporte
         var preguntaEstadisticas = !informeCompleto && !compararCampanias && !desviosSiembra && !preguntaOperativa && Regex.IsMatch(pregunta,
             @"estad[ií]stic\w*|gr[aá]fic\w*|mapa de calor|superficie sin trabajar|flujo mensual|[ií]ndice de siniestralidad|participaci[oó]n de los granos|productividad ponderada",
             RegexOptions.IgnoreCase);
-        var analisis = informeCompleto || compararCampanias || desviosSiembra || preguntaKpi || preguntaOperativa || consultaCompuesta || preguntaEstadisticas || Regex.IsMatch(pregunta,
+        var analisis = informeCompleto || compararCampanias || desviosSiembra || explicacionRinde || preguntaKpi || preguntaOperativa || consultaCompuesta || preguntaEstadisticas || Regex.IsMatch(pregunta,
             @"\b(compar\w*|analiz\w*|informe|explic\w*|causas?|factores?|por qu[eé]|diferencias?|evoluci[oó]n|vs\.?|podr[ií]a)\b",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         var modo = analisis ? "analisis" : "simple";
-        var maximoLlamadas = informeCompleto || compararCampanias || desviosSiembra || preguntaKpi || preguntaOperativa ? 1 : analisis ? 12 : MaximoLlamadasSimples;
+        var maximoLlamadas = informeCompleto || compararCampanias || desviosSiembra || explicacionRinde || preguntaKpi || preguntaOperativa ? 1 : analisis ? 12 : MaximoLlamadasSimples;
         var model = configuration[analisis ? "ReporteriaIA:ModeloAnalisis" : "ReporteriaIA:ModeloSimple"]
             ?? (analisis ? "gpt-6-sol" : "gpt-6-luna");
 
@@ -166,11 +189,13 @@ public sealed class ReporteriaIaService(ReporteriaRepository repository, Reporte
         using var http = clients.CreateClient("ReporteriaOpenAI");
         for (var round = 0; round < maximoLlamadas + 1; round++)
         {
-            JsonNode toolChoice = informeCompleto || compararCampanias || desviosSiembra || preguntaKpi || preguntaOperativa || preguntaEstadisticas && called == 0
+            JsonNode toolChoice = informeCompleto || compararCampanias || desviosSiembra || explicacionRinde || preguntaKpi || preguntaOperativa || preguntaEstadisticas && called == 0
                 ? called == 0
                     ? new JsonObject { ["type"] = "function", ["name"] = informeCompleto ? "obtener_informe_campania"
                         : compararCampanias ? "obtener_comparativa_campanias"
                         : desviosSiembra ? "obtener_desvios_siembra"
+                        : consultaExtremosRinde ? "obtener_extremos_rinde"
+                        : explicacionRinde ? "obtener_contexto_rinde_lote"
                         : preguntaKpi ? "obtener_kpis_pantalla"
                         : preguntaOperativa ? "obtener_productividad_fertilizacion" : "consultar_estadisticas" }
                     : JsonValue.Create("none")!
@@ -215,7 +240,23 @@ public sealed class ReporteriaIaService(ReporteriaRepository repository, Reporte
                         "**Observaciones:**");
                 if (informeCompleto && modulosSinDatos.Count > 0
                     && !Regex.IsMatch(text, @"(?im)^\s*(?:#{1,6}\s*)?(?:\*\*)?Observaciones(?:\*\*)?\s*:"))
-                    text += $"\n\n---\n\n**Observaciones:** No hay registros de {string.Join(", ", modulosSinDatos)} para esta campaña. Esto no implica por sí solo que falte cargar información: algunos procesos, como las resiembras, pueden no haber sido necesarios.";
+                {
+                    var eventos = modulosSinDatos.Where(x => x is "resiembras" or "siniestros").ToArray();
+                    var movimientos = modulosSinDatos.Where(x => x is "almacenamiento" or "distribución").ToArray();
+                    var restantes = modulosSinDatos.Except(eventos).Except(movimientos).ToArray();
+                    var observaciones = new List<string>();
+                    if (eventos.Length > 0)
+                        observaciones.Add($"No se registraron {string.Join(", ", eventos)} en esta campaña; para este informe se consideran procesos no realizados.");
+                    if (movimientos.Length > 0)
+                        observaciones.Add($"No hay movimientos de {string.Join(" ni ", movimientos)} vinculados a esta campaña; esto no permite afirmar qué ocurrió fuera del sistema.");
+                    if (restantes.Length > 0)
+                        observaciones.Add($"No hay registros de {string.Join(", ", restantes)} para esta campaña.");
+                    text += $"\n\n---\n\n**Observaciones:** {string.Join(" ", observaciones)}";
+                }
+                text = Regex.Replace(text,
+                    @"AgroDigital no dispone de la informaci[oó]n necesaria para atribuir causalidad o establecer un factor decisivo\.?",
+                    "AgroDigital puede no contar con todo el contexto necesario para determinar cuánto influyó cada factor.",
+                    RegexOptions.IgnoreCase);
                 return new ResultadoReporteria(FormatearDecimales(text), modo, sources.Distinct().ToArray());
             }
             if (called + calls.Length > maximoLlamadas)
@@ -228,6 +269,62 @@ public sealed class ReporteriaIaService(ReporteriaRepository repository, Reporte
                 var name = call?["name"]?.GetValue<string>();
                 var args = JsonNode.Parse(call?["arguments"]?.GetValue<string>() ?? "{}")
                     ?? throw new InvalidOperationException("OpenAI no indicó los filtros de la consulta.");
+                if (name == "obtener_extremos_rinde")
+                {
+                    var periodoExplicito = Regex.Match(pregunta, @"\b\d{4}-\d{4}\b").Value;
+                    var periodo = periodoExplicito.Length > 0 ? periodoExplicito : Filtrar(args["campania"]);
+                    if (Regex.IsMatch(pregunta, @"\b[uú]ltima\s+campa[ñn]a\b", RegexOptions.IgnoreCase)) periodo = null;
+                    if (periodo is not null && !Regex.IsMatch(periodo, @"^\d{4}-\d{4}$")) periodo = null;
+                    var granoExplicito = Regex.Match(pregunta, @"\b(ma[ií]z|soja|trigo)\b", RegexOptions.IgnoreCase).Value;
+                    var granoExtremos = granoExplicito.Length > 0 ? granoExplicito : Filtrar(args["cultivo"]);
+                    var mayor = Regex.IsMatch(pregunta, @"\b(m[aá]s|mejor|mayor)\b", RegexOptions.IgnoreCase);
+                    var menor = Regex.IsMatch(pregunta, @"\b(menos|peor|menor)\b", RegexOptions.IgnoreCase);
+                    if (!mayor && !menor)
+                    {
+                        var sentido = args["sentido"]?.GetValue<string>();
+                        mayor = sentido is "mayor" or "ambos";
+                        menor = sentido is "menor" or "ambos";
+                    }
+                    var extremos = await repository.ConsultarExtremosRindeAsync(empresaId, periodo, granoExtremos,
+                        mayor, menor, ct);
+                    var resultado = JsonSerializer.Serialize(extremos);
+                    if (resultado.Length > 30000 - sentChars)
+                        throw new InvalidOperationException("El contexto de rindes excedió el límite de datos permitido.");
+                    sentChars += resultado.Length;
+                    anyRows = true;
+                    sources.Add($"extremos_rinde · {granoExtremos ?? "sin cultivo"}{(periodo is null ? "" : $" · {periodo}")}");
+                    input.Add(new JsonObject { ["type"] = "function_call_output",
+                        ["call_id"] = call?["call_id"]?.GetValue<string>(), ["output"] = resultado });
+                    continue;
+                }
+                if (name == "obtener_contexto_rinde_lote")
+                {
+                    var loteRinde = Filtrar(args["lote"]);
+                    if (loteRinde is null)
+                    {
+                        anyRows = true;
+                        input.Add(new JsonObject { ["type"] = "function_call_output",
+                            ["call_id"] = call?["call_id"]?.GetValue<string>(),
+                            ["output"] = "{\"faltaFiltro\":\"lote\"}" });
+                        continue;
+                    }
+                    var periodoExplicito = Regex.Match(pregunta, @"\b\d{4}-\d{4}\b").Value;
+                    var periodo = periodoExplicito.Length > 0 ? periodoExplicito : Filtrar(args["campania"]);
+                    if (Regex.IsMatch(pregunta, @"\b[uú]ltima\s+campa[ñn]a\b", RegexOptions.IgnoreCase))
+                        periodo = null;
+                    if (periodo is not null && !Regex.IsMatch(periodo, @"^\d{4}-\d{4}$")) periodo = null;
+                    var contexto = await repository.ConsultarRindeContextoLoteAsync(empresaId, loteRinde,
+                        periodo, Filtrar(args["cultivo"]), ct);
+                    var resultado = JsonSerializer.Serialize(contexto);
+                    if (resultado.Length > 30000 - sentChars)
+                        throw new InvalidOperationException("El contexto del lote excedió el límite de datos permitido.");
+                    sentChars += resultado.Length;
+                    anyRows = true;
+                    sources.Add($"contexto_rinde_lote · {loteRinde}{(periodo is null ? "" : $" · {periodo}")}");
+                    input.Add(new JsonObject { ["type"] = "function_call_output",
+                        ["call_id"] = call?["call_id"]?.GetValue<string>(), ["output"] = resultado });
+                    continue;
+                }
                 if (name == "obtener_comparativa_campanias")
                 {
                     var periodos = await repository.UltimasCampaniasAsync(empresaId, ct);
@@ -665,6 +762,44 @@ public sealed class ReporteriaIaService(ReporteriaRepository repository, Reporte
                         ["campania"] = new JsonObject { ["type"] = new JsonArray("string", "null"), ["description"] = "Período YYYY-YYYY o null para la última campaña" }
                     },
                     ["required"] = new JsonArray("campania"),
+                    ["additionalProperties"] = false
+                }
+            },
+            new JsonObject
+            {
+                ["type"] = "function",
+                ["name"] = "obtener_extremos_rinde",
+                ["description"] = "Identifica el lote de mayor rinde, el de menor rinde o ambos dentro de un mismo grano y campaña de la empresa autorizada. Devuelve kg/ha ponderados, producción, superficie, empates y el contexto registrado de los lotes elegidos (siembra, insumos, refertilización y siniestros) en una sola llamada. Campania null toma la última campaña registrada. Usá esta herramienta cuando la pregunta no indique el nombre del lote. No atribuyas causalidad automática.",
+                ["strict"] = true,
+                ["parameters"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["cultivo"] = new JsonObject { ["type"] = new JsonArray("string", "null"), ["description"] = "Grano a comparar, por ejemplo maíz" },
+                        ["campania"] = new JsonObject { ["type"] = new JsonArray("string", "null"), ["description"] = "Período YYYY-YYYY o null para la última campaña" },
+                        ["sentido"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("mayor", "menor", "ambos") }
+                    },
+                    ["required"] = new JsonArray("cultivo", "campania", "sentido"),
+                    ["additionalProperties"] = false
+                }
+            },
+            new JsonObject
+            {
+                ["type"] = "function",
+                ["name"] = "obtener_contexto_rinde_lote",
+                ["description"] = "Contexto compacto de un lote y campaña para explicar un rinde alto o bajo en una llamada: cosechas y ranking entre lotes del mismo cultivo y campaña, condiciones de siembra, agroquímicos de presiembra y seguimiento, urea de siembra y refertilización y siniestros. El ranking pondera kg/ha de cosechas finalizadas y señala empates. Campania null toma la última campaña registrada. No atribuyas causalidad ni afirmes mejor o peor sin verificar el puesto. Los datos están acotados a la empresa autorizada.",
+                ["strict"] = true,
+                ["parameters"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["lote"] = new JsonObject { ["type"] = new JsonArray("string", "null"), ["description"] = "Nombre del lote o null si no está identificado" },
+                        ["campania"] = new JsonObject { ["type"] = new JsonArray("string", "null"), ["description"] = "Período YYYY-YYYY o null para la última campaña" },
+                        ["cultivo"] = new JsonObject { ["type"] = new JsonArray("string", "null"), ["description"] = "Grano consultado o null para los del lote" }
+                    },
+                    ["required"] = new JsonArray("lote", "campania", "cultivo"),
                     ["additionalProperties"] = false
                 }
             },
